@@ -1,0 +1,24 @@
+{
+  "name": "anatomical-symptom-interface",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Anatomical Symptom Interface — turn \"it hurts here\" into a structured, anatomical, longitudinal health record",
+  "license": "MIT",
+  "type": "module",
+  "packageManager": "pnpm@12.6.0",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "dev": "pnpm --parallel --filter \"@asi/web\" --filter \"@asi/server\" dev",
+    "dev:web": "pnpm --filter @asi/web dev",
+    "dev:server": "pnpm --filter @asi/server dev",
+    "build": "pnpm -r --filter \"./packages/**\" build && pnpm --filter @asi/web build",
+    "typecheck": "pnpm -r typecheck",
+    "test": "pnpm -r test",
+    "seed": "pnpm --filter @asi/server seed"
+  },
+  "devDependencies": {
+    "typescript": "^5.9.3"
+  }
+}

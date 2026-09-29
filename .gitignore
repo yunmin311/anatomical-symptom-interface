@@ -1,0 +1,25 @@
+node_modules/
+dist/
+build/
+.turbo/
+*.tsbuildinfo
+
+# local health data — NEVER commit
+data/
+*.sqlite
+*.sqlite-journal
+*.sqlite-wal
+*.sqlite-shm
+.env
+.env.*
+!.env.example
+
+# anatomy model assets are large, fetched by script
+packages/server/assets/anatomy/*.glb
+packages/server/assets/anatomy/*.zip
+packages/server/assets/anatomy/*.mtl
+
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
