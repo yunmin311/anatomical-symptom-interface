@@ -84,7 +84,10 @@ node scripts/smoke.mjs        # 17 API checks, needs a running server
 pnpm --filter @asi/web build
 ```
 
-pnpm's build-script approval prompt can appear for esbuild; approve it if prompted.
+`allowBuilds: esbuild: true` is declared in `pnpm-workspace.yaml`, so install never
+prompts. If pnpm ever asks you to approve a build script, do not run
+`pnpm approve-builds` interactively — add the package to `allowBuilds` and commit it,
+so a clean checkout and CI behave the same way.
 
 ## Before you call something done
 

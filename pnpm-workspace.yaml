@@ -1,5 +1,10 @@
 packages:
   - "apps/*"
   - "packages/*"
+
+# esbuild's postinstall links the platform-specific binary. Without it Vite
+# cannot start, so `pnpm install --frozen-lockfile` must be allowed to run it.
+# Without this declaration pnpm exits non-zero on ERR_PNPM_IGNORED_BUILDS,
+# which fails CI before any check runs.
 allowBuilds:
-  esbuild: set this to true or false
+  esbuild: true
