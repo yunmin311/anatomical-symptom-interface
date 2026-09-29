@@ -1,52 +1,33 @@
+import { useEffect, useState } from 'react';
+import { REGIONS } from '@asi/shared';
+import type { BodyRegion } from '@asi/shared';
 import { useSession } from '../state/session.ts';
+import { EmptyState, StatusTag } from './primitives.tsx';
+import { RecordDetails } from './RecordDetails.tsx';
+import { formatDate } from './presentation.ts';
 
 export function HistoryPanel() {
-  const history = useSession((s) => s.history);
-  const { loadHistory } = useSession();
+  const { history, loadHistory } = useSession();
+  const [filter, setFilter] = useState<BodyRegion | 'all'>('all');
+  const [request, setRequest] = useState<'loading' | 'ready' | 'error'>('loading');
+  const [revision, setRevision] = useState(0);
+  useEffect(() => {
+    let active = true;
+    setRequest('loading');
+    void loadHistory().then(() => { if (active) setRequest('ready'); }).catch(() => { if (active) setRequest('error'); });
+    return () => { active = false; };
+  }, [loadHistory, revision]);
 
-  if (!history.length) {
-    return (
-      <p className="muted">
-        Nothing recorded yet.{' '}
-        <button className="link" onClick={() => void loadHistory()}>
-          Reload
-        </button>
-      </p>
-    );
-  }
+  if (request === 'loading') return <div className="empty-state" role="status"><h2>Loading your health map…</h2><p className="muted">Looking for saved episodes.</p></div>;
+  if (request === 'error') return <div className="notice notice--error" role="alert"><h2>Your health map could not be loaded.</h2><p>Check the local service and try again. This does not mean your records are empty.</p><button className="btn" onClick={() => setRevision((value) => value + 1)}>Try again</button></div>;
+  if (history.length === 0) return <EmptyState title="Your health map starts with one episode." action={<button className="btn" onClick={() => setRevision((value) => value + 1)}>Refresh records</button>}>When you save a symptom record, it appears here under its body area. Over time, each area becomes a timeline of your own experiences.</EmptyState>;
 
-  const byRegion = new Map<string, typeof history>();
-  for (const ep of history) {
-    const key = `${ep.region} · ${ep.side}`;
-    byRegion.set(key, [...(byRegion.get(key) ?? []), ep]);
-  }
-
-  return (
-    <div className="history">
-      {[...byRegion.entries()].map(([key, eps]) => (
-        <section key={key} className="history__group">
-          <h3 className="history__key">{key}</h3>
-          <p className="muted history__count">
-            {eps.length} episode{eps.length > 1 ? 's' : ''}
-          </p>
-          <ul>
-            {eps.map((ep) => (
-              <li key={ep.id} className={`history__item history__item--${ep.status}`}>
-                <div className="history__row">
-                  <strong>{ep.title}</strong>
-                  <span className="history__date">{ep.startedAt.slice(0, 10)}</span>
-                </div>
-                <p className="history__meta">
-                  {ep.record.quality.join(', ') || 'no quality recorded'}
-                  {ep.record.temporal.trend !== 'unknown' && ` · ${ep.record.temporal.trend}`}
-                  {ep.record.temporal.durationValue != null &&
-                    ` · ${ep.record.temporal.durationValue} ${ep.record.temporal.durationUnit}`}
-                </p>
-              </li>
-            ))}
-          </ul>
-        </section>
-      ))}
-    </div>
-  );
+  const regions = Object.values(REGIONS).filter((region) => filter === 'all' || filter === region.id);
+  return <div className="healthmap-layout"><aside className="healthmap-index" aria-label="Filter by body area"><h2>Body areas</h2><p className="small">{history.length} saved episode{history.length === 1 ? '' : 's'}</p><button aria-pressed={filter === 'all'} className="healthmap-region" onClick={() => setFilter('all')}>All areas <span>{history.length}</span></button>{Object.values(REGIONS).map((region) => <button key={region.id} aria-pressed={filter === region.id} className="healthmap-region" onClick={() => setFilter(region.id)}>{region.label}<span>{history.filter((episode) => episode.region === region.id).length}</span></button>)}<p className="small">Counts reflect saved records, not symptom severity.</p><button className="link" onClick={() => setRevision((value) => value + 1)}>Refresh records</button></aside>
+    <div className="history" aria-live="polite">{regions.map((region) => {
+      const episodes = history.filter((episode) => episode.region === region.id).sort((a, b) => b.startedAt.localeCompare(a.startedAt));
+      if (!episodes.length && filter === 'all') return null;
+      return <section className="history__group" key={region.id}><div className="history-group-heading"><h2>{region.label}</h2><span className="small">{episodes.length} episode{episodes.length === 1 ? '' : 's'}</span></div>{episodes.length === 0 ? <p className="empty-state muted">No episodes recorded in this area.</p> : <ol className="episode-timeline">{episodes.map((episode) => <li key={episode.id} className="episode-timeline__item"><p className="episode-date"><time dateTime={episode.startedAt}>{formatDate(episode.startedAt)}</time></p><details className="episode"><summary><span className="episode__heading"><strong>{episode.title}</strong><span className="small">{episode.side === 'unknown' ? 'Side not recorded' : episode.side.replaceAll('_', ' ')}</span></span><StatusTag>{episode.status}</StatusTag></summary><div className="episode__detail"><RecordDetails record={episode.record} />{episode.safetyFlags.length > 0 && <section className="record-section"><h3>Recorded safety flags</h3><ul>{episode.safetyFlags.map((flag) => <li key={flag.ruleId}><strong>{flag.severity}</strong>: {flag.reason}<p className="small">Review status: {flag.ruleReviewStatus}</p></li>)}</ul></section>}<p className="small">Saved episode. Patient-reported information, not a diagnosis.</p></div></details></li>)}</ol>}</section>;
+    })}</div>
+  </div>;
 }
