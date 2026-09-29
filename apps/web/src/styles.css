@@ -282,3 +282,57 @@ input[type='radio'], input[type='checkbox'] { accent-color: var(--accent); width
 @media (max-width: 800px) { .app__main { display: block; padding-top: 32px; } .context-rail { margin-top: 40px; display: grid; grid-template-columns: 1fr 1fr; gap: 24px; } .context-rail section + section { border-top: 0; margin-top: 0; padding-top: 0; } .app__tools > .status-tag { display: none; } }
 @media (max-width: 520px) { .app { padding: 0 20px; } .app__head { gap: 12px; padding: 20px 0; } .brand__mark { font-size: 32px; } .app__tools .btn { padding-inline: 0; } .steps { gap: 16px; } .step { flex-direction: column; gap: 6px; font-size: 12px; align-items: flex-start; } .panel, .summary, .empty-state { padding: 20px; } .actions { align-items: stretch; } .actions .btn { flex: 1; } .context-rail { display: block; } .context-rail section + section { margin-top: 24px; padding-top: 24px; border-top: 1px solid var(--line); } .app__footer { flex-direction: column; } }
 @media (prefers-reduced-motion: reduce) { *, *::before, *::after { scroll-behavior: auto !important; animation: none !important; transition: none !important; } }
+
+/* The body is the working surface; suggestions stay outside the selection controls. */
+.location-workbench { background: var(--bg-raised); border: 1px solid var(--line); border-radius: 10px; overflow: hidden; }
+.location-workbench__bar { padding: 20px 28px; display: flex; justify-content: space-between; align-items: center; gap: 20px; border-bottom: 1px solid var(--line); }
+.location-workbench__bar > div { display: flex; gap: 16px; align-items: center; }
+.location-workbench__bar h2 { margin: 0; font-size: 20px; }
+.location-workbench__grid { display: grid; grid-template-columns: 1fr 1fr; }
+.viewer-panel { padding: 24px 28px; background: #f8f9fb; border-right: 1px solid var(--line); min-width: 0; }
+.viewer-toolbar { display: flex; justify-content: space-between; align-items: start; gap: 12px; }
+.viewer-toolbar .choice-group { margin-bottom: 0; }
+.viewer-toolbar > .small { padding-top: 28px; }
+.viewer-canvas { position: relative; padding: 24px 0 12px; }
+.bodymap__svg { width: 220px; max-width: 100%; height: auto; }
+.bodymap__body path { fill: #e0e5eb; stroke: #8b96a5; stroke-width: .5; }
+.bodymap__zone-shape { fill: #c6cfde; fill-opacity: .6; stroke: #677589; stroke-width: .6; }
+.bodymap__zone-shape.has-candidate { fill: #e9dbbb; fill-opacity: .85; stroke: var(--candidate); stroke-dasharray: 2 1.5; stroke-width: .8; }
+.bodymap__zone-shape.is-active { fill: var(--accent); fill-opacity: .75; stroke: var(--accent); stroke-dasharray: none; stroke-width: 1.4; }
+.bodymap__pin { pointer-events: none; }
+.bodymap__pin-dot { fill: white; stroke: var(--accent); stroke-width: 1.2; }
+.viewer-caption { position: absolute; left: 0; top: 48%; display: flex; flex-direction: column; font-size: 14px; color: var(--ink-dim); max-width: 100px; }
+.viewer-caption strong { color: var(--ink); }
+.map-legend { list-style: none; padding: 12px 0; margin: 0; display: flex; justify-content: center; flex-wrap: wrap; gap: 16px; border-top: 1px solid var(--line); }
+.map-legend li { font-size: 12px; display: flex; gap: 7px; align-items: center; }
+.legend-mark { width: 14px; height: 14px; display: inline-block; }
+.legend-mark--candidate { border: 1.5px dashed var(--candidate); background: var(--candidate-soft); }
+.legend-mark--selected { border: 1.5px solid var(--accent); background: var(--accent-soft); }
+.pin-controls { font-size: 14px; }
+.pin-controls summary { cursor: pointer; padding: 12px 0; }
+.pin-controls label { display: block; margin-top: 16px; }
+.pin-controls input { display: block; width: 100%; min-height: 44px; accent-color: var(--accent); }
+.location-controls { padding: 28px; min-width: 0; }
+.location-source { margin-bottom: 24px; }
+.location-source blockquote { margin: 0 0 10px; font-size: 18px; overflow-wrap: anywhere; }
+.subregion-options { display: grid; gap: 8px; }
+.subregion-option { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 12px 14px; text-align: left; background: white; border: 1px solid var(--line-strong); border-radius: 6px; color: var(--ink); font-size: 14px; cursor: pointer; }
+.subregion-option--selected { border-color: var(--accent); background: var(--accent-soft); color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); }
+.selection-receipt { padding: 16px; background: var(--bg-sunken); border-radius: 6px; font-size: 14px; }
+.selection-receipt p { margin: 6px 0 0; }
+.candidate-section { border-top: 1px solid var(--line); padding: 28px; }
+.section-heading { display: flex; gap: 24px; justify-content: space-between; align-items: start; }
+.section-heading h3 { font-size: 20px; }
+.section-heading p { max-width: 65ch; }
+.layer-filter { display: grid; gap: 6px; font-size: 12px; flex: none; }
+.layer-filter select { padding: 8px 12px; min-height: 44px; color: var(--ink); }
+.candidates__list { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.candidate-card { display: flex; flex-direction: column; justify-content: space-between; align-items: start; gap: 16px; border: 1px dashed var(--candidate); padding: 20px; border-radius: 6px; }
+.candidate-card--selected { border: 1px solid var(--accent); background: var(--accent-soft); }
+.candidate-card h4 { margin: 12px 0 6px; font-size: 16px; font-weight: 600; }
+.candidate-card p { margin-bottom: 6px; }
+.candidate-empty { padding: 20px; border: 1px dashed var(--line-strong); font-size: 14px; color: var(--ink-dim); }
+.location-footer { display: flex; justify-content: space-between; gap: 20px; align-items: center; border-top: 1px solid var(--line); padding: 20px 28px; }
+.location-footer p { margin: 0; }
+@media (max-width: 900px) { .viewer-caption { position: static; text-align: center; max-width: none; margin-top: 12px; } .location-workbench__grid { grid-template-columns: minmax(0, .9fr) minmax(0, 1fr); } }
+@media (max-width: 680px) { .location-workbench__grid { grid-template-columns: 1fr; } .viewer-panel { border-right: 0; border-bottom: 1px solid var(--line); } .bodymap__svg { width: 180px; } .location-controls, .viewer-panel, .candidate-section { padding: 20px; } .candidates__list { grid-template-columns: 1fr; } .section-heading, .location-footer { flex-direction: column; } .location-footer { align-items: stretch; padding: 20px; } .location-workbench__bar { padding: 16px 20px; } .location-workbench__bar > div { display: block; } .location-workbench__bar h2 { margin-top: 8px; } }
