@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { REGIONS } from "@asi/shared";
 import type { BodyRegion } from "@asi/shared";
 import { useSession } from "../state/session.ts";
@@ -6,6 +6,7 @@ import { EmptyState, StatusTag } from "./primitives.tsx";
 import { BodyIndex } from "../anatomy/BodyIndex.tsx";
 import { RecordDetails } from "./RecordDetails.tsx";
 import { formatDate } from "./presentation.ts";
+import { DERIVED_SPATIAL_HISTORY } from "./spatial-history.ts";
 
 export function HistoryPanel() {
   const { history, loadHistory } = useSession();
@@ -28,6 +29,15 @@ export function HistoryPanel() {
       active = false;
     };
   }, [loadHistory, revision]);
+
+  // Derived client-side from the episodes already loaded. This is a consumption
+  // boundary for the spatial read model the main agent is building, not a second
+  // domain schema: it adds no persisted field and invents no history.
+  //
+  // Declared ABOVE the early returns on purpose. A hook placed after them runs a
+  // different number of times on the loading render than on the ready one, which
+  // React rejects outright.
+  const spatial = useMemo(() => DERIVED_SPATIAL_HISTORY.load(history), [history]);
 
   if (request === "loading")
     return (
@@ -97,6 +107,34 @@ export function HistoryPanel() {
             ]),
           )}
         />
+        {/*
+          Where the body has history, not just how many episodes exist: the
+          places the user actually pointed at, most-visited first.
+        */}
+        {spatial.regions.length > 0 && (
+          <div className="location-marks" data-testid="location-marks">
+            <span className="eyebrow">Where you have pointed</span>
+            <ul>
+              {spatial.regions
+                .filter((r) => filter === 'all' || r.region === filter)
+                .flatMap((r) =>
+                  r.marks.slice(0, 3).map((mark) => (
+                    <li key={mark.id} data-testid={`mark-${mark.region}`}>
+                      <button
+                        className="location-mark"
+                        onClick={() => setFilter(r.region)}
+                      >
+                        <span className="location-mark__label">{mark.label}</span>
+                        <span className="location-mark__count">
+                          {mark.episodeCount}
+                        </span>
+                      </button>
+                    </li>
+                  )),
+                )}
+            </ul>
+          </div>
+        )}
         <p className="small">
           Counts reflect saved records, not symptom severity.
         </p>

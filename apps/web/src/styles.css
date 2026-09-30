@@ -1670,3 +1670,54 @@ details > p {
     gap: 12px;
   }
 }
+
+/* Where the body has history: the places the user actually pointed at, so the
+   index is a map of their body rather than a count of records. */
+.location-marks {
+  margin-top: 20px;
+  padding-top: 16px;
+  border-top: 1px solid var(--line);
+}
+.location-marks ul {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+.location-mark {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  width: 100%;
+  min-height: 44px;
+  padding: 8px 0;
+  background: none;
+  border: 0;
+  border-bottom: 1px solid var(--line);
+  text-align: left;
+  font-size: 14px;
+}
+.location-mark:hover {
+  color: var(--accent);
+}
+.location-mark__label {
+  overflow-wrap: anywhere;
+}
+.location-mark__count {
+  font-variant-numeric: tabular-nums;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+/* An idle 3D host must not occupy the flex row: at 375px it was taking the full
+   width and pushing the 2D body off-centre. */
+.viewer3d--idle {
+  display: none;
+}
+
+@media (max-width: 700px) {
+  /* Redundant next to the surface radio, and it squeezes the view radios. */
+  .viewer-toolbar__label {
+    display: none;
+  }
+}
