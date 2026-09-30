@@ -482,6 +482,58 @@ await check('a selected id the model never suggested is still a visual selection
   return true;
 });
 
+await check('a duplicate selection is stored once, and only in the record', async () => {
+  // Hostile input: a client that appends on every click. The raw field store
+  // keeps what arrived, but everything a clinician can read goes through the
+  // projection, so the repeat must be gone from both the record and the summary.
+  const r = await post('/episodes', {
+    personId: 'smoke',
+    grounding: { status: 'grounded', region: 'knee', side: 'left' },
+    mutations: [
+      {
+        fieldPath: 'location.userSelectedStructureIds',
+        value: ['asi:knee.meniscus-medial', 'asi:knee.patella', 'asi:knee.meniscus-medial', 'asi:knee.patella'],
+        provenance: { sourceType: 'user_selection', verificationStatus: 'user_confirmed', createdBy: 'user' },
+      },
+      {
+        fieldPath: 'consideredStructures',
+        value: [
+          { structureId: 'asi:knee.patella', rationale: 'Near the kneecap.', confidence: 0.5, selectedByUser: false },
+          { structureId: 'asi:knee.meniscus-medial', rationale: 'Nearby structure.', confidence: 0.4, selectedByUser: true },
+        ],
+        provenance: { sourceType: 'ai_inference', verificationStatus: 'unverified', createdBy: 'seed', confidence: 0.5 },
+      },
+    ],
+  });
+  if (r.status !== 201) return `${r.status} ${JSON.stringify(r.body).slice(0, 160)}`;
+  const id = r.body.id;
+
+  const ep = await get(`/api/episodes/${id}`);
+  // Order is the order the user pointed in: first occurrence, not sorted.
+  if (JSON.stringify(ep.record.location.userSelectedStructureIds) !== JSON.stringify(['asi:knee.meniscus-medial', 'asi:knee.patella'])) {
+    return `ids=${JSON.stringify(ep.record.location.userSelectedStructureIds)}`;
+  }
+
+  // Re-reading must be stable, not progressively reordered.
+  const again = await get(`/api/episodes/${id}`);
+  if (JSON.stringify(again.record.location.userSelectedStructureIds) !== JSON.stringify(ep.record.location.userSelectedStructureIds)) {
+    return 'a second read changed the set';
+  }
+
+  const by = (sid) => ep.record.consideredStructures.find((c) => c.structureId === sid);
+  if (by('asi:knee.patella')?.selectedByUser !== true) return 'the dedup disturbed the flag projection';
+  if (by('asi:knee.meniscus-medial')?.selectedByUser !== true) return 'the dedup disturbed the flag projection';
+
+  const { summary } = await get(`/api/episodes/${id}/summary`);
+  if (new Set(summary.visualSelections).size !== summary.visualSelections.length) {
+    return `a name is repeated: ${JSON.stringify(summary.visualSelections)}`;
+  }
+  if (JSON.stringify(summary.visualSelections) !== JSON.stringify(['Medial meniscus', 'Patella'])) {
+    return `visualSelections=${JSON.stringify(summary.visualSelections)}`;
+  }
+  return true;
+});
+
 await check('an unanswered field is rendered as "not asked", never a negative', async () => {
   const { summary } = await get(`/api/episodes/${episodeId}/summary`);
   const find = (label) => summary.history.find((h) => h.label === label)?.value;

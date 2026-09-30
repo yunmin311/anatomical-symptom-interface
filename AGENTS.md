@@ -52,7 +52,10 @@ These are architecture, not style. Do not weaken them to make a task easier.
    it. Never write that flag by hand — change the id set and let
    `projectUserSelection` recompute it. Two writable copies of one fact
    produced records where a candidate read as both selected and unselected, and
-   the summary then listed it under both headings.
+   the summary then listed it under both headings. The id set is also stored
+   **ordered-unique, first occurrence wins** — never sort it, the order is the
+   order the user pointed. A repeat is a reporting bug: the summary would tell a
+   clinician the user pointed at the same structure twice.
 
 8. **Safety signals are region-scoped.** `signalsFromAnswers(answers, region)` combines
    only the questions that region's interview actually asks, so a stale answer from
@@ -124,7 +127,7 @@ pnpm dev                      # server :8787 + web :5173
 pnpm typecheck                # all packages — must pass before commit
 pnpm test                     # unit tests across all three packages
 pnpm seed                     # reset to demo history (DESTRUCTIVE, rebuilds the DB)
-node scripts/smoke.mjs        # 37 API checks, needs a running server
+node scripts/smoke.mjs        # 38 API checks, needs a running server
 node scripts/check-safety-metadata.mjs <health.json>
 pnpm --filter @asi/web build
 ```
@@ -140,7 +143,7 @@ so a clean checkout and CI behave the same way.
 - [ ] `pnpm test` passes
 - [ ] New logic has a test, especially anything touching provenance, safety, answers
       or the field registry
-- [ ] `scripts/smoke.mjs` still 37/37 if you touched the server
+- [ ] `scripts/smoke.mjs` still 38/38 if you touched the server
 - [ ] `scripts/check-safety-metadata.mjs` passes against a running server
 - [ ] The unreviewed-rules count is still reported honestly — if it went to zero
       without clinical review, something bypassed the review metadata, which is a bug

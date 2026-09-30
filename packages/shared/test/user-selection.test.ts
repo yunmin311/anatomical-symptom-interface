@@ -214,3 +214,125 @@ test('every candidate appears in exactly one of the two summary lists', () => {
     assert.equal(all.size, 2, 'both candidates must be accounted for exactly once');
   }
 });
+
+/* ================================================================== */
+/* Ordered-unique canonicalization of the id set                       */
+/* ================================================================== */
+
+const LCL = 'asi:knee.lcl';
+
+test('a duplicate id is dropped, first occurrence wins', () => {
+  const r = base();
+  r.location.userSelectedStructureIds = [PATELLA, PATELLA];
+  const p = projectUserSelection(r);
+  assert.deepEqual(p.location.userSelectedStructureIds, [PATELLA]);
+});
+
+test('canonicalization preserves the order the user pointed in', () => {
+  const r = base();
+  // The array is rendered to a clinician as "areas you pointed to", so the order
+  // IS the order the user acted in. Deduping must not sort, reverse or reorder it.
+  r.location.userSelectedStructureIds = [MENISCUS, PATELLA, LCL];
+  const p = projectUserSelection(r);
+  assert.deepEqual(p.location.userSelectedStructureIds, [MENISCUS, PATELLA, LCL]);
+});
+
+test('a non-adjacent repeat is removed without disturbing its neighbours', () => {
+  const r = base();
+  r.location.userSelectedStructureIds = [PATELLA, MENISCUS, PATELLA, LCL, MENISCUS];
+  const p = projectUserSelection(r);
+  assert.deepEqual(p.location.userSelectedStructureIds, [PATELLA, MENISCUS, LCL]);
+});
+
+test('an id repeated many times collapses to one', () => {
+  const r = base();
+  r.location.userSelectedStructureIds = [PATELLA, PATELLA, PATELLA, PATELLA];
+  const p = projectUserSelection(r);
+  assert.deepEqual(p.location.userSelectedStructureIds, [PATELLA]);
+});
+
+test('an empty selection set stays empty', () => {
+  const r = base();
+  r.location.userSelectedStructureIds = [];
+  const p = projectUserSelection(r);
+  assert.deepEqual(p.location.userSelectedStructureIds, []);
+});
+
+test('deduplicating preserves first-occurrence order for the hostile all-duplicates case', () => {
+  // A client that appended ids on every click produces exactly this shape.
+  const r = base();
+  r.location.userSelectedStructureIds = [PATELLA, MENISCUS, PATELLA, MENISCUS, PATELLA];
+  const p = projectUserSelection(r);
+  assert.deepEqual(p.location.userSelectedStructureIds, [PATELLA, MENISCUS]);
+  assert.equal(byId(p, PATELLA)?.selectedByUser, true);
+  assert.equal(byId(p, MENISCUS)?.selectedByUser, true);
+});
+
+test('duplicates and contradictory flags are corrected together', () => {
+  const r = base();
+  r.location.userSelectedStructureIds = [PATELLA, PATELLA, MENISCUS];
+  // The second patella copy is fine, but the candidate denies being selected.
+  r.consideredStructures[0]!.selectedByUser = false;
+  const p = projectUserSelection(r);
+  assert.deepEqual(p.location.userSelectedStructureIds, [PATELLA, MENISCUS]);
+  assert.equal(byId(p, PATELLA)?.selectedByUser, true);
+  assert.equal(userSelectionIsConsistent(p), true);
+});
+
+test('canonicalization is idempotent from a duplicated input', () => {
+  const r = base();
+  r.location.userSelectedStructureIds = [MENISCUS, PATELLA, MENISCUS];
+  r.consideredStructures[0]!.selectedByUser = true; // contradictory
+  const once = projectUserSelection(r);
+  const twice = projectUserSelection(once);
+  const thrice = projectUserSelection(twice);
+  assert.deepEqual(thrice.location.userSelectedStructureIds, [MENISCUS, PATELLA]);
+  assert.deepEqual(
+    JSON.parse(JSON.stringify(thrice)),
+    JSON.parse(JSON.stringify(once)),
+    'a second projection must not reorder or further change the set',
+  );
+});
+
+test('projecting an already-canonical record is a no-op', () => {
+  const r = base();
+  r.location.userSelectedStructureIds = [PATELLA, MENISCUS];
+  const p = projectUserSelection(r);
+  const q = projectUserSelection(p);
+  assert.equal(q.location.userSelectedStructureIds, p.location.userSelectedStructureIds, 'array identity');
+  assert.equal(q.location, p.location, 'no new object when nothing changed');
+});
+
+test('deduplicating does not mutate the input array', () => {
+  const r = base();
+  const input = [PATELLA, PATELLA];
+  r.location.userSelectedStructureIds = input;
+  const p = projectUserSelection(r);
+  assert.deepEqual(input, [PATELLA, PATELLA], 'the caller array was rewritten');
+  assert.notEqual(p.location.userSelectedStructureIds, input, 'the projection must not alias the input array');
+});
+
+test('a summary built from a duplicated set lists each area once', () => {
+  const r = base();
+  r.location.userSelectedStructureIds = [PATELLA, PATELLA, MENISCUS, PATELLA];
+  const s = buildPreVisitSummary(episodeWith(r), { coverage: {} });
+  assert.deepEqual(s.visualSelections, ['Patella', 'Medial meniscus']);
+  assert.equal(new Set(s.visualSelections).size, s.visualSelections.length, 'a name was repeated');
+});
+
+test('a duplicated id with no candidate still yields one visual selection', () => {
+  const r = base();
+  r.location.userSelectedStructureIds = [LCL, LCL];
+  const s = buildPreVisitSummary(episodeWith(r), { coverage: {} });
+  assert.deepEqual(s.visualSelections, ['Lateral collateral ligament']);
+});
+
+test('a duplicated selection is one fact, so it counts once in the list', () => {
+  // The failure this prevents: a clinician reads "Patella, Patella" and cannot
+  // tell whether the tool thinks they pointed at it twice.
+  const r = base();
+  r.location.userSelectedStructureIds = [PATELLA, PATELLA];
+  const s = buildPreVisitSummary(episodeWith(r), { coverage: {} });
+  assert.equal(s.visualSelections.filter((v) => v === 'Patella').length, 1);
+  assert.equal(s.unselectedSuggestions.includes('Patella'), false);
+});

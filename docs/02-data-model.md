@@ -236,6 +236,18 @@ clinician reads. The flag is therefore ignored on write, and `rationale`,
 `confidence` and `structureId` are preserved exactly.
 `userSelectionIsConsistent` exposes the invariant for tests.
 
+**The id set is stored ORDERED-UNIQUE, first occurrence wins.** A client that
+appends on every click produces `['patella', 'meniscus', 'patella']`, and the
+array is rendered to a clinician as "areas you pointed to" — so a repeat is a
+reporting bug, not a cosmetic one: the tool would tell a clinician the user
+pointed at the same structure twice. Deduping happens in the same projection,
+under the same "ignore on write, canonicalise on read" rule as the flag, and
+deliberately does **not** sort or reorder: the order is the order the user acted
+in, so first-occurrence-wins is the only correct choice. It also makes the
+projection idempotent, which is what lets it run on every read without the record
+drifting. The field store keeps whatever raw value it was given, because it is a
+log of what arrived, not a render target.
+
 **`gaps` is missing information, and only that.** A gap is a dotted path into the
 record with no stored value, derived by the store from the field registry. It must
 never contain an answer marker, and it never does: answer state lives in

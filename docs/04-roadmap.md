@@ -22,7 +22,7 @@ located, structured, saveable record?
 - Deterministic pre-visit summary with coverage-aware missingness
 - Personal health map keyed by body region
 - Rule-based red flags, all honestly marked unreviewed, with a release gate
-- 177 unit tests, 37 API smoke checks, CI with a strict safety-metadata gate
+- 192 unit tests, 38 API smoke checks, CI with a strict safety-metadata gate
 
 **The milestone test from the plan (§12):** partially demonstrated. A user can go from
 free text to a located record to a doctor-readable summary. **Not yet demonstrated:**

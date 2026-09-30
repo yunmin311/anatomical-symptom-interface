@@ -127,6 +127,15 @@ can never be *read*) and again in the client's `selectStructure` /
 once more, because the guarantee that matters is the one at the last point before
 a clinician reads the text.
 
+It also reduces the id set to **ordered-unique, first occurrence wins**. That
+array is rendered as "areas you pointed to", so a repeat would tell a clinician
+the user pointed at the same structure twice — a reporting bug, not a cosmetic
+one. It is deliberately not sorted: the order is the order the user acted in.
+First-occurrence-wins also makes the projection idempotent, which is what allows
+it to run on every read. Like the flag, the raw value stays in the field store;
+only the projection canonicalises, because the field store is a log of what
+arrived, not a render target.
+
 `rationale`, `confidence` and `structureId` are never touched by the projection —
 the candidate is the model's evidence about what the user described, and rewriting
 it would be a different kind of data loss.

@@ -207,15 +207,21 @@ export function emptyRecord(region: z.infer<typeof BodyRegionSchema> = 'shoulder
  * user pointed at this". `consideredStructures[].selectedByUser` is a DERIVED
  * convenience for rendering, and is recomputed here from the canonical set.
  *
- * Why this has to be a projection and not a second source of truth: the two
- * encoded the same fact independently, so a client could write them
- * inconsistently and produce a record where the same candidate read as
- * simultaneously selected and unselected. The summary then reported the
- * structure in BOTH "areas you pointed to" and "suggested, not acted on".
+ * Two things are canonicalised, and only these two:
+ *   1. the id set is reduced to ORDERED-UNIQUE, first occurrence wins;
+ *   2. each candidate's `selectedByUser` is recomputed from that set.
  *
- * So the flag is ignored on write. Whatever a client or a stale row says,
- * the answer comes from the id set. Everything else about a candidate —
- * `structureId`, `rationale`, `confidence` — is preserved exactly.
+ * Everything else about a candidate — `structureId`, `rationale`, `confidence` —
+ * is preserved exactly, and the field store keeps whatever raw value it was
+ * given. This is the same "ignore on write, canonicalise on projection" rule
+ * that the derived flag follows, applied to the array itself.
+ *
+ * Why this has to be a projection and not a second source of truth: the flag and
+ * the id list used to be independently writable, so a client could make a record
+ * where the same candidate read as simultaneously selected and unselected. The
+ * summary then reported the structure in BOTH "areas you pointed to" and
+ * "suggested, not acted on". Two independently writable copies of one fact will
+ * always eventually disagree.
  *
  * Non-mutating: it returns a new record so a caller holding an Episode cannot
  * have it silently rewritten underneath them.
@@ -225,12 +231,38 @@ export function emptyRecord(region: z.infer<typeof BodyRegionSchema> = 'shoulder
  * what the summary reports as a visual selection.
  */
 export function projectUserSelection(record: SymptomRecord): SymptomRecord {
-  const selected = new Set(record.location.userSelectedStructureIds);
+  // Canonical form of the selection set: ORDERED-UNIQUE, first occurrence wins.
+  //
+  // Preserving order matters because the array is rendered to a clinician as
+  // "areas you pointed to", and the order is the order the user pointed. A
+  // duplicate is dropped rather than sorted or reversed, so canonicalising
+  // changes nothing about what the user did.
+  //
+  // First-occurrence-wins also makes the operation idempotent, which is what
+  // lets this run on every read without the record drifting.
+  const ordered: string[] = [];
+  const seen = new Set<string>();
+  for (const id of record.location.userSelectedStructureIds) {
+    if (seen.has(id)) continue;
+    seen.add(id);
+    ordered.push(id);
+  }
+
   const considered = record.consideredStructures.map((c) => {
-    const shouldBeSelected = selected.has(c.structureId);
+    const shouldBeSelected = seen.has(c.structureId);
     return c.selectedByUser === shouldBeSelected ? c : { ...c, selectedByUser: shouldBeSelected };
   });
-  return { ...record, consideredStructures: considered };
+
+  // Keep the original array and location references when nothing changed, so
+  // projecting an already-canonical record allocates nothing. This runs on every
+  // read, and a fresh `location` object on each one would break identity checks
+  // for callers watching `record.location` in the client.
+  const unchanged = ordered.length === record.location.userSelectedStructureIds.length;
+  const location = unchanged
+    ? record.location
+    : { ...record.location, userSelectedStructureIds: ordered };
+
+  return { ...record, location, consideredStructures: considered };
 }
 
 /**

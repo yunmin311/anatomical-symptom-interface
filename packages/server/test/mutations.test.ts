@@ -371,6 +371,41 @@ test('rebuild recomputes the candidate flag from the canonical id set', () => {
   );
 });
 
+test('rebuild dedupes the canonical id set, preserving the order the user pointed in', () => {
+  const ep = newEpisode('knee');
+  // Hostile input: a client that appends on every click sends this shape. The
+  // array is rendered to a clinician as "areas you pointed to", so a repeat is a
+  // reporting bug, not a cosmetic one.
+  store.applyMutations(ep.id, {
+    fieldMutations: [
+      mut('location.userSelectedStructureIds', [MENISCUS, PATELLA, MENISCUS, PATELLA], selectionProv()),
+      mut('consideredStructures', candidates(false), prov({ sourceType: 'ai_inference', verificationStatus: 'unverified', createdBy: 'model', confidence: 0.5 })),
+    ],
+  });
+
+  const rec = store.getEpisode(ep.id)!.record;
+  assert.deepEqual(
+    rec.location.userSelectedStructureIds,
+    [MENISCUS, PATELLA],
+    'first occurrence wins, and the order is not sorted or reversed',
+  );
+  // The dedup must not disturb the flag projection.
+  assert.equal(rec.consideredStructures.find((c) => c.structureId === PATELLA)?.selectedByUser, true);
+  assert.equal(rec.consideredStructures.find((c) => c.structureId === MENISCUS)?.selectedByUser, true);
+});
+
+test('the raw field store keeps the value it was given', () => {
+  const ep = newEpisode('knee');
+  const raw = [PATELLA, PATELLA];
+  store.applyMutations(ep.id, { fieldMutations: [mut('location.userSelectedStructureIds', raw, selectionProv())] });
+
+  // Canonicalization belongs to the projection, not the writer: the field store
+  // stays a faithful log of what arrived, and everything that reads the record
+  // goes through the projection.
+  assert.deepEqual(store.fieldStoreFor(ep.id)['location.userSelectedStructureIds']?.value, raw);
+  assert.deepEqual(store.getEpisode(ep.id)!.record.location.userSelectedStructureIds, [PATELLA]);
+});
+
 test('a stale unselected flag on a selected candidate is corrected on read', () => {
   const ep = newEpisode('knee');
   store.applyMutations(ep.id, {
