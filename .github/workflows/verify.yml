@@ -2,7 +2,7 @@ name: verify
 
 # The point of this workflow is that a reviewer — human or AI — can read the
 # check status instead of taking the commit message's word for it. It runs the
-# same three gates described in AGENTS.md.
+# same gates described in AGENTS.md.
 
 on:
   push:
@@ -49,19 +49,21 @@ jobs:
       - name: web build
         run: pnpm --filter @asi/web build
 
-      - name: safety rules must be honestly marked unreviewed
-        # Guards the release gate. If someone ever removes the review metadata
-        # plumbing, this fails rather than silently shipping un-reviewed red
-        # flag copy to users.
+      # -------------------------------------------------------------------
+      # ISSUE 8: release-safety metadata must be COMPLETE, not merely present.
+      #
+      # The previous version grepped a number out of the health payload and
+      # treated an empty match as success. That means a renamed field, a changed
+      # response shape, or a server that never started would all read as green.
+      # This step parses the JSON, requires every field, requires the rule count
+      # to be a positive integer, and fails loudly otherwise.
+      # -------------------------------------------------------------------
+      - name: release-safety metadata is well formed
         run: |
           pnpm --filter @asi/server start &
           for i in $(seq 1 30); do
             if curl -sf http://localhost:8787/api/health >/dev/null; then break; fi
             sleep 1
           done
-          count=$(curl -s http://localhost:8787/api/health | grep -o '"unreviewedSafetyRules":[0-9]*' | cut -d: -f2)
-          echo "unreviewed red-flag rules: $count"
-          if [ "$count" = "0" ]; then
-            echo "::warning::No unreviewed red-flag rules. If clinical review has"
-            echo "::warning::not actually happened, the review metadata was removed."
-          fi
+          curl -sf http://localhost:8787/api/health -o /tmp/health.json
+          node scripts/check-safety-metadata.mjs /tmp/health.json
