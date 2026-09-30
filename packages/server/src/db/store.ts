@@ -357,6 +357,12 @@ export function applyMutations(episodeId: string, input: ApplyInput, profile: Re
     const rebuilt = rebuildRecord(episodeId, ep.region);
     run(`UPDATE episodes SET record_json = ?, updated_at = ? WHERE id = ?`, JSON.stringify(rebuilt), now(), episodeId);
 
+    // 3b. Keep the spatial index in step with the record. See syncSpatialIndex:
+    // body_regions is a derived index of where episodes are, and it was never
+    // being updated, so point_x/point_y and sub_region_id were permanently NULL
+    // and the personal health map had nothing to draw.
+    syncSpatialIndex(episodeId, rebuilt);
+
     // 4. Safety, from the answer-derived signals.
     const answers = answersFor(episodeId);
     const safety = evaluateSafety(rebuilt, {
@@ -430,6 +436,53 @@ function rebuildRecord(episodeId: string, region: string): SymptomRecord {
 
 function readRecord(episodeId: string, region: string): SymptomRecord {
   return rebuildRecord(episodeId, region);
+}
+
+/**
+ * Keep `body_regions` in step with the record it indexes.
+ *
+ * `body_regions` is a DERIVED spatial index: it exists so the personal
+ * anatomical health map can group episodes by place and read a pin coordinate
+ * without scanning every record. It is not a second source of truth, so it is
+ * rebuilt from the record rather than written by the client.
+ *
+ * This was missing, and the effect was that `point_x`, `point_y` and
+ * `sub_region_id` were permanently NULL. `createEpisode` called `ensureRegion`
+ * with nulls BEFORE the mutations were applied, and nothing called it again, so a
+ * pin the user placed on the body map never reached the table that exists to hold
+ * it. The health map had a count per place and no geography. The Phase-0
+ * "heatmap" was a column and a comment.
+ *
+ * Called from `applyMutations` rather than from the HTTP layer, so it is inside
+ * the one transaction that writes the record. A pin cannot be stored without the
+ * index following it, and the index cannot drift from the record.
+ */
+function syncSpatialIndex(episodeId: string, record: SymptomRecord): void {
+  const ep = get<{ region_id: string; side: string }>(
+    `SELECT region_id, side FROM episodes WHERE id = ?`, episodeId,
+  );
+  if (!ep) return;
+  const store = fieldStoreFor(episodeId);
+  const loc = record.location;
+
+  // `location.side` carries a schema DEFAULT of 'unknown'. A record where the
+  // user never chose a side has not said "unknown" -- they have not said
+  // anything -- and copying that default over the region row would drag every
+  // place to 'unknown' and collapse left and right into one. Localisation's side
+  // stands unless the field store holds an actual side.
+  const side = store['location.side'] ? loc.side : ep.side;
+
+  run(
+    `UPDATE body_regions
+        SET side = ?, sub_region_id = ?, point_x = ?, point_y = ?, updated_at = ?
+      WHERE id = ?`,
+    side,
+    loc.subRegionId ?? null,
+    loc.point?.x ?? null,
+    loc.point?.y ?? null,
+    now(),
+    ep.region_id,
+  );
 }
 
 /* ------------------------------------------------------------------ */
