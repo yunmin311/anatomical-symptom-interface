@@ -14,7 +14,7 @@
 | UI | React | 19 | Largest ecosystem; nothing here is exotic. |
 | Build | Vite | 6 | Instant HMR, proxy to the API in dev, one alias for workspace source. |
 | State | Zustand | 5 | One store, no provider tree, no boilerplate for a session this shape. |
-| Tests | `node:test` | built-in | No runner dependency. 213 unit tests + 38 API smoke tests. |
+| Tests | `node:test` | built-in | No runner dependency. 225 unit tests + 38 API smoke tests. |
 | Model | Anthropic Claude via `fetch` | — | Tool-use to force schema-shaped output. Optional: product works without it. |
 
 ## Deliberately NOT used yet
