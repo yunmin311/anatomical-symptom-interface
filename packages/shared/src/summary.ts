@@ -25,7 +25,7 @@
  */
 import { REGIONS, getStructure } from './anatomy.ts';
 import type { BodyRegion } from './anatomy.ts';
-import { QUALITY_LABELS } from './symptom.ts';
+import { QUALITY_LABELS, projectUserSelection } from './symptom.ts';
 import type { Episode, Quality, SymptomRecord, Trigger } from './symptom.ts';
 import type { SafetyFlag, WithheldFlag } from './rules/redflags.ts';
 import type { AnswerMap } from './answers.ts';
@@ -194,7 +194,10 @@ export interface SummaryOptions {
 }
 
 export function buildPreVisitSummary(episode: Episode, opts: SummaryOptions = {}): PreVisitSummary {
-  const record = episode.record;
+  // Projected first, so the two structure lists below can never overlap even if
+  // a caller hands us a hand-built record. The canonical set is the id list;
+  // the per-candidate flag is derived from it and ignored.
+  const record = projectUserSelection(episode.record);
   const region = REGIONS[record.location.region as BodyRegion];
   const t = record.temporal;
   const prior = opts.priorEpisodes ?? [];
@@ -231,7 +234,6 @@ export function buildPreVisitSummary(episode: Episode, opts: SummaryOptions = {}
     // not confirmation of anything except a location.
     history.push({ label: 'Areas pointed to on the body map', value: selected.join(', ') });
   }
-
   history.push({ label: 'Quality', value: render(coverage, 'quality', joinOr(qualities, NOT_ASKED_LABEL)) });
   history.push({
     label: 'Triggers',
@@ -308,6 +310,9 @@ export function buildPreVisitSummary(episode: Episode, opts: SummaryOptions = {}
     history.push({ label: 'Prior conditions', value: joinOr(record.context.priorConditions, NOT_ASKED_LABEL) });
   }
 
+  // Derived from the projected flag, so a structure cannot appear in both
+  // lists. `selected` above comes from the canonical id set; this is everything
+  // the model suggested that the user did not act on.
   const unselected = record.consideredStructures
     .filter((s) => !s.selectedByUser)
     .map((s) => getStructure(s.structureId)?.label ?? s.structureId);

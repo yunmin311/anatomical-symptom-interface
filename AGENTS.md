@@ -47,6 +47,12 @@ These are architecture, not style. Do not weaken them to make a task easier.
    "visual selection". Never "confirmed". The word must not appear in a summary.
    Deselecting a structure clears the user's selection and **keeps the candidate**:
    the suggestion is evidence of what was considered, and deleting it is lossy.
+   `location.userSelectedStructureIds` is the ONLY source of truth for user
+   selection; `consideredStructures[].selectedByUser` is a derived projection of
+   it. Never write that flag by hand — change the id set and let
+   `projectUserSelection` recompute it. Two writable copies of one fact
+   produced records where a candidate read as both selected and unselected, and
+   the summary then listed it under both headings.
 
 8. **Safety signals are region-scoped.** `signalsFromAnswers(answers, region)` combines
    only the questions that region's interview actually asks, so a stale answer from
@@ -118,7 +124,7 @@ pnpm dev                      # server :8787 + web :5173
 pnpm typecheck                # all packages — must pass before commit
 pnpm test                     # unit tests across all three packages
 pnpm seed                     # reset to demo history (DESTRUCTIVE, rebuilds the DB)
-node scripts/smoke.mjs        # 35 API checks, needs a running server
+node scripts/smoke.mjs        # 37 API checks, needs a running server
 node scripts/check-safety-metadata.mjs <health.json>
 pnpm --filter @asi/web build
 ```
@@ -134,7 +140,7 @@ so a clean checkout and CI behave the same way.
 - [ ] `pnpm test` passes
 - [ ] New logic has a test, especially anything touching provenance, safety, answers
       or the field registry
-- [ ] `scripts/smoke.mjs` still 35/35 if you touched the server
+- [ ] `scripts/smoke.mjs` still 37/37 if you touched the server
 - [ ] `scripts/check-safety-metadata.mjs` passes against a running server
 - [ ] The unreviewed-rules count is still reported honestly — if it went to zero
       without clinical review, something bypassed the review metadata, which is a bug

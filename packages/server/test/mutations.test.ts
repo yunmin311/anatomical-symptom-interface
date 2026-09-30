@@ -16,7 +16,7 @@ process.env.ASI_DB_PATH = join(dir, 'test.sqlite');
 process.env.ASI_RELEASE_PROFILE = 'development';
 
 const store = await import('../src/db/store.ts');
-const { emptyRecord, FieldPolicyError, signalsFromAnswers, writablePaths, buildAnswer, putAnswer } = await import('@asi/shared');
+const { emptyRecord, FieldPolicyError, signalsFromAnswers, userSelectionIsConsistent, writablePaths, buildAnswer, putAnswer } = await import('@asi/shared');
 type Provenance = import('@asi/shared').Provenance;
 
 const CAPTURED = '2026-01-01T00:00:00.000Z';
@@ -325,6 +325,135 @@ test('ISSUE 5: an unanswered negative is never rendered as a negative', () => {
   assert.match(text, /Systemic symptoms: not asked/);
   assert.doesNotMatch(text, /Systemic symptoms: none reported/);
   assert.doesNotMatch(text, /Sleep affected: No/);
+});
+
+/* ================================================================== */
+/* Canonical user selection survives a rebuild                         */
+/* ================================================================== */
+
+const PATELLA = 'asi:knee.patella';
+const MENISCUS = 'asi:knee.meniscus-medial';
+
+const selectionProv = (over: Partial<Provenance> = {}): Provenance => ({
+  sourceType: 'user_selection',
+  verificationStatus: 'user_confirmed',
+  createdBy: 'user',
+  capturedAt: CAPTURED,
+  ...over,
+});
+
+const candidates = (patellaSelected: boolean) => [
+  { structureId: PATELLA, rationale: 'You described something near the kneecap.', confidence: 0.5, selectedByUser: patellaSelected },
+  { structureId: MENISCUS, rationale: 'Nearby structure.', confidence: 0.4, selectedByUser: false },
+];
+
+test('rebuild recomputes the candidate flag from the canonical id set', () => {
+  const ep = newEpisode('knee');
+  store.applyMutations(ep.id, {
+    fieldMutations: [
+      mut('location.userSelectedStructureIds', [PATELLA], selectionProv()),
+      // The client ALSO claims a selection on a candidate that is not in the
+      // canonical set. The canonical set must win.
+      mut('consideredStructures', candidates(true), prov({ sourceType: 'ai_inference', verificationStatus: 'unverified', createdBy: 'model', confidence: 0.5 })),
+    ],
+  });
+
+  const rec = store.getEpisode(ep.id)!.record;
+  assert.deepEqual(rec.location.userSelectedStructureIds, [PATELLA]);
+  assert.equal(
+    rec.consideredStructures.find((c) => c.structureId === PATELLA)?.selectedByUser,
+    true,
+    'the candidate IS in the canonical set, so it projects as selected',
+  );
+  assert.equal(
+    rec.consideredStructures.find((c) => c.structureId === MENISCUS)?.selectedByUser,
+    false,
+  );
+});
+
+test('a stale unselected flag on a selected candidate is corrected on read', () => {
+  const ep = newEpisode('knee');
+  store.applyMutations(ep.id, {
+    fieldMutations: [
+      mut('location.userSelectedStructureIds', [PATELLA], selectionProv()),
+      // Contradiction the other way: canonical set says selected, candidate says no.
+      mut('consideredStructures', candidates(false), prov({ sourceType: 'ai_inference', verificationStatus: 'unverified', createdBy: 'model', confidence: 0.5 })),
+    ],
+  });
+  const rec = store.getEpisode(ep.id)!.record;
+  assert.equal(rec.consideredStructures.find((c) => c.structureId === PATELLA)?.selectedByUser, true);
+  assert.equal(userSelectionIsConsistent(rec), true, 'a persisted contradiction must never be readable');
+});
+
+test('candidate rationale and confidence survive the projection', () => {
+  const ep = newEpisode('knee');
+  store.applyMutations(ep.id, {
+    fieldMutations: [
+      mut('location.userSelectedStructureIds', [PATELLA], selectionProv()),
+      mut('consideredStructures', candidates(false), prov({ sourceType: 'ai_inference', verificationStatus: 'unverified', createdBy: 'model', confidence: 0.5 })),
+    ],
+  });
+  const rec = store.getEpisode(ep.id)!.record;
+  const p = rec.consideredStructures.find((c) => c.structureId === PATELLA)!;
+  assert.equal(p.rationale, 'You described something near the kneecap.');
+  assert.equal(p.confidence, 0.5);
+  assert.equal(rec.consideredStructures.length, 2, 'no candidate may be added or dropped');
+});
+
+test('the two summary lists never overlap, whatever was persisted', () => {
+  const ep = newEpisode('knee');
+  store.applyMutations(ep.id, {
+    fieldMutations: [
+      mut('location.userSelectedStructureIds', [PATELLA], selectionProv()),
+      mut('consideredStructures', candidates(false), prov({ sourceType: 'ai_inference', verificationStatus: 'unverified', createdBy: 'model', confidence: 0.5 })),
+    ],
+  });
+  const { summary } = store.summaryFor(ep.id, 'development')!;
+  assert.deepEqual(summary.visualSelections, ['Patella']);
+  assert.deepEqual(summary.unselectedSuggestions, ['Medial meniscus']);
+  const overlap = summary.visualSelections.filter((v) => summary.unselectedSuggestions.includes(v));
+  assert.deepEqual(overlap, []);
+});
+
+test('clearing the selection keeps the candidate as a suggestion', () => {
+  const ep = newEpisode('knee');
+  const ai = prov({ sourceType: 'ai_inference', verificationStatus: 'unverified', createdBy: 'model', confidence: 0.5 });
+  store.applyMutations(ep.id, {
+    fieldMutations: [
+      mut('location.userSelectedStructureIds', [PATELLA], selectionProv()),
+      mut('consideredStructures', candidates(false), ai),
+    ],
+  });
+  store.applyMutations(ep.id, {
+    fieldMutations: [
+      mut('location.userSelectedStructureIds', [], prov({ sourceType: 'user_edited' })),
+      mut('consideredStructures', candidates(false), ai),
+    ],
+  });
+
+  const rec = store.getEpisode(ep.id)!.record;
+  assert.deepEqual(rec.location.userSelectedStructureIds, []);
+  assert.equal(rec.consideredStructures.length, 2, 'the candidate must not be deleted');
+  assert.equal(rec.consideredStructures.find((c) => c.structureId === PATELLA)?.selectedByUser, false);
+
+  const { summary } = store.summaryFor(ep.id, 'development')!;
+  assert.deepEqual(summary.visualSelections, []);
+  assert.deepEqual(summary.unselectedSuggestions, ['Patella', 'Medial meniscus']);
+});
+
+test('a selected id the model never suggested is still a visual selection', () => {
+  const ep = newEpisode('knee');
+  store.applyMutations(ep.id, {
+    fieldMutations: [
+      mut('location.userSelectedStructureIds', ['asi:knee.lcl'], selectionProv()),
+      mut('consideredStructures', candidates(false), prov({ sourceType: 'ai_inference', verificationStatus: 'unverified', createdBy: 'model', confidence: 0.5 })),
+    ],
+  });
+  const rec = store.getEpisode(ep.id)!.record;
+  assert.deepEqual(rec.location.userSelectedStructureIds, ['asi:knee.lcl']);
+  assert.equal(rec.consideredStructures.some((c) => c.structureId === 'asi:knee.lcl'), false, 'no candidate is invented');
+  const { summary } = store.summaryFor(ep.id, 'development')!;
+  assert.deepEqual(summary.visualSelections, ['Lateral collateral ligament']);
 });
 
 test('the plain-text summary is deterministic apart from its timestamp', () => {

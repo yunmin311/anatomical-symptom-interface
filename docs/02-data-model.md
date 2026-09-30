@@ -225,6 +225,17 @@ Splitting them means the type system makes it impossible to render a candidate a
 finding, and impossible for a bug in one code path to promote a candidate. The summary
 generator reads them as two separate sections for exactly this reason.
 
+**`userSelectedStructureIds` is the only source of truth for user selection.**
+`consideredStructures[].selectedByUser` is a *derived projection* of that id set,
+recomputed by `projectUserSelection` in the store's `rebuildRecord`, in the
+client's select/deselect, and once more in `buildPreVisitSummary`. Two
+independently writable copies of one fact could disagree, and a disagreeing
+record listed a structure as both "an area you pointed to" and "suggested, not
+acted on" — two different claims about the same structure, in a document a
+clinician reads. The flag is therefore ignored on write, and `rationale`,
+`confidence` and `structureId` are preserved exactly.
+`userSelectionIsConsistent` exposes the invariant for tests.
+
 **`gaps` is missing information, and only that.** A gap is a dotted path into the
 record with no stored value, derived by the store from the field registry. It must
 never contain an answer marker, and it never does: answer state lives in

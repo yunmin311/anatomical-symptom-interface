@@ -199,3 +199,46 @@ export function emptyRecord(region: z.infer<typeof BodyRegionSchema> = 'shoulder
     gaps: [],
   });
 }
+
+/**
+ * THE CANONICAL PROJECTION FOR USER VISUAL SELECTION.
+ *
+ * `location.userSelectedStructureIds` is the single source of truth for "the
+ * user pointed at this". `consideredStructures[].selectedByUser` is a DERIVED
+ * convenience for rendering, and is recomputed here from the canonical set.
+ *
+ * Why this has to be a projection and not a second source of truth: the two
+ * encoded the same fact independently, so a client could write them
+ * inconsistently and produce a record where the same candidate read as
+ * simultaneously selected and unselected. The summary then reported the
+ * structure in BOTH "areas you pointed to" and "suggested, not acted on".
+ *
+ * So the flag is ignored on write. Whatever a client or a stale row says,
+ * the answer comes from the id set. Everything else about a candidate —
+ * `structureId`, `rationale`, `confidence` — is preserved exactly.
+ *
+ * Non-mutating: it returns a new record so a caller holding an Episode cannot
+ * have it silently rewritten underneath them.
+ *
+ * A selected id with no matching candidate is fine and is left alone: the user
+ * may point at a structure the model never suggested, and the canonical set is
+ * what the summary reports as a visual selection.
+ */
+export function projectUserSelection(record: SymptomRecord): SymptomRecord {
+  const selected = new Set(record.location.userSelectedStructureIds);
+  const considered = record.consideredStructures.map((c) => {
+    const shouldBeSelected = selected.has(c.structureId);
+    return c.selectedByUser === shouldBeSelected ? c : { ...c, selectedByUser: shouldBeSelected };
+  });
+  return { ...record, consideredStructures: considered };
+}
+
+/**
+ * True when the projection is consistent: no candidate claims a selection
+ * state that contradicts the canonical id set. Exported so a test can assert
+ * the invariant directly rather than inferring it.
+ */
+export function userSelectionIsConsistent(record: SymptomRecord): boolean {
+  const selected = new Set(record.location.userSelectedStructureIds);
+  return record.consideredStructures.every((c) => c.selectedByUser === selected.has(c.structureId));
+}

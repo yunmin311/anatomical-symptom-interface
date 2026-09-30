@@ -126,9 +126,16 @@ export type Location = z.infer<typeof LocationSchema>;
 /**
  * A structure the model surfaced, and whether the user went on to point at it.
  *
- * `selectedByUser` means exactly one thing: the user clicked this structure on
- * the anatomy map. It is a statement about a VISUAL LOCATION, not a claim that
- * this structure is the source of the problem. A patient who taps the nearest
+ * `selectedByUser` is a DERIVED PROJECTION, not an input. It is recomputed from
+ * `location.userSelectedStructureIds` — the canonical set — every time a record
+ * is rebuilt or projected, so whatever is persisted here is ignored. Two
+ * independently writable copies of the same fact could disagree, and a
+ * disagreeing record reads as "the user both selected and did not select this
+ * structure". See `projectUserSelection` in symptom.ts.
+ *
+ * What a selection means, once: the user clicked this structure on the anatomy
+ * map. It is a statement about a VISUAL LOCATION, not a claim that this
+ * structure is the source of the problem. A patient who taps the nearest
  * landmark to their pain has told us where it is, which is the point of the
  * product — but they have not told us what is wrong with it.
  * See docs/adr/0004-visual-selection-is-not-a-finding.md.

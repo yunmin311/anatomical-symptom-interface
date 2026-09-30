@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { emptyRecord, signalsFromAnswers, triStateOf } from '@asi/shared';
+import { emptyRecord, signalsFromAnswers, triStateOf, userSelectionIsConsistent } from '@asi/shared';
 import type { AnswerMap, SymptomRecord } from '@asi/shared';
 import {
   applyLocalisation,
@@ -195,11 +195,11 @@ test('an "I am not sure" answer is not re-asked but stays outstanding', () => {
 /* ================================================================== */
 
 test('ISSUE 3: selecting a structure records a selection, not a confirmation', () => {
-  const record = emptyRecord('shoulder');
+  let record = emptyRecord('shoulder');
   record.consideredStructures = [
     { structureId: 'asi:shoulder.biceps-long-head-tendon', confidence: 0.5, selectedByUser: false },
   ];
-  selectStructure(record, 'asi:shoulder.biceps-long-head-tendon');
+  record = selectStructure(record, 'asi:shoulder.biceps-long-head-tendon');
   assert.deepEqual(record.location.userSelectedStructureIds, ['asi:shoulder.biceps-long-head-tendon']);
   assert.equal(record.consideredStructures[0]?.selectedByUser, true);
   // No field anywhere claims a structure was confirmed as a problem.
@@ -207,14 +207,28 @@ test('ISSUE 3: selecting a structure records a selection, not a confirmation', (
 });
 
 test('selecting twice does not duplicate the selection', () => {
-  const record = emptyRecord('knee');
-  selectStructure(record, 'asi:knee.patella');
-  selectStructure(record, 'asi:knee.patella');
+  let record = emptyRecord('knee');
+  record = selectStructure(record, 'asi:knee.patella');
+  record = selectStructure(record, 'asi:knee.patella');
   assert.deepEqual(record.location.userSelectedStructureIds, ['asi:knee.patella']);
 });
 
+test('select writes only the canonical set, and the flag is derived', () => {
+  let record = emptyRecord('knee');
+  record.consideredStructures = [
+    { structureId: 'asi:knee.patella', confidence: 0.5, selectedByUser: false },
+  ];
+  const before = record.consideredStructures[0];
+  record = selectStructure(record, 'asi:knee.patella');
+  // The candidate object is not hand-edited; projectUserSelection derives the
+  // flag from the id set, so the two cannot drift apart.
+  assert.equal(before.selectedByUser, false, 'the input candidate must not be mutated in place');
+  assert.equal(record.consideredStructures[0]?.selectedByUser, true);
+  assert.equal(userSelectionIsConsistent(record), true);
+});
+
 test('deselecting clears the user state but PRESERVES the candidate', () => {
-  const record = emptyRecord('knee');
+  let record = emptyRecord('knee');
   const candidate = {
     structureId: 'asi:knee.patella',
     rationale: 'You described something near the kneecap.',
@@ -222,8 +236,8 @@ test('deselecting clears the user state but PRESERVES the candidate', () => {
     selectedByUser: false,
   };
   record.consideredStructures = [candidate];
-  selectStructure(record, 'asi:knee.patella');
-  deselectStructure(record, 'asi:knee.patella');
+  record = selectStructure(record, 'asi:knee.patella');
+  record = deselectStructure(record, 'asi:knee.patella');
 
   // The user's selection is gone.
   assert.deepEqual(record.location.userSelectedStructureIds, []);
@@ -238,28 +252,29 @@ test('deselecting clears the user state but PRESERVES the candidate', () => {
 });
 
 test('select then deselect is a lossless round trip', () => {
-  const record = emptyRecord('knee');
+  let record = emptyRecord('knee');
   record.consideredStructures = [
     { structureId: 'asi:knee.patella', confidence: 0.5, selectedByUser: false },
     { structureId: 'asi:knee.meniscus-medial', confidence: 0.4, selectedByUser: false },
   ];
   const before = JSON.stringify(record.consideredStructures);
 
-  selectStructure(record, 'asi:knee.patella');
-  deselectStructure(record, 'asi:knee.patella');
+  record = selectStructure(record, 'asi:knee.patella');
+  record = deselectStructure(record, 'asi:knee.patella');
 
   assert.equal(JSON.stringify(record.consideredStructures), before, 'the round trip must be lossless');
+  assert.deepEqual(record.location.userSelectedStructureIds, []);
 });
 
 test('deselecting one structure leaves the other candidate untouched', () => {
-  const record = emptyRecord('knee');
+  let record = emptyRecord('knee');
   record.consideredStructures = [
     { structureId: 'asi:knee.patella', confidence: 0.5, selectedByUser: false },
     { structureId: 'asi:knee.meniscus-medial', confidence: 0.4, selectedByUser: false },
   ];
-  selectStructure(record, 'asi:knee.patella');
-  selectStructure(record, 'asi:knee.meniscus-medial');
-  deselectStructure(record, 'asi:knee.patella');
+  record = selectStructure(record, 'asi:knee.patella');
+  record = selectStructure(record, 'asi:knee.meniscus-medial');
+  record = deselectStructure(record, 'asi:knee.patella');
 
   assert.deepEqual(record.location.userSelectedStructureIds, ['asi:knee.meniscus-medial']);
   assert.equal(record.consideredStructures[0]?.selectedByUser, false);
@@ -268,12 +283,24 @@ test('deselecting one structure leaves the other candidate untouched', () => {
 });
 
 test('deselecting something that was never selected is a no-op', () => {
-  const record = emptyRecord('knee');
+  let record = emptyRecord('knee');
   record.consideredStructures = [
     { structureId: 'asi:knee.patella', confidence: 0.5, selectedByUser: false },
   ];
-  deselectStructure(record, 'asi:knee.patella');
+  record = deselectStructure(record, 'asi:knee.patella');
   assert.equal(record.consideredStructures.length, 1);
+  assert.equal(record.consideredStructures[0]?.selectedByUser, false);
+  assert.deepEqual(record.location.userSelectedStructureIds, []);
+});
+
+test('selecting a structure with no candidate does not invent one', () => {
+  let record = emptyRecord('knee');
+  record.consideredStructures = [
+    { structureId: 'asi:knee.patella', confidence: 0.5, selectedByUser: false },
+  ];
+  record = selectStructure(record, 'asi:knee.lcl');
+  assert.deepEqual(record.location.userSelectedStructureIds, ['asi:knee.lcl']);
+  assert.equal(record.consideredStructures.length, 1, 'no candidate may be created');
   assert.equal(record.consideredStructures[0]?.selectedByUser, false);
 });
 

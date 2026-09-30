@@ -23,6 +23,7 @@ import {
   FieldPolicyError,
   getFieldPolicy,
   mergeField,
+  projectUserSelection,
   QuestionAnswerSchema,
   renderPlainText,
   signalsFromAnswers,
@@ -397,6 +398,18 @@ function setPath(target: Record<string, unknown>, path: string, value: unknown):
  * registry fields have no value — which is the only thing that should ever
  * populate it, and guarantees it can never contain an answer marker.
  */
+/**
+ * Rebuild the record from the field store. Two things are DERIVED here and are
+ * never read from the field store directly:
+ *
+ *  - `gaps` from which registry fields have no value. `gaps` means MISSING
+ *    INFORMATION ONLY, which is what makes it incapable of holding an answer
+ *    marker.
+ *  - `consideredStructures[].selectedByUser` from
+ *    `location.userSelectedStructureIds`. The id set is canonical; a client
+ *    that writes a contradictory flag has it overwritten here, so the record
+ *    can never read as a candidate being both selected and unselected.
+ */
 function rebuildRecord(episodeId: string, region: string): SymptomRecord {
   const record = emptyRecord(region as never);
   const store = fieldStoreFor(episodeId);
@@ -412,7 +425,7 @@ function rebuildRecord(episodeId: string, region: string): SymptomRecord {
       const v = store[p]?.value;
       return v === null || v === undefined || v === 'unknown' || v === 'no' || v === '' || (Array.isArray(v) && v.length === 0);
     });
-  return SymptomRecordSchema.parse(record);
+  return SymptomRecordSchema.parse(projectUserSelection(record));
 }
 
 function readRecord(episodeId: string, region: string): SymptomRecord {

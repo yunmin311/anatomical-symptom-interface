@@ -125,8 +125,9 @@ export const FIELD_POLICIES: readonly FieldPolicy[] = Object.freeze([
     requiresUserSource: true,
     allowedSources: ['user_selection', 'user_edited'],
     note:
-      'VISUAL SELECTION ONLY: structures the user pointed at on the model. ' +
-      'Not a finding, not a diagnosis site. AI may never write this field.',
+      'CANONICAL source of user visual selection: the structures the user pointed at on the model. ' +
+      'Not a finding, not a diagnosis site. AI may never write this field. ' +
+      'consideredStructures[].selectedByUser is derived from this set and is not independently writable.',
   },
   {
     path: 'consideredStructures',
@@ -135,7 +136,10 @@ export const FIELD_POLICIES: readonly FieldPolicy[] = Object.freeze([
     strategy: 'mixed',
     requiresUserSource: false,
     allowedSources: ['ai_inference', 'system_rule', 'user_selection', 'user_edited'],
-    note: 'Model candidates plus their selection state. Candidates are never promoted here implicitly.',
+    note:
+      'Model candidates. The `selectedByUser` flag inside each entry is IGNORED on write: it is ' +
+      'recomputed from location.userSelectedStructureIds, the canonical selection set, on every ' +
+      'rebuild. rationale, confidence and structureId are persisted as given.',
   },
   {
     path: 'quality',

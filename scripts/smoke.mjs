@@ -403,6 +403,85 @@ await check('a grounded episode gets a region question', async () => {
 
 /* ---------------- ISSUE 5 + 3: the summary ---------------- */
 
+await check('a client cannot make a candidate both selected and unselected', async () => {
+  // The client writes a candidate flag that CONTRADICTS the canonical id set:
+  // it claims 'selected' for a structure the user did not select. The canonical
+  // set must win, and the summary must never list it in both sections.
+  const r = await post('/episodes', {
+    personId: 'smoke',
+    grounding: { status: 'grounded', region: 'knee', side: 'left' },
+    mutations: [
+      {
+        fieldPath: 'location.userSelectedStructureIds',
+        value: ['asi:knee.patella'],
+        provenance: { sourceType: 'user_selection', verificationStatus: 'user_confirmed', createdBy: 'user' },
+      },
+      {
+        // Both candidates present, but the flags are deliberately wrong: patella
+        // (which IS selected) says false, meniscus (which is NOT) says true.
+        fieldPath: 'consideredStructures',
+        value: [
+          { structureId: 'asi:knee.patella', rationale: 'Near the kneecap.', confidence: 0.5, selectedByUser: false },
+          { structureId: 'asi:knee.meniscus-medial', rationale: 'Nearby structure.', confidence: 0.4, selectedByUser: true },
+        ],
+        provenance: { sourceType: 'ai_inference', verificationStatus: 'unverified', createdBy: 'seed', confidence: 0.5 },
+      },
+    ],
+  });
+  if (r.status !== 201) return `${r.status} ${JSON.stringify(r.body).slice(0, 160)}`;
+  const id = r.body.id;
+
+  const ep = await get(`/api/episodes/${id}`);
+  const by = (sid) => ep.record.consideredStructures.find((c) => c.structureId === sid);
+  if (by('asi:knee.patella')?.selectedByUser !== true) return 'the canonical selection was not applied on read';
+  if (by('asi:knee.meniscus-medial')?.selectedByUser !== false) return 'a stale selected flag survived';
+
+  // Rationale and confidence are untouched by the projection.
+  if (by('asi:knee.patella')?.rationale !== 'Near the kneecap.') return 'rationale was altered';
+  if (by('asi:knee.meniscus-medial')?.confidence !== 0.4) return 'confidence was altered';
+  if (ep.record.consideredStructures.length !== 2) return 'a candidate was added or dropped';
+
+  const { summary } = await get(`/api/episodes/${id}/summary`);
+  const overlap = summary.visualSelections.filter((v) => summary.unselectedSuggestions.includes(v));
+  if (overlap.length) return `listed in both sections: ${JSON.stringify(overlap)}`;
+  if (JSON.stringify(summary.visualSelections) !== JSON.stringify(['Patella'])) {
+    return `visualSelections=${JSON.stringify(summary.visualSelections)}`;
+  }
+  if (JSON.stringify(summary.unselectedSuggestions) !== JSON.stringify(['Medial meniscus'])) {
+    return `unselectedSuggestions=${JSON.stringify(summary.unselectedSuggestions)}`;
+  }
+  return true;
+});
+
+await check('a selected id the model never suggested is still a visual selection', async () => {
+  const r = await post('/episodes', {
+    personId: 'smoke',
+    grounding: { status: 'grounded', region: 'knee', side: 'left' },
+    mutations: [
+      {
+        fieldPath: 'location.userSelectedStructureIds',
+        value: ['asi:knee.lcl'],
+        provenance: { sourceType: 'user_selection', verificationStatus: 'user_confirmed', createdBy: 'user' },
+      },
+      {
+        fieldPath: 'consideredStructures',
+        value: [],
+        provenance: { sourceType: 'ai_inference', verificationStatus: 'unverified', createdBy: 'seed', confidence: 0.5 },
+      },
+    ],
+  });
+  const ep = await get(`/api/episodes/${r.body.id}`);
+  if (JSON.stringify(ep.record.location.userSelectedStructureIds) !== JSON.stringify(['asi:knee.lcl'])) {
+    return 'the selection was lost';
+  }
+  if (ep.record.consideredStructures.length !== 0) return 'a candidate was invented';
+  const { summary } = await get(`/api/episodes/${r.body.id}/summary`);
+  if (JSON.stringify(summary.visualSelections) !== JSON.stringify(['Lateral collateral ligament'])) {
+    return `visualSelections=${JSON.stringify(summary.visualSelections)}`;
+  }
+  return true;
+});
+
 await check('an unanswered field is rendered as "not asked", never a negative', async () => {
   const { summary } = await get(`/api/episodes/${episodeId}/summary`);
   const find = (label) => summary.history.find((h) => h.label === label)?.value;

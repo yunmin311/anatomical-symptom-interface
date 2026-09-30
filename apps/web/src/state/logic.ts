@@ -19,6 +19,7 @@ import {
   evaluateSafety,
   getStructure,
   nextQuestion,
+  projectUserSelection,
   putAnswer,
   questionProgress,
   signalsFromAnswers,
@@ -168,14 +169,22 @@ export function progressOf(record: SymptomRecord, answers: AnswerMap) {
 /* Visual selection — a location, not a finding                       */
 /* ------------------------------------------------------------------ */
 
+/**
+ * Select a structure. Writes ONLY the canonical field.
+ *
+ * The per-candidate `selectedByUser` flag is a derived projection, recomputed
+ * by `projectUserSelection` — the same function the server uses in
+ * `rebuildRecord` — so the local view and the persisted record cannot disagree
+ * about what the user selected.
+ */
 export function selectStructure(record: SymptomRecord, structureId: string): SymptomRecord {
-  record.location.userSelectedStructureIds = [
-    ...new Set([...record.location.userSelectedStructureIds, structureId]),
-  ];
-  record.consideredStructures = record.consideredStructures.map((c) =>
-    c.structureId === structureId ? { ...c, selectedByUser: true } : c,
-  );
-  return record;
+  return projectUserSelection({
+    ...record,
+    location: {
+      ...record.location,
+      userSelectedStructureIds: [...new Set([...record.location.userSelectedStructureIds, structureId])],
+    },
+  });
 }
 
 /**
@@ -187,18 +196,17 @@ export function selectStructure(record: SymptomRecord, structureId: string): Sym
  * the candidate on deselect threw that information away, and made select →
  * deselect → select a lossy round trip that permanently changed the record.
  *
- * So deselect only clears the USER's state: the id leaves
- * `userSelectedStructureIds` and the candidate returns to
- * `selectedByUser: false`. Nothing else changes.
+ * So deselect only removes the id from the canonical set. The candidate stays
+ * exactly as the model left it, and the derived flag flips back on its own.
  */
 export function deselectStructure(record: SymptomRecord, structureId: string): SymptomRecord {
-  record.location.userSelectedStructureIds = record.location.userSelectedStructureIds.filter(
-    (x) => x !== structureId,
-  );
-  record.consideredStructures = record.consideredStructures.map((c) =>
-    c.structureId === structureId && c.selectedByUser ? { ...c, selectedByUser: false } : c,
-  );
-  return record;
+  return projectUserSelection({
+    ...record,
+    location: {
+      ...record.location,
+      userSelectedStructureIds: record.location.userSelectedStructureIds.filter((x) => x !== structureId),
+    },
+  });
 }
 
 /** Plain-language label for a structure, preferring the lay term. */

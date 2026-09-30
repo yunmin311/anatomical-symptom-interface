@@ -101,3 +101,32 @@ blurring it.
 - Terminology used elsewhere: "the user pointed at", "the user indicated",
   "visual selection". Never "confirmed", "confirmed diagnosis site", "the
   affected structure".
+
+## One source of truth for the selection
+
+`location.userSelectedStructureIds` is **canonical** for "the user pointed at
+this". `consideredStructures[].selectedByUser` is a **derived projection** of it.
+
+They used to be two independently writable copies of the same fact, which meant a
+client could persist a record where a candidate read as simultaneously selected
+and unselected. The summary then listed the structure under both "areas you
+pointed to" and "suggested, not acted on" — two different claims about the same
+structure, in a document a clinician reads.
+
+So the flag is ignored on write:
+
+```text
+persisted  location.userSelectedStructureIds  ─┐
+                                                ├─→  projectUserSelection()  ──→  consideredStructures[].selectedByUser
+persisted  consideredStructures[].selectedByUser ─┘
+```
+
+`projectUserSelection` runs in the server's `rebuildRecord` (so a contradiction
+can never be *read*) and again in the client's `selectStructure` /
+`deselectStructure` (so the local view matches). `buildPreVisitSummary` projects
+once more, because the guarantee that matters is the one at the last point before
+a clinician reads the text.
+
+`rationale`, `confidence` and `structureId` are never touched by the projection —
+the candidate is the model's evidence about what the user described, and rewriting
+it would be a different kind of data loss.
