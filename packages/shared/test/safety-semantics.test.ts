@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import type { AnswerMap, QuestionAnswer } from '../src/answers.ts';
 import { buildAnswer, putAnswer, triStateOf, normaliseYesNo, isUncertain } from '../src/answers.ts';
 import { applyAnswer, INTERVIEW } from '../src/interview/engine.ts';
-import { QUESTION_SIGNALS, signalIsAskedInRegion, signalsFromAnswers, questionsForSignal } from '../src/safety-signals.ts';
+import { QUESTION_SIGNALS, signalDriversInRegion, signalIsAskedInRegion, signalsFromAnswers, questionsForSignal } from '../src/safety-signals.ts';
 import { ALL_RULES, evaluateSafety, RULES_WITHOUT_QUESTION_SIGNAL, UNREAD_SIGNALS } from '../src/rules/redflags.ts';
 import { emptyRecord } from '../src/symptom.ts';
 import type { SymptomRecord } from '../src/symptom.ts';
@@ -212,26 +212,28 @@ test('ISSUE 1: every urgent/emergency rule reads at least one signal', () => {
 });
 
 test('ISSUE 1: each safety question can move its signal on its own', () => {
-  // A single driving question must be able to set the signal.
+  // A single driving question must be able to set the signal, in its OWN region.
   for (const [questionId, signal] of Object.entries(QUESTION_SIGNALS)) {
-    const onYes = signalsFromAnswers(answersOf([questionId, 'yes']))[signal];
+    const region = questionId.split('.')[0] as BodyRegion;
+    const onYes = signalsFromAnswers(answersOf([questionId, 'yes']), region)[signal];
     assert.equal(onYes, 'yes', `${questionId} did not set ${signal} on yes`);
   }
-  // 'no' is only meaningful when EVERY question driving the signal said no.
+  // 'no' is only meaningful when EVERY applicable driver said no.
   for (const [questionId, signal] of Object.entries(QUESTION_SIGNALS)) {
-    const drivers = questionsForSignal(signal);
+    const region = questionId.split('.')[0] as BodyRegion;
+    const drivers = questionsForSignal(signal).filter((d) => d.split('.')[0] === region);
     const allNo = drivers.map((d) => [d, 'no'] as [string, 'no']);
     assert.equal(
-      signalsFromAnswers(answersOf(...allNo))[signal],
+      signalsFromAnswers(answersOf(...allNo), region)[signal],
       'no',
-      `${questionId}: all drivers answered no must yield "no"`,
+      `${questionId}: all applicable drivers answered no must yield "no"`,
     );
     if (drivers.length > 1) {
-      const onlyThisNo = signalsFromAnswers(answersOf([questionId, 'no']))[signal];
+      const onlyThisNo = signalsFromAnswers(answersOf([questionId, 'no']), region)[signal];
       assert.equal(
         onlyThisNo,
         'not_asked',
-        `${signal} is multi-driver; one "no" with the rest unasked must not read as "no"`,
+        `${signal} is multi-driver in ${region}; one "no" with the rest unasked must not read as "no"`,
       );
     }
   }
@@ -239,36 +241,177 @@ test('ISSUE 1: each safety question can move its signal on its own', () => {
 
 test('a signal driven by two questions combines them, not last-write-wins', () => {
   // fever_or_systemic_unwell is driven by neck.systemic AND lower_back.systemic.
-  // The previous implementation looped over the table and let the second entry
+  // The previous implementation looped the table and let the second entry
   // overwrite the first, silently erasing the neck answer.
-  assert.deepEqual(questionsForSignal('fever_or_systemic_unwell'), ['neck.systemic', 'lower_back.systemic']);
+  assert.deepEqual([...questionsForSignal('fever_or_systemic_unwell')].sort(), ['lower_back.systemic', 'neck.systemic']);
 
-  const neckOnly = signalsFromAnswers(answersOf(['neck.systemic', 'yes']));
+  const neckOnly = signalsFromAnswers(answersOf(['neck.systemic', 'yes']), 'neck');
   assert.equal(neckOnly.fever_or_systemic_unwell, 'yes', 'a neck answer alone must set the signal');
 
-  const lbOnly = signalsFromAnswers(answersOf(['lower_back.systemic', 'yes']));
+  const lbOnly = signalsFromAnswers(answersOf(['lower_back.systemic', 'yes']), 'lower_back');
   assert.equal(lbOnly.fever_or_systemic_unwell, 'yes', 'a lower-back answer alone must set the signal');
 
   // one yes is enough regardless of the other being unanswered
   const mixed = signalsFromAnswers(
     answersOf(['neck.systemic', 'yes'], ['lower_back.systemic', 'no']),
+    'neck',
   );
   assert.equal(mixed.fever_or_systemic_unwell, 'yes');
 
-  // 'no' requires every driving question answered no
+  // 'no' requires every APPLICABLE driver answered no. In a neck episode the
+  // only applicable driver is neck.systemic, so answering it "no" does mean the
+  // signal is "no" - the lower_back driver is simply not part of this episode.
   const allNo = signalsFromAnswers(
     answersOf(['neck.systemic', 'no'], ['lower_back.systemic', 'no']),
+    'neck',
   );
   assert.equal(allNo.fever_or_systemic_unwell, 'no');
-  const oneNo = signalsFromAnswers(answersOf(['neck.systemic', 'no']));
-  assert.equal(oneNo.fever_or_systemic_unwell, 'not_asked', 'one no and one unasked is not "no"');
+  const oneNo = signalsFromAnswers(answersOf(['neck.systemic', 'no']), 'neck');
+  assert.equal(
+    oneNo.fever_or_systemic_unwell,
+    'no',
+    'in a neck episode the only applicable driver said no, so the signal is no',
+  );
+  // But an APPLICABLE driver that was never asked is still outstanding.
+  const askedNothing = signalsFromAnswers(answersOf(), 'neck');
+  assert.equal(askedNothing.fever_or_systemic_unwell, 'not_asked');
+  // And a different region's answer must not stand in for it.
+  const wrongRegion = signalsFromAnswers(answersOf(['lower_back.systemic', 'no']), 'neck');
+  assert.equal(
+    wrongRegion.fever_or_systemic_unwell,
+    'not_asked',
+    'a lower-back answer is not a neck answer',
+  );
 });
 
 test('an unknown answer outranks a no when combining signals', () => {
   const s = signalsFromAnswers(
     answersOf(['neck.systemic', 'no'], ['lower_back.systemic', 'unknown']),
+    'lower_back',
   );
   assert.equal(s.fever_or_systemic_unwell, 'unknown', 'an indeterminate answer must not become "no"');
+});
+
+/* ================================================================== */
+/* Region scoping: only applicable questions participate               */
+/* ================================================================== */
+
+test('a signal combines only the questions the region asks', () => {
+  // lower_back.systemic is a real answer, but it is a LOWER BACK question.
+  // For a knee episode it was never asked, so it must not participate.
+  const answers = answersOf(['lower_back.systemic', 'yes']);
+
+  const knee = signalsFromAnswers(answers, 'knee');
+  assert.equal(
+    knee.fever_or_systemic_unwell,
+    'not_asked',
+    'a lower-back answer must not set a signal on a knee episode',
+  );
+
+  const lowerBack = signalsFromAnswers(answers, 'lower_back');
+  assert.equal(lowerBack.fever_or_systemic_unwell, 'yes', 'in its own region it does apply');
+});
+
+test('the unscoped form genuinely differs, so the region argument is load-bearing', () => {
+  const answers = answersOf(['neck.systemic', 'yes']);
+  assert.equal(signalsFromAnswers(answers).fever_or_systemic_unwell, 'yes');
+  assert.equal(signalsFromAnswers(answers, 'lower_back').fever_or_systemic_unwell, 'not_asked');
+  assert.equal(signalsFromAnswers(answers, 'knee').fever_or_systemic_unwell, 'not_asked');
+});
+
+test('a stale answer from another region cannot fire a safety rule', () => {
+  // A knee episode where the answer map still holds a lower-back "yes" from an
+  // earlier episode. Without region scoping this would set
+  // fever_or_systemic_unwell = yes, and combined with a recorded duration it
+  // would fire msk.systemic_symptoms for a region the patient is not describing.
+  const record = rec('knee');
+  record.temporal = { ...record.temporal, durationValue: 5, durationUnit: 'days' };
+  const answers = answersOf(['lower_back.systemic', 'yes']);
+
+  const scoped = evaluateSafety(record, { answers, region: 'knee' });
+  assert.equal(
+    scoped.flags.some((f) => f.ruleId === 'msk.systemic_symptoms'),
+    false,
+    'a stale lower-back answer fired a rule on a knee episode',
+  );
+  assert.equal(scoped.signals.fever_or_systemic_unwell, 'not_asked');
+
+  // The same record as lower_back does fire, which is the intended behaviour.
+  const lbRecord = rec('lower_back');
+  lbRecord.temporal = { ...lbRecord.temporal, durationValue: 5, durationUnit: 'days' };
+  const lbScoped = evaluateSafety(lbRecord, { answers, region: 'lower_back' });
+  assert.ok(lbScoped.flags.some((f) => f.ruleId === 'msk.systemic_symptoms'));
+});
+
+test('single-driver signals are unaffected by region scoping', () => {
+  const answers = answersOf(['knee.locking', 'yes']);
+  for (const region of ['knee', 'shoulder', 'neck', 'lower_back'] as const) {
+    const s = signalsFromAnswers(answers, region);
+    const expected = region === 'knee' ? 'yes' : 'not_asked';
+    assert.equal(s.joint_locking_or_giving_way, expected, `wrong value for ${region}`);
+  }
+});
+
+test('a region with no driver for a signal reads not_asked, never no', () => {
+  // The failure mode this guards: an empty applicable set must not be treated as
+  // "every driver said no", which would silently reassure.
+  const answers = answersOf(['shoulder.vascular', 'yes']);
+  const knee = signalsFromAnswers(answers, 'knee');
+  assert.equal(knee.cold_pale_or_numb_hand, 'not_asked');
+  assert.notEqual(knee.cold_pale_or_numb_hand, 'no');
+});
+
+/* ================================================================== */
+/* No single-question assumption for multi-driver signals              */
+/* ================================================================== */
+
+test('fever_or_systemic_unwell is driven by more than one question', () => {
+  assert.deepEqual(
+    [...questionsForSignal('fever_or_systemic_unwell')].sort(),
+    ['lower_back.systemic', 'neck.systemic'],
+  );
+});
+
+test('questionForSignal is gone: a signal has no single question', async () => {
+  // The old helper returned the FIRST match, so every multi-driver signal
+  // resolved to the same question regardless of region.
+  const mod = (await import('../src/safety-signals.ts')) as Record<string, unknown>;
+  assert.equal(mod.questionForSignal, undefined, 'questionForSignal must not exist');
+});
+
+test('signalDriversInRegion returns every applicable driver, not the first', () => {
+  assert.deepEqual([...signalDriversInRegion('fever_or_systemic_unwell', 'lower_back')], ['lower_back.systemic']);
+  assert.deepEqual([...signalDriversInRegion('fever_or_systemic_unwell', 'neck')], ['neck.systemic']);
+  // Both live in different regions, so neither region gets both.
+  assert.deepEqual([...signalDriversInRegion('fever_or_systemic_unwell', 'knee')], []);
+});
+
+test('signalIsAskedInRegion is true for BOTH regions that drive the signal', () => {
+  // The single-question bug made this return false for lower_back, because it
+  // only ever looked at neck.systemic.
+  assert.equal(signalIsAskedInRegion('fever_or_systemic_unwell', 'lower_back'), true);
+  assert.equal(signalIsAskedInRegion('fever_or_systemic_unwell', 'neck'), true);
+  assert.equal(signalIsAskedInRegion('fever_or_systemic_unwell', 'knee'), false);
+  assert.equal(signalIsAskedInRegion('fever_or_systemic_unwell', 'shoulder'), false);
+});
+
+test('every multi-driver signal resolves correctly in each driving region', () => {
+  const multi = Object.entries(QUESTION_SIGNALS)
+    .reduce<Map<string, string[]>>((acc, [q, s]) => {
+      acc.set(s, [...(acc.get(s) ?? []), q]);
+      return acc;
+    }, new Map())
+    .entries();
+  for (const [signal, drivers] of multi) {
+    if (drivers.length < 2) continue;
+    for (const q of drivers) {
+      const region = q.split('.')[0] as Parameters<typeof signalIsAskedInRegion>[1];
+      assert.ok(
+        signalIsAskedInRegion(signal as never, region),
+        `${signal} is driven by ${q} but signalIsAskedInRegion(${region}) says no`,
+      );
+    }
+  }
 });
 
 /* ================================================================== */

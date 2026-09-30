@@ -153,12 +153,19 @@ export const useSession = create<SessionState>((set, get) => {
           body: JSON.stringify({ utterance }),
         });
 
-        const { record, considered, allowed, refusal } = applyLocalisation(get().record, result);
+        const { record, considered, allowed, refusal, by } = applyLocalisation(get().record, result);
 
         if (!allowed) {
           // Localisation refused. Stop here: do NOT open an anatomy view, do NOT
           // fabricate a region, and do NOT start a region interview.
-          set({ record, consideredStructures: considered, refusal, busy: false, stage: 'unsupported' });
+          set({
+            record,
+            consideredStructures: considered,
+            refusal,
+            orchestratorKind: null,
+            busy: false,
+            stage: 'unsupported',
+          });
           return;
         }
 
@@ -179,7 +186,9 @@ export const useSession = create<SessionState>((set, get) => {
           record,
           consideredStructures: considered,
           answers: EMPTY_ANSWERS,
-          orchestratorKind: result.status === 'grounded' ? 'deterministic' : null,
+          // Carried through from the orchestrator, not inferred from the status:
+          // a grounded result may have come from the model.
+          orchestratorKind: by,
           clarification,
           busy: false,
           stage: clarification ? 'clarify' : 'locate',

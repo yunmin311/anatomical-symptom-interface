@@ -112,6 +112,55 @@ await check('a grounded complaint localises with a region', async () => {
   return true;
 });
 
+await check('the response states which orchestrator read the text', async () => {
+  const r = await post('/localise', { utterance: 'my lower back is stiff' });
+  if (r.body.status !== 'grounded') return `expected grounded, got ${r.body.status}`;
+  if (!['deterministic', 'model'].includes(r.body.by)) {
+    return `by must be reported, got ${JSON.stringify(r.body.by)}`;
+  }
+  // Without a key the orchestrator is the offline one, and the response must
+  // say so rather than leaving the caller to guess.
+  const h = await get('/api/health');
+  if (h.orchestrator === 'deterministic' && r.body.by !== 'deterministic') {
+    return `server is deterministic but reported by=${r.body.by}`;
+  }
+  return true;
+});
+
+await check('the grounded episode records which orchestrator read the text', async () => {
+  const h = await get('/api/health');
+  const r = await post('/episodes', {
+    personId: 'smoke',
+    grounding: {
+      status: 'grounded',
+      region: 'shoulder',
+      side: 'right',
+      by: h.orchestrator === 'model' ? 'model' : 'deterministic',
+    },
+    mutations: [
+      {
+        fieldPath: 'location.region',
+        value: 'shoulder',
+        provenance: { sourceType: 'user_statement', verificationStatus: 'user_confirmed', createdBy: 'user' },
+      },
+    ],
+  });
+  if (r.status !== 201) return `${r.status} ${JSON.stringify(r.body).slice(0, 160)}`;
+  const ep = await get(`/api/episodes/${r.body.id}`);
+  const expected = h.orchestrator === 'model' ? 'model' : 'deterministic';
+  if (ep.grounding?.by !== expected) {
+    return `grounding.by=${JSON.stringify(ep.grounding?.by)}, expected ${expected}`;
+  }
+  return true;
+});
+
+await check('an unsupported response carries no orchestrator attribution', async () => {
+  const r = await post('/localise', { utterance: 'my chest feels tight' });
+  if (r.body.status !== 'unsupported') return `expected unsupported, got ${r.body.status}`;
+  if (r.body.by !== undefined) return 'a refusal must not claim an orchestrator read it';
+  return true;
+});
+
 await check('an ungrounded complaint is refused, never defaulted to shoulder', async () => {
   const r = await post('/localise', { utterance: 'I just feel a bit off' });
   if (r.body.status !== 'unsupported') return `expected unsupported, got ${r.body.status}`;
@@ -265,6 +314,65 @@ await check('ISSUE 1: "I am not sure" is stored as unknown, not as no', async ()
   return true;
 });
 
+await check('a stale answer from another region cannot fire a safety rule', async () => {
+  // A knee episode whose answer map carries a lower-back "yes". Region-scoped
+  // signals must ignore it, so msk.systemic_symptoms must not fire.
+  const r = await post('/episodes', {
+    personId: 'smoke',
+    grounding: { status: 'grounded', region: 'knee', side: 'left' },
+    mutations: [
+      {
+        fieldPath: 'temporal.durationValue',
+        value: 5,
+        provenance: { sourceType: 'user_statement', verificationStatus: 'user_confirmed', createdBy: 'user' },
+      },
+      {
+        fieldPath: 'temporal.durationUnit',
+        value: 'days',
+        provenance: { sourceType: 'user_statement', verificationStatus: 'user_confirmed', createdBy: 'user' },
+      },
+    ],
+    answers: [{ questionId: 'lower_back.systemic', raw: 'yes', wroteFields: [], createdBy: 'user' }],
+  });
+  if (r.status !== 201) return `${r.status} ${JSON.stringify(r.body).slice(0, 160)}`;
+  const ep = await get(`/api/episodes/${r.body.id}`);
+  if (ep.safety.signals.fever_or_systemic_unwell !== 'not_asked') {
+    return `signal=${ep.safety.signals.fever_or_systemic_unwell}, expected not_asked`;
+  }
+  if (ep.safety.flags.some((f) => f.ruleId === 'msk.systemic_symptoms')) {
+    return 'a stale lower-back answer fired a rule on a knee episode';
+  }
+  return true;
+});
+
+await check('the same answer does fire in the region that asks it', async () => {
+  const r = await post('/episodes', {
+    personId: 'smoke',
+    grounding: { status: 'grounded', region: 'lower_back', side: 'midline' },
+    mutations: [
+      {
+        fieldPath: 'temporal.durationValue',
+        value: 5,
+        provenance: { sourceType: 'user_statement', verificationStatus: 'user_confirmed', createdBy: 'user' },
+      },
+      {
+        fieldPath: 'temporal.durationUnit',
+        value: 'days',
+        provenance: { sourceType: 'user_statement', verificationStatus: 'user_confirmed', createdBy: 'user' },
+      },
+    ],
+    answers: [{ questionId: 'lower_back.systemic', raw: 'yes', wroteFields: [], createdBy: 'user' }],
+  });
+  const ep = await get(`/api/episodes/${r.body.id}`);
+  if (ep.safety.signals.fever_or_systemic_unwell !== 'yes') {
+    return `signal=${ep.safety.signals.fever_or_systemic_unwell}, expected yes`;
+  }
+  if (!ep.safety.flags.some((f) => f.ruleId === 'msk.systemic_symptoms')) {
+    return 'the rule did not fire in the region that asks the question';
+  }
+  return true;
+});
+
 await check('ISSUE 1: the safety question wrote no record field', async () => {
   const r = await post('/episodes', {
     personId: 'smoke',
@@ -307,6 +415,66 @@ await check('a visual selection is reported as a location, not a confirmation', 
   const { summary } = await get(`/api/episodes/${episodeId}/summary`);
   if (summary.visualSelections.length !== 1) return `visualSelections=${JSON.stringify(summary.visualSelections)}`;
   if (/confirmed/i.test(JSON.stringify(summary))) return 'the summary still says "confirmed"';
+  return true;
+});
+
+await check('clearing a selection preserves the suggestion, it does not delete it', async () => {
+  // The summary separates "areas you pointed to" from "suggested, not acted on".
+  // Deselecting must move a structure from the first to the second, never remove
+  // it from both, or the record loses evidence of what was considered.
+  const r = await post('/episodes', {
+    personId: 'smoke',
+    grounding: { status: 'grounded', region: 'knee', side: 'left' },
+    mutations: [
+      {
+        fieldPath: 'location.userSelectedStructureIds',
+        value: ['asi:knee.patella'],
+        provenance: { sourceType: 'user_selection', verificationStatus: 'user_confirmed', createdBy: 'user' },
+      },
+      {
+        fieldPath: 'consideredStructures',
+        value: [
+          { structureId: 'asi:knee.patella', confidence: 0.5, selectedByUser: true },
+          { structureId: 'asi:knee.meniscus-medial', confidence: 0.4, selectedByUser: false },
+        ],
+        provenance: { sourceType: 'ai_inference', verificationStatus: 'unverified', createdBy: 'seed', confidence: 0.5 },
+      },
+    ],
+  });
+  if (r.status !== 201) return `${r.status} ${JSON.stringify(r.body).slice(0, 160)}`;
+  const id = r.body.id;
+
+  let s = (await get(`/api/episodes/${id}/summary`)).summary;
+  if (s.visualSelections.length !== 1 || s.unselectedSuggestions.length !== 1) {
+    return `before: selected=${s.visualSelections.length} unselected=${s.unselectedSuggestions.length}`;
+  }
+
+  // The user changes their mind: clear the selection, keep the candidate.
+  const clear = await post(`/episodes/${id}/mutations`, {
+    mutations: [
+      {
+        fieldPath: 'location.userSelectedStructureIds',
+        value: [],
+        provenance: { sourceType: 'user_edited', verificationStatus: 'user_confirmed', createdBy: 'user' },
+      },
+      {
+        fieldPath: 'consideredStructures',
+        value: [
+          { structureId: 'asi:knee.patella', confidence: 0.5, selectedByUser: false },
+          { structureId: 'asi:knee.meniscus-medial', confidence: 0.4, selectedByUser: false },
+        ],
+        provenance: { sourceType: 'ai_inference', verificationStatus: 'unverified', createdBy: 'seed', confidence: 0.5 },
+      },
+    ],
+  });
+  if (clear.status !== 200) return `${clear.status} ${JSON.stringify(clear.body).slice(0, 160)}`;
+
+  s = (await get(`/api/episodes/${id}/summary`)).summary;
+  if (s.visualSelections.length !== 0) return `selection was not cleared: ${JSON.stringify(s.visualSelections)}`;
+  if (s.unselectedSuggestions.length !== 2) {
+    return `deselection DELETED a suggestion: unselected=${JSON.stringify(s.unselectedSuggestions)}`;
+  }
+  if (!s.unselectedSuggestions.includes('Patella')) return 'the deselected candidate was lost';
   return true;
 });
 

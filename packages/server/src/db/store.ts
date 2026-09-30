@@ -361,7 +361,7 @@ export function applyMutations(episodeId: string, input: ApplyInput, profile: Re
     const safety = evaluateSafety(rebuilt, {
       region: rebuilt.location.region,
       answers,
-      signals: signalsFromAnswers(answers),
+      signals: signalsFromAnswers(answers, rebuilt.location.region),
       profile,
     });
     recordSafetyFlags(episodeId, safety, profile);
@@ -629,7 +629,7 @@ export function safetyFor(episodeId: string, profile: ReleaseProfile): SafetyEva
   return evaluateSafety(ep.record, {
     region: ep.record.location.region,
     answers,
-    signals: signalsFromAnswers(answers),
+    signals: signalsFromAnswers(answers, ep.record.location.region),
     profile,
   });
 }
@@ -644,7 +644,7 @@ export function summaryFor(
   const safety = evaluateSafety(ep.record, {
     region: ep.record.location.region,
     answers,
-    signals: signalsFromAnswers(answers),
+    signals: signalsFromAnswers(answers, ep.record.location.region),
     profile,
   });
   // buildPreVisitSummary is deterministic, so the summary can never inherit a

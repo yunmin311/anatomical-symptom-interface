@@ -45,12 +45,23 @@ These are architecture, not style. Do not weaken them to make a task easier.
 
 7. **A visual selection is not a finding.** Use "pointed at", "indicated",
    "visual selection". Never "confirmed". The word must not appear in a summary.
+   Deselecting a structure clears the user's selection and **keeps the candidate**:
+   the suggestion is evidence of what was considered, and deleting it is lossy.
 
-8. **Coding stays `unverified` until a human checks it**, and the
+8. **Safety signals are region-scoped.** `signalsFromAnswers(answers, region)` combines
+   only the questions that region's interview actually asks, so a stale answer from
+   another episode cannot fire a rule here. A signal may have several drivers; do not
+   reintroduce a single-question lookup.
+
+9. **Carry provenance you were given.** The localisation response names which
+   orchestrator read the text; that value must reach the UI and the stored episode.
+   Do not infer it from the outcome status — a grounded result can come from either.
+
+10. **Coding stays `unverified` until a human checks it**, and the
    `unreviewedSafetyRules` count must stay honest. Do not flip either to make
    something look finished.
 
-9. **No disease vocabulary in the core product.** If you want to add a condition name
+11. **No disease vocabulary in the core product.** If you want to add a condition name
    to a type, that is the signal to stop — it belongs in the future Medical Layer.
 
 ## Layout
@@ -107,7 +118,7 @@ pnpm dev                      # server :8787 + web :5173
 pnpm typecheck                # all packages — must pass before commit
 pnpm test                     # unit tests across all three packages
 pnpm seed                     # reset to demo history (DESTRUCTIVE, rebuilds the DB)
-node scripts/smoke.mjs        # 29 API checks, needs a running server
+node scripts/smoke.mjs        # 35 API checks, needs a running server
 node scripts/check-safety-metadata.mjs <health.json>
 pnpm --filter @asi/web build
 ```
@@ -123,7 +134,7 @@ so a clean checkout and CI behave the same way.
 - [ ] `pnpm test` passes
 - [ ] New logic has a test, especially anything touching provenance, safety, answers
       or the field registry
-- [ ] `scripts/smoke.mjs` still 29/29 if you touched the server
+- [ ] `scripts/smoke.mjs` still 35/35 if you touched the server
 - [ ] `scripts/check-safety-metadata.mjs` passes against a running server
 - [ ] The unreviewed-rules count is still reported honestly — if it went to zero
       without clinical review, something bypassed the review metadata, which is a bug

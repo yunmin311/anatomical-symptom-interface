@@ -47,6 +47,17 @@ export interface GroundedLocalisation {
   consideredStructures: ConsideredStructure[];
   userPhrase: string;
   clarificationQuestion: string | null;
+  /**
+   * Which orchestrator produced this. `model` means a language model proposed
+   * the location; `deterministic` means the offline rules did. The UI shows
+   * this to the user so they know how much weight the suggestion carries, and
+   * the episode records it, so the provenance of the location is never lost.
+   *
+   * This was previously missing from the type, which meant the value the server
+   * sent was silently dropped and the UI always claimed "offline rules" had
+   * read the description.
+   */
+  by: 'deterministic' | 'model';
 }
 
 export interface UnsupportedLocalisation {
@@ -58,6 +69,18 @@ export interface UnsupportedLocalisation {
 
 export type LocalisationOutcome = GroundedLocalisation | UnsupportedLocalisation;
 
+export interface LocalisationApplied {
+  record: SymptomRecord;
+  considered: ConsideredStructure[];
+  allowed: boolean;
+  refusal: string | null;
+  /**
+   * Which orchestrator produced the localisation, carried through unchanged.
+   * `null` only when localisation was refused, because nothing was read.
+   */
+  by: 'deterministic' | 'model' | null;
+}
+
 /**
  * Turn a localisation response into session state.
  *
@@ -67,7 +90,7 @@ export type LocalisationOutcome = GroundedLocalisation | UnsupportedLocalisation
 export function applyLocalisation(
   previous: SymptomRecord,
   result: LocalisationOutcome,
-): { record: SymptomRecord; considered: ConsideredStructure[]; allowed: boolean; refusal: string | null } {
+): LocalisationApplied {
   if (result.status === 'unsupported') {
     return {
       // Keep the previous record untouched. Do not fabricate a region.
@@ -75,6 +98,7 @@ export function applyLocalisation(
       considered: [],
       allowed: false,
       refusal: result.message,
+      by: null,
     };
   }
   const record = emptyRecord(result.region);
@@ -88,7 +112,9 @@ export function applyLocalisation(
     userSelectedStructureIds: [],
   };
   record.consideredStructures = result.consideredStructures;
-  return { record, considered: result.consideredStructures, allowed: true, refusal: null };
+  // Carried through verbatim. The caller must not infer this from the outcome
+  // status: a grounded result can come from either orchestrator.
+  return { record, considered: result.consideredStructures, allowed: true, refusal: null, by: result.by };
 }
 
 /* ------------------------------------------------------------------ */
@@ -152,11 +178,26 @@ export function selectStructure(record: SymptomRecord, structureId: string): Sym
   return record;
 }
 
+/**
+ * Clear the user's selection WITHOUT destroying the suggestion.
+ *
+ * The candidate the model proposed is evidence in its own right: it is a
+ * plausible reading of what the user described, and the summary reports
+ * un-acted-on suggestions so a clinician can see what was considered. Deleting
+ * the candidate on deselect threw that information away, and made select →
+ * deselect → select a lossy round trip that permanently changed the record.
+ *
+ * So deselect only clears the USER's state: the id leaves
+ * `userSelectedStructureIds` and the candidate returns to
+ * `selectedByUser: false`. Nothing else changes.
+ */
 export function deselectStructure(record: SymptomRecord, structureId: string): SymptomRecord {
   record.location.userSelectedStructureIds = record.location.userSelectedStructureIds.filter(
     (x) => x !== structureId,
   );
-  record.consideredStructures = record.consideredStructures.filter((c) => c.structureId !== structureId);
+  record.consideredStructures = record.consideredStructures.map((c) =>
+    c.structureId === structureId && c.selectedByUser ? { ...c, selectedByUser: false } : c,
+  );
   return record;
 }
 
@@ -175,7 +216,7 @@ export function evaluateSession(record: SymptomRecord, answers: AnswerMap) {
   return evaluateSafety(record, {
     region: record.location.region,
     answers,
-    signals: signalsFromAnswers(answers),
+    signals: signalsFromAnswers(answers, record.location.region),
     profile: 'development',
   });
 }

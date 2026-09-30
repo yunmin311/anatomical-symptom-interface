@@ -44,6 +44,9 @@ jobs:
             if curl -sf http://localhost:8787/api/health >/dev/null; then break; fi
             sleep 1
           done
+          # Saved for the safety-metadata gate below. Starting a second server
+          # here would just EADDRINUSE and quietly hit the first one.
+          curl -sf http://localhost:8787/api/health -o /tmp/health.json
           node scripts/smoke.mjs
 
       - name: web build
@@ -55,15 +58,12 @@ jobs:
       # The previous version grepped a number out of the health payload and
       # treated an empty match as success. That means a renamed field, a changed
       # response shape, or a server that never started would all read as green.
-      # This step parses the JSON, requires every field, requires the rule count
-      # to be a positive integer, and fails loudly otherwise.
+      # This parses the JSON, requires every field, requires the rule count to
+      # be a positive integer, and fails loudly otherwise.
+      #
+      # It reuses the payload captured by the smoke step rather than starting a
+      # second server, so the two steps cannot disagree about which build is
+      # being checked.
       # -------------------------------------------------------------------
       - name: release-safety metadata is well formed
-        run: |
-          pnpm --filter @asi/server start &
-          for i in $(seq 1 30); do
-            if curl -sf http://localhost:8787/api/health >/dev/null; then break; fi
-            sleep 1
-          done
-          curl -sf http://localhost:8787/api/health -o /tmp/health.json
-          node scripts/check-safety-metadata.mjs /tmp/health.json
+        run: node scripts/check-safety-metadata.mjs /tmp/health.json

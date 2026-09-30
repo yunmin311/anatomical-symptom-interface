@@ -9,7 +9,7 @@
  * states. No rule contains a regex over user text.
  */
 import type { AnswerMap, TriState } from './answers.ts';
-import { triStateOf } from './answers.ts';
+import { NOT_ASKED, triStateOf } from './answers.ts';
 import type { BodyRegion, SymptomRecord } from './index.ts';
 import { getQuestion } from './interview/engine.ts';
 
@@ -63,63 +63,104 @@ export function questionsForSignal(signal: SignalName): readonly string[] {
   return SIGNAL_QUESTIONS[signal];
 }
 
+/** The region a question belongs to, from its `<region>.<name>` id. */
+function regionOfQuestion(questionId: string): BodyRegion {
+  return questionId.split('.')[0] as BodyRegion;
+}
+
 /**
- * Combine several questions into one signal.
+ * The questions that drive a signal *in a given region*.
+ *
+ * This replaces the old `questionForSignal`, which returned the first match
+ * only. That was wrong for every multi-driver signal: `fever_or_systemic_unwell`
+ * is driven by both `neck.systemic` and `lower_back.systemic`, and the function
+ * always returned `neck.systemic`, so `signalIsAskedInRegion(...,'lower_back')`
+ * answered "no" for a question the lower-back interview does ask.
+ */
+export function signalDriversInRegion(
+  signal: SignalName,
+  region: BodyRegion,
+): string[] {
+  return questionsForSignal(signal).filter((id) => regionOfQuestion(id) === region);
+}
+
+/**
+ * Combine the driving questions into one signal, restricted to a region.
  *
  * `fever_or_systemic_unwell` is driven by BOTH `neck.systemic` and
- * `lower_back.systemic`. Combining by "last write wins" is a real bug — the
+ * `lower_back.systemic`. Combining by "last write wins" was a real bug — the
  * second question silently erased the first — so the combination is explicit:
  *
- *   any 'yes'      → 'yes'       a single affirmative is enough
- *   any 'unknown'  → 'unknown'   asked but indeterminate
- *   all 'no'       → 'no'        every driving question was answered no
- *   otherwise      → 'not_asked'
+ *   any 'yes'      -> 'yes'       a single affirmative is enough
+ *   any 'unknown'  -> 'unknown'   asked but indeterminate
+ *   all 'no'       -> 'no'        every APPLICABLE driver was answered no
+ *   otherwise      -> 'not_asked'
  *
- * Note "all no → no": it takes BOTH questions answered negatively, which is the
- * only reading under which 'no' means anything for a safety signal.
+ * The region restriction matters for safety, not just tidiness. An answer to
+ * `lower_back.systemic` left over from a different episode must not set
+ * `fever_or_systemic_unwell` on a knee episode: the lower-back question was
+ * never asked for that knee, so treating it as a "yes" would fire
+ * `msk.systemic_symptoms` off a region the patient is not describing. Only the
+ * questions the current region's interview actually asks participate.
+ *
+ * Note "all no -> no": it takes every APPLICABLE driver answered negatively,
+ * which is the only reading under which 'no' means anything for a safety signal.
  */
-function combine(questionIds: readonly string[], answers: AnswerMap): TriState {
+function combine(
+  questionIds: readonly string[],
+  answers: AnswerMap,
+  region: BodyRegion | undefined,
+): TriState {
+  const applicable = region
+    ? questionIds.filter((id) => regionOfQuestion(id) === region)
+    : questionIds;
+  if (!applicable.length) return NOT_ASKED;
+
   let anyYes = false;
   let anyUnknown = false;
   let allAsked = true;
   let allNo = true;
 
-  for (const id of questionIds) {
+  for (const id of applicable) {
     const s = triStateOf(answers, id);
     if (s === 'yes') anyYes = true;
     else if (s === 'unknown') anyUnknown = true;
-    else if (s === 'not_asked') allAsked = false;
+    else if (s === NOT_ASKED) allAsked = false;
     else if (s === 'no') { /* stays no */ } else allNo = false;
   }
 
   if (anyYes) return 'yes';
   if (anyUnknown) return 'unknown';
   if (allAsked && allNo) return 'no';
-  return 'not_asked';
+  return NOT_ASKED;
 }
 
-export function signalsFromAnswers(answers: AnswerMap): SafetySignals {
+/**
+ * Derive every signal from the answer map.
+ *
+ * `region` should be the region the record is about. Omitting it is only
+ * correct when the caller genuinely has no region (for example a rule set
+ * being exercised in isolation), and a test asserts the region-scoped and
+ * unscoped forms differ.
+ */
+export function signalsFromAnswers(
+  answers: AnswerMap,
+  region?: BodyRegion,
+): SafetySignals {
   const out = {} as Record<SignalName, TriState>;
-  for (const name of SIGNAL_NAMES) out[name] = combine(SIGNAL_QUESTIONS[name], answers);
+  for (const name of SIGNAL_NAMES) out[name] = combine(SIGNAL_QUESTIONS[name], answers, region);
   return Object.freeze(out);
-}
-
-/** The question that drives a signal, if any. Used by the UI to point at it. */
-export function questionForSignal(signal: SignalName): string | null {
-  const entry = Object.entries(QUESTION_SIGNALS).find(([, s]) => s === signal);
-  return entry ? entry[0] : null;
 }
 
 /**
  * Does the interview for this region actually ask a question for this signal?
- * Used by a test so a safety question cannot exist without a wired signal, and
- * a wired signal cannot exist without a question in the region.
+ *
+ * Checks every driver in the region, not the first one. Used by a test so a
+ * safety question cannot exist without a wired signal, and a wired signal
+ * cannot exist without a question the region actually asks.
  */
 export function signalIsAskedInRegion(signal: SignalName, region: BodyRegion): boolean {
-  const questionId = questionForSignal(signal);
-  if (!questionId) return false;
-  const q = getQuestion(region, questionId);
-  return Boolean(q);
+  return signalDriversInRegion(signal, region).some((id) => Boolean(getQuestion(region, id)));
 }
 
 export interface SafetyEvaluationInput {

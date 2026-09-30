@@ -25,7 +25,43 @@ const grounded = (over: Partial<Extract<LocalisationOutcome, { status: 'grounded
   consideredStructures: [],
   userPhrase: 'my lower back hurts',
   clarificationQuestion: null,
+  by: 'deterministic',
   ...over,
+});
+
+/* ================================================================== */
+/* Which orchestrator read the text must survive the whole path        */
+/* ================================================================== */
+
+test('a model-sourced localisation keeps by = model', () => {
+  const out = applyLocalisation(emptyRecord('knee'), grounded({ by: 'model' }));
+  assert.equal(out.allowed, true);
+  assert.equal(out.by, 'model', "the model's provenance must not be lost");
+});
+
+test('an offline localisation keeps by = deterministic', () => {
+  const out = applyLocalisation(emptyRecord('knee'), grounded({ by: 'deterministic' }));
+  assert.equal(out.by, 'deterministic');
+});
+
+test('by is not inferred from the outcome status', () => {
+  // Both of these are 'grounded'. The distinguishing field is `by`, and a
+  // grounded result can come from either orchestrator.
+  for (const by of ['deterministic', 'model'] as const) {
+    const out = applyLocalisation(emptyRecord('knee'), grounded({ by }));
+    assert.equal(out.by, by);
+  }
+});
+
+test('a refusal reports by = null, because nothing was read', () => {
+  const out = applyLocalisation(emptyRecord('knee'), {
+    status: 'unsupported',
+    reason: 'out_of_scope',
+    message: 'not a supported region',
+    supportedRegions: ['shoulder', 'neck', 'lower_back', 'knee'],
+  });
+  assert.equal(out.by, null);
+  assert.equal(out.allowed, false);
 });
 
 /* ================================================================== */
@@ -177,13 +213,68 @@ test('selecting twice does not duplicate the selection', () => {
   assert.deepEqual(record.location.userSelectedStructureIds, ['asi:knee.patella']);
 });
 
-test('deselecting removes it from both lists', () => {
+test('deselecting clears the user state but PRESERVES the candidate', () => {
   const record = emptyRecord('knee');
-  record.consideredStructures = [{ structureId: 'asi:knee.patella', confidence: 0.5, selectedByUser: false }];
+  const candidate = {
+    structureId: 'asi:knee.patella',
+    rationale: 'You described something near the kneecap.',
+    confidence: 0.5,
+    selectedByUser: false,
+  };
+  record.consideredStructures = [candidate];
   selectStructure(record, 'asi:knee.patella');
   deselectStructure(record, 'asi:knee.patella');
+
+  // The user's selection is gone.
   assert.deepEqual(record.location.userSelectedStructureIds, []);
-  assert.deepEqual(record.consideredStructures, []);
+  assert.equal(record.consideredStructures[0]?.selectedByUser, false);
+
+  // The candidate is NOT. It is a plausible reading of what the user said, and
+  // the summary reports un-acted-on suggestions, so deleting it lost evidence.
+  assert.equal(record.consideredStructures.length, 1, 'the candidate must survive deselection');
+  assert.equal(record.consideredStructures[0]?.structureId, 'asi:knee.patella');
+  assert.equal(record.consideredStructures[0]?.rationale, candidate.rationale);
+  assert.equal(record.consideredStructures[0]?.confidence, candidate.confidence);
+});
+
+test('select then deselect is a lossless round trip', () => {
+  const record = emptyRecord('knee');
+  record.consideredStructures = [
+    { structureId: 'asi:knee.patella', confidence: 0.5, selectedByUser: false },
+    { structureId: 'asi:knee.meniscus-medial', confidence: 0.4, selectedByUser: false },
+  ];
+  const before = JSON.stringify(record.consideredStructures);
+
+  selectStructure(record, 'asi:knee.patella');
+  deselectStructure(record, 'asi:knee.patella');
+
+  assert.equal(JSON.stringify(record.consideredStructures), before, 'the round trip must be lossless');
+});
+
+test('deselecting one structure leaves the other candidate untouched', () => {
+  const record = emptyRecord('knee');
+  record.consideredStructures = [
+    { structureId: 'asi:knee.patella', confidence: 0.5, selectedByUser: false },
+    { structureId: 'asi:knee.meniscus-medial', confidence: 0.4, selectedByUser: false },
+  ];
+  selectStructure(record, 'asi:knee.patella');
+  selectStructure(record, 'asi:knee.meniscus-medial');
+  deselectStructure(record, 'asi:knee.patella');
+
+  assert.deepEqual(record.location.userSelectedStructureIds, ['asi:knee.meniscus-medial']);
+  assert.equal(record.consideredStructures[0]?.selectedByUser, false);
+  assert.equal(record.consideredStructures[1]?.selectedByUser, true);
+  assert.equal(record.consideredStructures.length, 2, 'neither candidate may be removed');
+});
+
+test('deselecting something that was never selected is a no-op', () => {
+  const record = emptyRecord('knee');
+  record.consideredStructures = [
+    { structureId: 'asi:knee.patella', confidence: 0.5, selectedByUser: false },
+  ];
+  deselectStructure(record, 'asi:knee.patella');
+  assert.equal(record.consideredStructures.length, 1);
+  assert.equal(record.consideredStructures[0]?.selectedByUser, false);
 });
 
 test('labels prefer the lay term over the anatomical name', () => {

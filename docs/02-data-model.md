@@ -258,13 +258,27 @@ Safety rules do not read answer values directly, and they do not read record fie
 They read typed **signals** derived from the answer map:
 
 ```ts
-signalsFromAnswers(answers).bladder_or_bowel_change  // 'yes' | 'no' | 'unknown' | 'not_asked'
+signalsFromAnswers(answers, region).bladder_or_bowel_change
+// 'yes' | 'no' | 'unknown' | 'not_asked'
 ```
 
-where a signal driven by several questions combines them explicitly — any `yes` wins;
-`unknown` beats `no`; `no` requires *every* driving question to have been answered no.
-The previous implementation looped the mapping table and let the later entry overwrite
-the earlier one, which silently erased the `neck.systemic` answer.
+A signal may be driven by more than one question — `fever_or_systemic_unwell` by both
+`neck.systemic` and `lower_back.systemic` — so the combination is explicit rather than
+last-write-wins: any `yes` wins; `unknown` beats `no`; `no` requires every **applicable**
+driver to have been answered no.
+
+**The combination is region-scoped, and that is a safety property rather than tidiness.**
+An answer to `lower_back.systemic` left over from a different episode must not set
+`fever_or_systemic_unwell` on a knee episode: the lower-back question was never asked for
+that knee, and treating it as a `yes` would fire `msk.systemic_symptoms` for a region the
+patient is not describing. Only the questions the current region's interview actually asks
+participate. `signalDriversInRegion` replaces the earlier `questionForSignal`, which
+returned the first match and so resolved every multi-driver signal to one question
+regardless of region — which also made `signalIsAskedInRegion` report `false` for the
+lower-back question it was supposed to find.
+
+Two structural facts are deliberately separate: `record.gaps` is missing information and
+never holds an answer, and the four answer states live in `episode_answers`.
 
 ## Missingness in the summary
 

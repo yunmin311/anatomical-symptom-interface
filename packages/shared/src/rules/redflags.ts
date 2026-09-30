@@ -372,7 +372,9 @@ export function evaluateSafety(
 ): SafetyEvaluation {
   const profile = opts.profile ?? 'development';
   const scope = opts.region ?? record.location.region;
-  const signals = opts.signals ?? (opts.answers ? signalsFromAnswers(opts.answers) : NO_SIGNALS);
+  // Region-scoped: a stale answer to another region's question must not set a
+  // signal here. See signalsFromAnswers for why that matters for safety.
+  const signals = opts.signals ?? (opts.answers ? signalsFromAnswers(opts.answers, scope) : NO_SIGNALS);
 
   const flags: SafetyFlag[] = [];
   const withheld: WithheldFlag[] = [];
