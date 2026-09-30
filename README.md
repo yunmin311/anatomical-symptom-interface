@@ -56,7 +56,7 @@ localiser, which can only *propose* locations — never confirm them.
 
 ```bash
 pnpm typecheck     # all packages
-pnpm test          # 225 unit tests across three packages
+pnpm test          # 314 unit tests across three packages
 node scripts/smoke.mjs   # 38 API checks (server must be running)
 ```
 

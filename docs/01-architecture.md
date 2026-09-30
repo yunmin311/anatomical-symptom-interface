@@ -25,18 +25,69 @@ rendered as a **pre-visit summary** — with **safety messaging produced by rule
 │                                                              │
 │  Symptom Orchestrator (interface)                            │
 │    ├── DeterministicOrchestrator ← default, offline, testable│
-│    └── ModelOrchestrator        ← Claude, propose-only      │
+│    └── ModelOrchestrator        ← propose-only, any provider │
 │                                                              │
 │  Symptom Record Store   │   Safety Rule Engine              │
 │  episodes + provenance   │   deterministic red flags        │
+│  migrations + read models│                                   │
 └───────────────────────────┬──────────────────────────────────┘
-                            │
+                             │
 ┌───────────────────────────▼──────────────────────────────────┐
 │  packages/shared — pure, no I/O, no network                  │
 │  anatomy ontology · interview registry · red-flag rules      │
 │  provenance invariants · pre-visit summary builder           │
+│  anatomy asset manifest + conversion pipeline (pure)         │
 └──────────────────────────────────────────────────────────────┘
 ```
+
+## Storage: migrations, not rebuilds
+
+The schema is versioned by an ordered migration list in
+`packages/server/src/db/migrations/`, applied in version order, each step in its
+own transaction, on every startup.
+
+**This replaced a policy that dropped the database.** The old rule was: when
+`PRAGMA user_version` did not match a hardcoded number, `DROP` every table and
+rebuild. That was only defensible while the data was disposable, and it made one
+thing permanently impossible — adding a column to a database that already held
+records. The refusal state that v2 needed for unsupported episodes could not ship
+without erasing the episodes it exists to describe.
+
+What the policy is now:
+
+- **Nothing is dropped to make a version match.** A file this build cannot
+  recognise is refused at startup with an explanation and left exactly as it was.
+  Refusing is correct: guessing at an unknown schema is how somebody loses a
+  history they cannot get back.
+- **No half-migrated state.** The version stamp is written inside the same
+  transaction as the schema change, so a failure rolls both back together and a
+  retry starts from a known version.
+- **Legacy files are adopted by shape, not by number.** A file predating the
+  migration table carries no history, and a version number alone cannot be
+  trusted when a build could bump it without finishing the work.
+- **Applied migrations are checksummed.** Editing a migration that databases have
+  already run fails loudly rather than letting fresh and existing databases drift
+  apart silently.
+
+`body_regions` is a **derived spatial index**, not a second source of truth: it is
+rebuilt from the record inside the same transaction that writes it, which is what
+makes a pin and the map that shows it impossible to disagree.
+
+## Read models
+
+Two Phase 1A additions, both server-side on purpose. A client that re-derives
+something the server already knows will eventually disagree with it.
+
+- **`/api/healthmap/:personId/spatial`** — every place with its normalised point
+  and the episodes behind it, so the browser never scans episodes to draw a body.
+  A **location history, not a risk map**: episode count is how *often* a place was
+  described, and nothing weighs it against anything.
+- **`/api/episodes/:id/reopen`** — record, answers, next question, progress and
+  outstanding fields, so a resuming session does not re-derive the interview
+  position in the browser. The summary is deliberately excluded: rebuilding it
+  evaluates the safety rules, and a resume must not re-present a blocked gate as
+  if it were new.
+
 
 ## The rules the architecture enforces
 
