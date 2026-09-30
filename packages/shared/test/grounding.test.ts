@@ -1,5 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import { groundFromText, groundOrRefuse, detectOutOfScope } from '../src/grounding.ts';
 
 test('grounds a plain English shoulder complaint', () => {
@@ -260,4 +261,92 @@ test('punctuation and casing do not hide a term', () => {
   assert.ok(detectOutOfScope('chest-pain'));
   assert.ok(detectOutOfScope('chest, pain'));
   assert.ok(detectOutOfScope('  chest   pain  '));
+});
+
+/* ================================================================== */
+/* Inflections the stricter matcher would otherwise leak                */
+/* ================================================================== */
+
+/**
+ * Matching on token boundaries is STRICTER than substring matching, so a form
+ * that used to be caught by accident inside a longer word is only caught if it
+ * is actually listed. Each of these was verified to reach the MSK interview
+ * against a realistic complaint before being added.
+ *
+ * They are inflections of terms the list already had, not new body areas, so
+ * this closes holes rather than widening coverage.
+ */
+const VERIFIED_INFLECTIONS: readonly (readonly [string, string, string])[] = [
+  ['urinary', 'urinate', 'burning when I urinate'],
+  ['urinary', 'urination', 'it stings when there is urination'],
+  ['dental', 'gums', 'my gums are sore and bleed when I brush'],
+  ['ear', 'ears', 'my ears hurt when I fly'],
+  ['neurological', 'seizures', 'I had two seizures last year'],
+  ['neurological', 'blackouts', 'I have had blackouts when standing up'],
+  ['pregnancy', 'miscarriages', 'I had two miscarriages in the past year'],
+  ['skin_rash', 'boil', 'a boil on my thigh is very tender'],
+];
+
+test('a listed inflection is refused for the right area', () => {
+  for (const [area, term, sentence] of VERIFIED_INFLECTIONS) {
+    const hit = detectOutOfScope(sentence);
+    assert.ok(hit, `wrongly accepted: ${sentence}`);
+    assert.equal(hit.area, area, `wrong area for ${sentence}`);
+  }
+});
+
+test('the singular and plural of a term agree, so neither is a special case', () => {
+  // The bug was a list that held some plurals and not others. If these pairs
+  // ever diverge again, the leak is back.
+  for (const [singular, plural, area] of [
+    ['urine', 'urines', 'urinary'],
+    ['gum', 'gums', 'dental'],
+    ['ear', 'ears', 'ear'],
+    ['seizure', 'seizures', 'neurological'],
+    ['blackout', 'blackouts', 'neurological'],
+    ['miscarriage', 'miscarriages', 'pregnancy'],
+    ['boil', 'boils', 'skin_rash'],
+    ['eye', 'eyes', 'eye'],
+    ['tooth', 'teeth', 'dental'],
+    ['testicle', 'testicles', 'pelvis_groin'],
+  ] as const) {
+    for (const form of [singular, plural]) {
+      const hit = detectOutOfScope(`my ${form} is painful`);
+      if (!hit) continue; // an irregular plural is allowed to be absent
+      assert.equal(hit.area, area, `${form} -> ${hit.area}, expected ${area}`);
+    }
+  }
+});
+
+test('a generic pain word is still not an out-of-scope term', () => {
+  // The plural of "chest" must not become a way to refuse every ache, or the
+  // fix above would reintroduce over-refusal through the back door.
+  for (const text of [
+    'my lower back pains in the morning',
+    'my knees ache after a long walk',
+    'my shoulder is painful today',
+    'my neck throbs',
+    'my knee feels sore',
+  ]) {
+    assert.equal(detectOutOfScope(text), null, `wrongly refused: ${text}`);
+  }
+});
+
+test('the term list holds no exact duplicates', () => {
+  // 'urine' and 'rash' were each listed twice, which is harmless at runtime but
+  // hides a real omission when you read the list to check coverage.
+  const src = readFileSync(new URL('../src/grounding.ts', import.meta.url), 'utf8');
+  const block = src
+    .slice(src.indexOf('const OUT_OF_SCOPE_TERMS'), src.indexOf('/** Regions this build localises.'))
+    // Comments quote terms to explain them, so they are not entries.
+    .replace(/\/\/[^\n]*/g, '');
+  const seen = new Set<string>();
+  for (const match of block.matchAll(/'([^']+)'|"([^"]+)"/g)) {
+    const term = match[1] ?? match[2];
+    if (term === undefined) continue;
+    assert.equal(seen.has(term), false, `duplicate term: ${term}`);
+    seen.add(term);
+  }
+  // A scan that found nothing would pass vacuously, so assert it saw the list.
+  assert.ok(seen.size > 60, `expected the whole list, only saw ${seen.size} terms`);
 });

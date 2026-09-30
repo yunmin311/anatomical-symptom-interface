@@ -78,16 +78,21 @@ const OUT_OF_SCOPE_TERMS: Readonly<Record<string, readonly string[]>> = Object.f
   ],
   abdomen: ['stomach', 'abdomen', 'belly', 'abdominal', 'belly pain', '腹痛', '肚子', '腹部', '胃痛'],
   pelvis_groin: ['pelvis', 'pelvic', 'testicle', 'testicles', 'scrotum', '阴部', '睾丸', '盆腔'],
-  skin_rash: ['rash', 'itching', 'itchy', 'hives', 'boils', 'rash', '皮疹', '瘙痒', '起疹', '疹子'],
-  urinary: ['urine', 'urinating', 'burning urine', 'urine', '尿', '尿频', '尿痛'],
+  skin_rash: ['rash', 'itching', 'itchy', 'hives', 'boils', 'boil', '皮疹', '瘙痒', '起疹', '疹子'],
+  // 'urinate' and 'urination' are here because the list had 'urine' and
+  // 'urinating' but not the verb or the noun form, so "burning when I urinate"
+  // reached the MSK interview. Inflections that are not listed are not matched,
+  // so the form the user actually says has to be in the list.
+  urinary: ['urine', 'urinating', 'urinate', 'urination', 'burning urine', '尿', '尿频', '尿痛'],
   neurological: [
-    'seizure', 'fit', 'fainting', 'fainted', 'blackout', 'slurred speech', 'face droop',
+    'seizure', 'seizures', 'fit', 'fainting', 'fainted', 'blackout', 'blackouts',
+    'slurred speech', 'face droop',
     '癫痫', '晕倒', '昏厥', '口齿不清', '口角歪斜',
   ],
   eye: ['eye', 'eyes', 'vision', 'blurred vision', 'eye pain', '眼睛', '视力', '看不清', '眼痛'],
-  ear: ['ear', 'earache', 'ear pain', 'hearing', '耳朵', '耳痛', '听力'],
-  dental: ['tooth', 'teeth', 'toothache', 'gum', '牙', '牙痛', '牙齿'],
-  pregnancy: ['pregnant', 'pregnancy', 'miscarriage', '怀孕', '孕期', '流产'],
+  ear: ['ear', 'ears', 'earache', 'ear pain', 'hearing', '耳朵', '耳痛', '听力'],
+  dental: ['tooth', 'teeth', 'toothache', 'gum', 'gums', '牙', '牙痛', '牙齿'],
+  pregnancy: ['pregnant', 'pregnancy', 'miscarriage', 'miscarriages', '怀孕', '孕期', '流产'],
 });
 
 /** Regions this build localises. */
