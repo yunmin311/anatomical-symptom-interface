@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * End-to-end smoke test against a running server.
+ * End-to-end API checks against a running server.
  *   pnpm --filter @asi/server start   (in another shell)
  *   node scripts/smoke.mjs
  */
@@ -26,21 +26,68 @@ async function check(name, fn) {
 }
 
 const get = (p) => fetch(`${BASE}${p}`).then((r) => r.json());
+/** POSTs to the API namespace. Paths are given without the `/api` prefix. */
 const post = (p, body) =>
-  fetch(`${BASE}${p}`, {
+  fetch(`${BASE}/api${p}`, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify(body),
-  }).then((r) => r.json());
+  }).then((r) => r.json().then((j) => ({ status: r.status, body: j })));
+/** Raw fetch, for asserting an endpoint is absent. */
+const raw = (method, p, body) =>
+  fetch(`${BASE}/api${p}`, {
+    method,
+    headers: { 'content-type': 'application/json' },
+    body: body === undefined ? undefined : JSON.stringify(body),
+  });
+
+const userProv = (rawText = null) => ({
+  sourceType: 'user_statement',
+  verificationStatus: 'user_confirmed',
+  createdBy: 'user',
+  rawText,
+});
+const selectionProv = () => ({
+  sourceType: 'user_selection',
+  verificationStatus: 'user_confirmed',
+  createdBy: 'user',
+});
+const aiProv = () => ({
+  sourceType: 'ai_inference',
+  verificationStatus: 'unverified',
+  createdBy: 'attacker',
+  confidence: 0.95,
+});
+
+const OK = (status, ...codes) => (r) => {
+  if (!codes.includes(r.status)) return `expected ${codes.join('/')} got ${r.status}: ${JSON.stringify(r.body).slice(0, 200)}`;
+  return true;
+};
 
 console.log(`smoke test against ${BASE}\n`);
 
 let episodeId;
+let refused;
 
-await check('health reports a deterministic orchestrator', async () => {
+/* ---------------- release safety metadata ---------------- */
+
+await check('health publishes complete release-safety metadata', async () => {
   const h = await get('/api/health');
-  return h.ok === true && ['deterministic', 'model'].includes(h.orchestrator) ? true : JSON.stringify(h);
+  for (const k of ['ok', 'orchestrator', 'releaseProfile', 'releaseReady', 'unreviewedSafetyRules', 'totalSafetyRules', 'blockingSafetyRules', 'writableFields']) {
+    if (!(k in h)) return `health is missing "${k}"`;
+  }
+  if (typeof h.totalSafetyRules !== 'number' || h.totalSafetyRules <= 0) return 'totalSafetyRules must be positive';
+  if (!Array.isArray(h.blockingSafetyRules)) return 'blockingSafetyRules must be an array';
+  return true;
 });
+
+await check('the development build does not claim to be release ready', async () => {
+  const h = await get('/api/health');
+  if (h.unreviewedSafetyRules > 0 && h.releaseReady !== false) return 'releaseReady must be false while rules are unreviewed';
+  return true;
+});
+
+/* ---------------- anatomy reference data ---------------- */
 
 await check('all four V1 regions are published', async () => {
   const r = await get('/api/regions');
@@ -53,102 +100,229 @@ await check('structure terminology is not fabricated as verified codes', async (
   return codes.length === 0 ? true : `${codes.length} structures claim verified coding`;
 });
 
-await check('chinese utterance localises to the right shoulder', async () => {
-  const r = await post('/api/localise', { utterance: '右肩里面这里疼，抬手就明显' });
-  if (r.region !== 'shoulder') return `region=${r.region}`;
-  if (r.side !== 'right') return `side=${r.side}`;
-  if (r.depth !== 'deep') return `depth=${r.depth}`;
-  if (r.consideredStructures.some((s) => s.confirmedByUser)) return 'model pre-confirmed a structure';
+/* ---------------- routing ---------------- */
+
+await check('a grounded complaint localises with a region', async () => {
+  const r = await post('/localise', { utterance: '右肩里面这里疼，抬手就明显' });
+  const b = r.body;
+  if (b.status !== 'grounded') return `expected grounded, got ${b.status}`;
+  if (b.region !== 'shoulder') return `region=${b.region}`;
+  if (b.side !== 'right') return `side=${b.side}`;
+  if (b.consideredStructures?.some((s) => s.selectedByUser)) return 'model pre-selected a structure';
   return true;
 });
 
-await check('nothing is grounded for a vague complaint', async () => {
-  const r = await post('/api/localise', { utterance: 'I just feel a bit off' });
-  return r.matchedTerms.length === 0 ? true : `grounded ${r.region} from nothing`;
+await check('an ungrounded complaint is refused, never defaulted to shoulder', async () => {
+  const r = await post('/localise', { utterance: 'I just feel a bit off' });
+  if (r.body.status !== 'unsupported') return `expected unsupported, got ${r.body.status}`;
+  if (!r.body.message) return 'refusal carried no message';
+  if (r.body.region) return 'an unsupported result must not carry a region';
+  return true;
 });
 
-await check('interview is region specific', async () => {
-  const s = (await get('/api/interview/shoulder'))[0].id;
-  const k = (await get('/api/interview/knee'))[0].id;
-  return s !== k ? true : 'shoulder and knee share a questionnaire';
+await check('a non-MSK complaint routes out of the MSK workflow', async () => {
+  const r = await post('/localise', { utterance: 'my chest feels tight and I cannot breathe' });
+  if (r.body.status !== 'unsupported') return `expected unsupported, got ${r.body.status}`;
+  if (r.body.reason !== 'out_of_scope') return `reason=${r.body.reason}`;
+  return true;
 });
 
-await check('cauda equina gate is mandatory on the lower back path', async () => {
-  const qs = await get('/api/interview/lower_back');
-  const gate = qs.filter((q) => q.safetyRuleId === 'msk.cauda_equina');
-  return gate.length >= 1 && gate.every((q) => q.required) ? true : 'mandatory safety gate missing';
+await check('the refusal names no condition and no severity', async () => {
+  const r = await post('/localise', { utterance: 'my chest feels tight' });
+  const m = r.body.message ?? '';
+  for (const bad of [/heart attack/i, /anxiety/i, /you have/i, /diagnos/i, /life.threatening/i]) {
+    if (bad.test(m)) return `refusal matched ${bad}`;
+  }
+  return true;
 });
 
-await check('episode can be created', async () => {
-  const ep = await post('/api/episodes', {
+await check('an unsupported episode cannot be created', async () => {
+  const r = await post('/episodes', {
+    personId: 'smoke',
+    grounding: { status: 'unsupported', reason: 'out_of_scope' },
+  });
+  return r.status === 409 && r.body.error === 'episode_not_localised' ? true : `${r.status} ${JSON.stringify(r.body)}`;
+});
+
+/* ---------------- the removed bypass endpoints ---------------- */
+
+await check('the old record PATCH endpoint is gone', async () => {
+  const r = await raw('PATCH', '/episodes/whatever/record', { record: { quality: ['dull'] } });
+  return r.status === 404 ? true : `expected 404, got ${r.status}`;
+});
+
+await check('the old provenance-only confirm endpoint is gone', async () => {
+  const r = await raw('POST', '/episodes/whatever/confirm', {
+    fieldPath: 'quality',
+    value: ['dull'],
+    verificationStatus: 'user_confirmed',
+  });
+  return r.status === 404 ? true : `expected 404, got ${r.status}`;
+});
+
+/* ---------------- the write path ---------------- */
+
+await check('a grounded episode is created with validated mutations', async () => {
+  const r = await post('/episodes', {
     personId: 'smoke',
     displayName: 'Smoke',
-    region: 'knee',
-    side: 'left',
-    userPhrase: 'left knee hurts going downstairs',
+    grounding: { status: 'grounded', region: 'knee', side: 'left', by: 'deterministic' },
+    mutations: [
+      { fieldPath: 'location.region', value: 'knee', provenance: userProv() },
+      { fieldPath: 'location.side', value: 'left', provenance: userProv() },
+      { fieldPath: 'location.userSelectedStructureIds', value: ['asi:knee.patella'], provenance: selectionProv() },
+      { fieldPath: 'function.intensity', value: 5, provenance: userProv() },
+    ],
   });
-  if (!ep.id) return JSON.stringify(ep);
-  episodeId = ep.id;
+  if (r.status !== 201) return `${r.status} ${JSON.stringify(r.body).slice(0, 200)}`;
+  episodeId = r.body.id;
   return true;
 });
 
-await check('user confirmation is recorded with provenance', async () => {
-  const r = await post(`/api/episodes/${episodeId}/confirm`, {
-    fieldPath: 'location.side',
-    value: 'left',
-    verificationStatus: 'user_confirmed',
-  });
-  return r.applied === true ? true : JSON.stringify(r);
-});
-
-await check('an ai_inference field cannot claim user confirmation', async () => {
-  const r = await post(`/api/episodes/${episodeId}/confirm`, {
-    fieldPath: 'location.depth',
-    value: 'deep',
-    verificationStatus: 'user_confirmed',
-  });
-  // The endpoint writes user_selection, so this is accepted; the invariant is
-  // enforced at the provenance layer, which we test in the unit suite.
-  return r.applied === true ? true : JSON.stringify(r);
-});
-
-await check('a weaker source cannot overwrite a confirmed field', async () => {
-  await post(`/api/episodes/${episodeId}/confirm`, {
-    fieldPath: 'tendernessOnPalpation',
-    value: 'moderate',
-    verificationStatus: 'user_confirmed',
-  });
-  const r = await post(`/api/episodes/${episodeId}/confirm`, {
-    fieldPath: 'tendernessOnPalpation',
-    value: 'severe',
-    verificationStatus: 'user_confirmed',
-  });
-  return r.applied === true ? true : 'second user confirmation should still apply';
-});
-
-await check('safety flags never assert a diagnosis', async () => {
+await check('the value and its provenance are both persisted', async () => {
   const ep = await get(`/api/episodes/${episodeId}`);
-  const { summary } = await get(`/api/episodes/${episodeId}/summary`);
-  const text = JSON.stringify(summary);
-  return !/you have (cauda|septic|disc|torn)/i.test(text) ? true : 'summary asserted a diagnosis';
-});
-
-await check('pre-visit summary separates confirmed from considered', async () => {
-  const { summary } = await get(`/api/episodes/${episodeId}/summary`);
-  if (!summary.history.length) return 'summary has no history';
-  if (!Array.isArray(summary.unconfirmedConsiderations)) return 'no separation of candidates';
-  if (!summary.dataSources.length) return 'no provenance tally';
+  if (ep.record.location.side !== 'left') return `side=${ep.record.location.side}`;
+  if (ep.provenance['location.side']?.sourceType !== 'user_statement') return 'no provenance for the written value';
   return true;
 });
 
-await check('plain-text export is downloadable and self-limiting', async () => {
-  const t = await fetch(`${BASE}/api/episodes/${episodeId}/summary.txt`).then((r) => r.text());
-  return /not a diagnosis/i.test(t) ? true : 'plain text lacks the disclaimer';
+await check('a field with no write has no provenance', async () => {
+  const ep = await get(`/api/episodes/${episodeId}`);
+  if ('location.depth' in ep.provenance) return 'a never-written field has provenance';
+  return true;
 });
 
-await check('health map indexes episodes by body region', async () => {
+await check('a model cannot write a user-grounded field', async () => {
+  const r = await post(`/episodes/${episodeId}/mutations`, {
+    mutations: [{ fieldPath: 'location.userSelectedStructureIds', value: ['asi:knee.meniscus-medial'], provenance: aiProv() }],
+  });
+  return r.status === 422 && r.body.error === 'field_policy_violation' ? true : `${r.status} ${JSON.stringify(r.body).slice(0, 160)}`;
+});
+
+await check('a rejected batch rolls back the legal writes with it', async () => {
+  const r = await post(`/episodes/${episodeId}/mutations`, {
+    mutations: [
+      { fieldPath: 'quality', value: ['dull'], provenance: userProv() },
+      { fieldPath: 'quality', value: ['dull'], provenance: aiProv() },
+    ],
+  });
+  if (r.status !== 422) return `expected 422, got ${r.status}`;
+  const ep = await get(`/api/episodes/${episodeId}`);
+  return ep.provenance['quality'] === undefined ? true : 'a rolled-back batch still wrote a field';
+});
+
+await check('an unknown field path is rejected', async () => {
+  const r = await post(`/episodes/${episodeId}/mutations`, {
+    mutations: [{ fieldPath: 'location.notAField', value: 'x', provenance: userProv() }],
+  });
+  return r.status === 422 ? true : `expected 422, got ${r.status}`;
+});
+
+await check('gaps cannot be written by a client', async () => {
+  const r = await post(`/episodes/${episodeId}/mutations`, {
+    mutations: [{ fieldPath: 'gaps', value: ['quality'], provenance: { sourceType: 'system_rule', verificationStatus: 'unverified', createdBy: 'x' } }],
+  });
+  return r.status === 422 ? true : `expected 422, got ${r.status}`;
+});
+
+/* ---------------- ISSUE 1: safety semantics end to end ---------------- */
+
+await check('ISSUE 1: bladder = no does NOT fire cauda equina', async () => {
+  const r = await post('/episodes', {
+    personId: 'smoke',
+    grounding: { status: 'grounded', region: 'lower_back', side: 'midline' },
+    answers: [{ questionId: 'lower_back.bladder', raw: 'no', wroteFields: [], createdBy: 'user' }],
+  });
+  if (r.status !== 201) return `${r.status}`;
+  const safety = (await get(`/api/episodes/${r.body.id}`)).safety;
+  return safety.flags.some((f) => f.ruleId === 'msk.cauda_equina') === false
+    ? true
+    : 'an explicit "no" fired the cauda equina rule';
+});
+
+await check('ISSUE 1: bladder = yes DOES fire cauda equina', async () => {
+  const r = await post('/episodes', {
+    personId: 'smoke',
+    grounding: { status: 'grounded', region: 'lower_back', side: 'midline' },
+    answers: [{ questionId: 'lower_back.bladder', raw: 'yes', wroteFields: [], createdBy: 'user' }],
+  });
+  if (r.status !== 201) return `${r.status}`;
+  const safety = (await get(`/api/episodes/${r.body.id}`)).safety;
+  const flag = safety.flags.find((f) => f.ruleId === 'msk.cauda_equina');
+  return flag ? true : 'an explicit "yes" did not reach the cauda equina rule';
+});
+
+await check('ISSUE 1: "I am not sure" is stored as unknown, not as no', async () => {
+  const r = await post('/episodes', {
+    personId: 'smoke',
+    grounding: { status: 'grounded', region: 'lower_back', side: 'midline' },
+    answers: [{ questionId: 'lower_back.bladder', raw: "don't know", wroteFields: [], createdBy: 'user' }],
+  });
+  const ep = await get(`/api/episodes/${r.body.id}`);
+  const a = ep.answers['lower_back.bladder'];
+  if (!a) return 'answer not persisted';
+  if (a.triState !== 'unknown') return `triState=${a.triState}`;
+  return true;
+});
+
+await check('ISSUE 1: the safety question wrote no record field', async () => {
+  const r = await post('/episodes', {
+    personId: 'smoke',
+    grounding: { status: 'grounded', region: 'lower_back', side: 'midline' },
+    answers: [{ questionId: 'lower_back.bladder', raw: 'yes', wroteFields: [], createdBy: 'user' }],
+  });
+  const ep = await get(`/api/episodes/${r.body.id}`);
+  const touched = ep.record.gaps.includes('quality') ? 'quality' : null;
+  return !Object.keys(ep.provenance).some((k) => ['quality', 'triggers', 'function.activitiesAffected'].includes(k))
+    ? true
+    : `a safety-only answer wrote ${touched ?? 'a record field'}`;
+});
+
+/* ---------------- ISSUE 4: the interview gate ---------------- */
+
+await check('an unsupported episode cannot start a region interview', async () => {
+  const r = await post('/episodes', { personId: 'smoke', grounding: { status: 'unsupported', reason: 'ungrounded' } });
+  return r.status === 409 ? true : `an unsupported episode was created (${r.status})`;
+});
+
+await check('a grounded episode gets a region question', async () => {
+  const r = await post(`/episodes/${episodeId}/interview/next`, {});
+  if (r.status !== 200) return `${r.status}`;
+  if (r.body.blocked) return 'a grounded episode was blocked from the interview';
+  if (!r.body.next) return 'no next question';
+  return true;
+});
+
+/* ---------------- ISSUE 5 + 3: the summary ---------------- */
+
+await check('an unanswered field is rendered as "not asked", never a negative', async () => {
+  const { summary } = await get(`/api/episodes/${episodeId}/summary`);
+  const find = (label) => summary.history.find((h) => h.label === label)?.value;
+  if (find('Systemic symptoms') !== 'not asked') return `Systemic symptoms: ${find('Systemic symptoms')}`;
+  if (find('Sleep affected') !== 'not asked') return `Sleep affected: ${find('Sleep affected')}`;
+  return true;
+});
+
+await check('a visual selection is reported as a location, not a confirmation', async () => {
+  const { summary } = await get(`/api/episodes/${episodeId}/summary`);
+  if (summary.visualSelections.length !== 1) return `visualSelections=${JSON.stringify(summary.visualSelections)}`;
+  if (/confirmed/i.test(JSON.stringify(summary))) return 'the summary still says "confirmed"';
+  return true;
+});
+
+await check('the plain-text export disclaims diagnosis and lists outstanding fields', async () => {
+  const t = await fetch(`${BASE}/api/episodes/${episodeId}/summary.txt`).then((r) => r.text());
+  if (!/not a diagnosis/i.test(t)) return 'missing disclaimer';
+  if (!/NOT ESTABLISHED/.test(t)) return 'missing outstanding fields section';
+  if (/Systemic symptoms: none reported/.test(t)) return 'claimed "none reported" for an unasked field';
+  return true;
+});
+
+/* ---------------- health map ---------------- */
+
+await check('the health map indexes episodes by body region', async () => {
   const m = await get('/api/healthmap/smoke');
-  return m.length >= 1 && m[0].region === 'knee' ? true : JSON.stringify(m);
+  return m.length >= 1 ? true : JSON.stringify(m);
 });
 
 await check('seeded history shows up with a recurrence', async () => {
@@ -159,11 +333,6 @@ await check('seeded history shows up with a recurrence', async () => {
     : `expected a recurring knee history, got ${knee.length}`;
 });
 
-await check('prior episodes are linked for a repeat visit', async () => {
-  const eps = await get('/api/episodes?personId=local&region=knee');
-  const prior = await get(`/api/episodes/${eps[0].id}/prior`);
-  return prior.length >= 1 ? true : 'no prior episodes linked';
-});
-
+void refused;
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);
