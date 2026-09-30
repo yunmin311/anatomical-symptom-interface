@@ -19,6 +19,14 @@ packages/server/assets/anatomy/*.glb
 packages/server/assets/anatomy/*.zip
 packages/server/assets/anatomy/*.mtl
 
+# BodyParts3D SOURCE assets: large, third-party, CC BY 4.0, and never ours to
+# redistribute. The extracted archive goes in assets/anatomy/source/ and stays out
+# of the repo. The GENERATED output in assets/anatomy/generated/ is small,
+# reproducible and reviewable, so it IS committed once it exists.
+assets/anatomy/source/
+*.obj
+*.zip
+
 .DS_Store
 Thumbs.db
 .vscode/
