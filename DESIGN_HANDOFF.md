@@ -30,12 +30,40 @@ No private write endpoint, new field, medical question or altered rule was added
 
 ## Deliberate scope limits
 
-- No anatomy asset replacement or 3D; original schematic geometry remains. This is the largest remaining visual weakness.
+- No anatomy asset replacement or 3D; the schematic geometry was reproportioned
+  (head, shoulders, waist, arm roots) but is still a silhouette, not an atlas.
+  Replacing it with a real asset remains the largest visual weakness.
+- Front and back share one silhouette and it does not mirror. The UI states this
+  where a user could otherwise assume otherwise.
 - No new body region or medical question; missing timeline/intensity data is not invented.
-- “Tissue filter” filters suggestions only. It does not pretend the 2D silhouette renders layers.
+- "Tissue filter" filters suggestions only. It does not pretend the 2D silhouette renders layers.
 - History counts are records, not severity or risk. No scores, trends or diagnostic claims.
 - Empty/loading/error are separate. Offline deterministic mode still needs its local API service.
 - Incomplete records can be reviewed/saved as main permits. No new safety gate or safety clearance.
+
+## Notes added by the 2026-09-30 continuation pass
+
+- `apps/web/test/presentation.test.ts` had been written against the pre-hardening
+  `PreVisitSummary` shape and made `pnpm test` fail on arrival. It now uses the
+  authoritative domain type. This was a stale *test*, not a domain defect: the
+  implementation was already correct, and no `packages/` file was changed.
+- Front-end hit geometry changed in one respect: the three lower-back zones were
+  fully nested, so `lower_back.central` could never be selected from the map. They
+  are now adjacent bands. This is `apps/web/src/anatomy/svg2d.ts` presentation
+  geometry only — sub-region ids, labels, ordering and meaning are untouched, and
+  the canonical `location.userSelectedStructureIds` write path is unchanged.
+- A geometry probe now clicks the centre of all 13 sub-region hit shapes and
+  asserts the matching selection, so a future silhouette change cannot silently
+  move a hit target off the body.
+- The desktop Locate workbench is now bounded at 1120px and the body scales with
+  its stage, instead of the body being fixed at 440px inside a stretched field.
+- The `Skip to content` link visible in the earlier V2 screenshots was a stale
+  stylesheet artefact, not a defect; the current CSS keeps it hidden until focus.
+  Do not "fix" it.
+- Tooling note for whoever runs this next: `/mnt/e` does not emit inotify events,
+  so a Vite dev server keeps serving a stale transform cache after an edit. Clear
+  `apps/web/node_modules/.vite` and restart Vite, or CSS changes appear to do
+  nothing. Helper scripts live in the ignored `data/run/`.
 
 ## Integration guidance
 
