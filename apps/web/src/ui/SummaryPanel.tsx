@@ -1,9 +1,9 @@
 import { useState } from 'react';
-import { questionProgress } from '@asi/shared';
+import { questionProgress, renderPlainText } from '@asi/shared';
 import { useSession } from '../state/session.ts';
 import { RecordDetails } from './RecordDetails.tsx';
 import { FactList, StatusTag } from './primitives.tsx';
-import { formatDate, groupSummaryRows, summaryText } from './presentation.ts';
+import { formatDate, groupSummaryRows } from './presentation.ts';
 
 export function SummaryPanel() {
   const { summary, record, answers } = useSession();
@@ -30,7 +30,10 @@ export function SummaryPanel() {
     );
   }
 
-  const text = summaryText(summary);
+  // One plain-text payload for both the clipboard and the manual-copy fallback,
+  // rendered by the domain so the copied text can never drift from the canonical
+  // summary. The frontend must not re-implement this.
+  const text = renderPlainText(summary);
   return (
     <article className="summary" aria-labelledby="summary-title">
       <header className="summary-heading">

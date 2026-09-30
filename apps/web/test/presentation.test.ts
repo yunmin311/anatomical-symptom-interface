@@ -1,6 +1,26 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { groupSummaryRows, summaryText } from '../src/ui/presentation.ts';
+import { renderPlainText } from '@asi/shared';
+import type { PreVisitSummary } from '@asi/shared';
+import * as presentation from '../src/ui/presentation.ts';
+import { groupSummaryRows, readable } from '../src/ui/presentation.ts';
+
+const base: PreVisitSummary = {
+  episodeId: 'e1',
+  generatedAt: '2026-01-01T00:00:00Z',
+  chiefComplaint: 'Left shoulder — aching; sudden onset; duration 2 days.',
+  locationLine: 'Left Shoulder (Anterior)',
+  history: [{ label: 'Location', value: 'Left Shoulder (Anterior)' }],
+  visualSelections: [],
+  unselectedSuggestions: [],
+  priorEpisodes: [],
+  safetyNotes: [],
+  withheldNotes: [],
+  safetyGateBlocked: false,
+  outstandingFields: [],
+  dataSources: [{ sourceType: 'user_statement', count: 2 }],
+  structured: {},
+};
 
 test('summary grouping preserves unfamiliar fields and every original value', () => {
   const rows = [
@@ -18,59 +38,61 @@ test('summary grouping preserves unfamiliar fields and every original value', ()
     assert.ok(grouped.some((section) => section.rows.includes(row)));
 });
 
-test('copy retains safety action steps, uncertainty, earlier episodes and source counts', () => {
-  const text = summaryText({
-    episodeId: 'test',
-    generatedAt: '2026-09-29T00:00:00Z',
-    chiefComplaint: 'Test complaint',
-    locationLine: 'Test location',
-    history: [{ label: 'Location', value: 'Test location' }],
-    visualSelections: ['Structure the user pointed at'],
-    unselectedSuggestions: ['Candidate A'],
-    priorEpisodes: [
-      {
-        id: 'prior',
-        startedAt: '2026-01-01T00:00:00Z',
-        title: 'Prior episode',
-        status: 'open',
-      },
-    ],
-    safetyNotes: [
-      {
-        severity: 'caution',
-        title: 'Rule title',
-        message: 'Verbatim rule message',
-        steps: ['Verbatim action one', 'Verbatim action two'],
-      },
-    ],
-    withheldNotes: [
-      { ruleId: 'rule.withheld', severity: 'urgent', reason: 'Withheld reason' },
-    ],
-    safetyGateBlocked: true,
-    outstandingFields: ['temporal.onset'],
-    dataSources: [{ sourceType: 'user_statement', count: 2 }],
-    structured: {},
-  });
-  for (const value of [
-    'Verbatim action one',
-    'Verbatim action two',
-    'Verbatim rule message',
-    'not findings',
-    'Candidate A',
-    'Structure the user pointed at',
-    'location, not a finding',
-    'Prior episode',
-    'user_statement: 2',
-    'not a diagnosis',
-  ])
-    assert.ok(text.includes(value), value);
+test('explicit unknown is never reported as unrecorded', () => {
+  const side = readable('unknown');
+  const depth = readable('unknown');
+  for (const value of [side, depth]) {
+    assert.ok(
+      !/not recorded/i.test(value),
+      `explicit uncertainty must not read as unrecorded: ${value}`,
+    );
+    assert.match(value, /not established/i);
+  }
+  assert.equal(side, depth);
+});
 
-  // A withheld urgent rule and a blocked gate must never be copied out as if the
-  // record were safe; missing fields must read as missing, not as a negative.
-  assert.ok(text.includes('SAFETY GATE BLOCKED'));
-  assert.ok(text.includes('Withheld [urgent]: Withheld reason'));
-  assert.ok(text.includes('Not established'));
-  assert.ok(text.includes('temporal.onset'));
+test('missing information stays distinct from explicit uncertainty', () => {
+  const unknown = readable('unknown');
+  for (const absent of [null, undefined, '']) {
+    const missing = readable(absent);
+    assert.match(missing, /not asked/i);
+    assert.notEqual(missing, unknown);
+  }
+  // A recorded value is still rendered plainly, underscores and all.
+  assert.equal(readable('left'), 'left');
+  assert.equal(readable('weight_bearing'), 'weight bearing');
+});
+
+test('pre-save review keeps an unestablished location distinct from an unasked one', async () => {
+  const { emptyRecord, buildAnswer } = await import('@asi/shared');
+  const { answerSections } = await import('../src/ui/presentation.ts');
+  // The real pre-save review record: nothing answered yet, so the location is
+  // explicitly unestablished rather than absent.
+  const record = emptyRecord('shoulder');
+  assert.equal(record.location.side, 'unknown');
+  assert.equal(record.location.depth, 'unknown');
+
+  const locationRows = [
+    { label: 'Side', value: readable(record.location.side) },
+    { label: 'Depth', value: readable(record.location.depth) },
+  ];
+  assert.ok(locationRows.every((row) => /not established/i.test(row.value)));
+  assert.ok(locationRows.every((row) => !/not recorded/i.test(row.value)));
+
+  // The answer groups on the same screen must not collapse the two either.
+  const rows = answerSections(record, {
+    'shoulder.vascular': buildAnswer({
+      questionId: 'shoulder.vascular',
+      raw: 'unknown',
+      triState: 'unknown',
+      provenance: { capturedAt: '2026-01-01T00:00:00Z', createdBy: 'user' },
+    }),
+  })
+    .flatMap((section) => section.rows)
+    .map((row) => row.value);
+  assert.ok(rows.some((value) => /not established/i.test(value)));
+  assert.ok(rows.some((value) => /not asked/i.test(value)));
+  assert.ok(!rows.some((value) => /not recorded/i.test(value)));
 });
 
 test('review keeps no, yes, unknown and not asked separate without record defaults', async () => {
@@ -95,4 +117,55 @@ test('review keeps no, yes, unknown and not asked separate without record defaul
     );
     assert.ok(rows.some((row) => row.value === 'Not asked'));
   }
+});
+
+test('the frontend no longer carries its own plain-text summary renderer', () => {
+  // renderPlainText in @asi/shared is the single source of truth. A second
+  // frontend implementation is how the copied text drifts from the canonical
+  // summary, so its absence is part of the contract.
+  assert.equal('summaryText' in presentation, false);
+  assert.equal(
+    Object.values(presentation).some(
+      (value) => typeof value === 'function' && /PRE-VISIT/.test(String(value)),
+    ),
+    false,
+  );
+});
+
+test('copied plain text is exactly the canonical renderPlainText output', () => {
+  assert.equal(
+    renderPlainText(base),
+    [
+      'PRE-VISIT SYMPTOM SUMMARY',
+      'Generated 2026-01-01T00:00:00Z',
+      '',
+      'Left shoulder — aching; sudden onset; duration 2 days.',
+      '',
+      'Location: Left Shoulder (Anterior)',
+      '',
+      'DATA SOURCES IN THIS SUMMARY:',
+      '  - user_statement: 2 field(s)',
+      '',
+      'This summary was produced by a patient self-report tool. It is not a diagnosis.',
+    ].join('\n'),
+  );
+});
+
+test('canonical blocked-safety output preserves severity, ruleId and reason', () => {
+  const text = renderPlainText({
+    ...base,
+    safetyGateBlocked: true,
+    withheldNotes: [
+      { ruleId: 'msk.cauda_equina', severity: 'emergency', reason: 'Not clinically reviewed' },
+    ],
+    // Present but must not leak: a blocked gate withholds rather than reports.
+    safetyNotes: [
+      { severity: 'urgent', title: 'Leaked note', message: 'Leaked body', steps: ['Leaked step'] },
+    ],
+  });
+  assert.match(text, /\*\*\* SAFETY GATE BLOCKED \*\*\*/);
+  assert.match(text, /This record has NOT been safely assessed/);
+  assert.match(text, /\[EMERGENCY\] msk\.cauda_equina: Not clinically reviewed/);
+  for (const leaked of ['Leaked note', 'Leaked body', 'Leaked step'])
+    assert.equal(text.includes(leaked), false, `withheld rule leaked: ${leaked}`);
 });

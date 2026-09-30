@@ -1,8 +1,19 @@
 import { INTERVIEW } from "@asi/shared";
 import type { PreVisitSummary } from "@asi/shared";
 
+/**
+ * Render a stored record value without collapsing uncertainty into missing
+ * information.
+ *
+ * 'unknown' is the record saying the user explicitly could not establish this
+ * (they answered "I am not sure"). An absent value means the question was never
+ * asked. Those are different facts and the domain keeps them apart, so the view
+ * must too: reporting either as "Not recorded" makes an unanswered question and
+ * a stated uncertainty indistinguishable to whoever reads the record.
+ */
 export function readable(value: string | null | undefined): string {
-  if (!value || value === "unknown") return "Not recorded";
+  if (value === "unknown") return "Not established — user is not sure";
+  if (!value) return "Not asked";
   return value.replaceAll("_", " ");
 }
 
@@ -77,71 +88,6 @@ export function groupSummaryRows(rows: PreVisitSummary["history"]) {
       rows: rows.filter((row) => !known.has(row.label)),
     },
   ].filter((section) => section.rows.length > 0);
-}
-
-/** Copy the same full content displayed, including the rule engine's action steps. */
-export function summaryText(summary: PreVisitSummary): string {
-  return [
-    "PRE-VISIT SYMPTOM SUMMARY",
-    `Generated ${summary.generatedAt}`,
-    summary.chiefComplaint,
-    ...groupSummaryRows(summary.history).flatMap((section) => [
-      "",
-      section.title,
-      ...section.rows.map((row) => `${row.label}: ${row.value}`),
-    ]),
-    ...(summary.visualSelections.length
-      ? [
-          "",
-          "Areas you pointed to (location, not a finding)",
-          ...summary.visualSelections,
-        ]
-      : []),
-    ...(summary.safetyGateBlocked
-      ? ["", "SAFETY GATE BLOCKED. This record has NOT been safely assessed."]
-      : []),
-    ...summary.withheldNotes.map(
-      (note) => `Withheld [${note.severity}]: ${note.reason}`,
-    ),
-    ...(summary.unselectedSuggestions.length
-      ? [
-          "",
-          "Suggested, not acted on — not findings",
-          ...summary.unselectedSuggestions,
-        ]
-      : []),
-    ...(summary.priorEpisodes.length
-      ? [
-          "",
-          "Earlier episodes in this area",
-          ...summary.priorEpisodes.map(
-            (episode) =>
-              `${episode.startedAt}: ${episode.title} (${episode.status})`,
-          ),
-        ]
-      : []),
-    ...(summary.safetyNotes.length
-      ? [
-          "",
-          "Safety information",
-          ...summary.safetyNotes.flatMap((note) => [
-            `[${note.severity}] ${note.title}`,
-            note.message,
-            ...note.steps,
-          ]),
-        ]
-      : []),
-    ...(summary.outstandingFields.length
-      ? ["", "Not established", ...summary.outstandingFields]
-      : []),
-    "",
-    "Data sources",
-    ...summary.dataSources.map(
-      (source) => `${source.sourceType}: ${source.count} field(s)`,
-    ),
-    "",
-    "This summary was produced by a patient self-report tool. It is not a diagnosis.",
-  ].join("\n");
 }
 
 /** Group raw answers for review without treating record defaults as answers. */
