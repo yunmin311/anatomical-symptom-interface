@@ -34,6 +34,128 @@ export interface GroundingCandidate {
   consideredStructures: ConsideredStructure[];
   /** Verbatim input, always preserved. */
   userPhrase: string;
+  /** Resolved ASI structure ids surfaced as candidates. */
+  candidateStructureIds: string[];
+}
+
+/**
+ * Why an input could not be grounded.
+ *
+ * `ungrounded` means we could not place it in any region we handle.
+ * `out_of_scope` means it looks like a body region this V1 build does not cover
+ * — a different workflow, not a failed guess.
+ *
+ * This is a ROUTER, not a detector. It does not assess whether anything is
+ * medically wrong, and it must not grow into a triage engine. See ADR 0003.
+ */
+export type UnsupportedReason = 'ungrounded' | 'out_of_scope';
+
+export interface GroundingRefusal {
+  reason: UnsupportedReason;
+  userPhrase: string;
+  /** Why we declined, in words safe to show a user. Never a diagnosis. */
+  message: string;
+  /** Which regions this build can localise, so the UI can say so. */
+  supportedRegions: BodyRegion[];
+  /**
+   * Body regions we recognise but do not handle. This is a coverage statement,
+   * not a clinical judgement: "we do not have a workflow for this area".
+   */
+  outOfScopeRegions: string[];
+}
+
+/**
+ * Regions this build has no interview for. Matched on explicit body-part terms
+ * only. A match routes the user to a neutral "we cannot localise this safely"
+ * path — it must never fall through to a musculoskeletal interview, and it must
+ * never assert that the user's problem is serious.
+ */
+const OUT_OF_SCOPE_TERMS: Readonly<Record<string, readonly string[]>> = Object.freeze({
+  chest: ['chest', 'chest pain', 'chest tightness', '胸', '胸口', '胸部', '心口', '心前区'],
+  breathlessness: [
+    'breathless', 'shortness of breath', 'short of breath', 'cannot breathe', "can't breathe",
+    'wheezing', '喘息', '气短', '呼吸困难', '喘不上气',
+  ],
+  abdomen: ['stomach', 'abdomen', 'belly', 'abdominal', 'belly pain', '腹痛', '肚子', '腹部', '胃痛'],
+  pelvis_groin: ['pelvis', 'pelvic', 'testicle', 'testicles', 'scrotum', '阴部', '睾丸', '盆腔'],
+  skin_rash: ['rash', 'itching', 'itchy', 'hives', 'boils', 'rash', '皮疹', '瘙痒', '起疹', '疹子'],
+  urinary: ['urine', 'urinating', 'burning urine', 'urine', '尿', '尿频', '尿痛'],
+  neurological: [
+    'seizure', 'fit', 'fainting', 'fainted', 'blackout', 'slurred speech', 'face droop',
+    '癫痫', '晕倒', '昏厥', '口齿不清', '口角歪斜',
+  ],
+  eye: ['eye', 'eyes', 'vision', 'blurred vision', 'eye pain', '眼睛', '视力', '看不清', '眼痛'],
+  ear: ['ear', 'earache', 'ear pain', 'hearing', '耳朵', '耳痛', '听力'],
+  dental: ['tooth', 'teeth', 'toothache', 'gum', '牙', '牙痛', '牙齿'],
+  pregnancy: ['pregnant', 'pregnancy', 'miscarriage', '怀孕', '孕期', '流产'],
+});
+
+/** Regions this build localises. */
+const SUPPORTED_REGIONS: readonly BodyRegion[] = ['shoulder', 'neck', 'lower_back', 'knee'];
+
+/**
+ * Detect a region this build cannot localise. Returns null when nothing matches.
+ *
+ * Deliberately conservative: only unambiguous, explicit body-part terms. A word
+ * like "arm" is NOT out of scope, because the shoulder workflow covers it.
+ */
+export function detectOutOfScope(text: string): { area: string; term: string } | null {
+  const compact = normalisePhrase(text);
+  for (const [area, terms] of Object.entries(OUT_OF_SCOPE_TERMS)) {
+    for (const term of terms) {
+      if (compact.includes(term)) return { area, term };
+    }
+  }
+  return null;
+}
+
+/**
+ * Build the neutral refusal the UI shows. Says only what we can and cannot do.
+ * It must not name a condition, estimate severity, or tell the user whether
+ * they need urgent care — that is a validated clinical layer's job, and this
+ * build does not have one.
+ */
+export function groundingRefusal(utterance: string, detected: { area: string; term: string } | null): GroundingRefusal {
+  const outOfScopeRegions = detected ? [detected.area] : [];
+  return {
+    reason: detected ? 'out_of_scope' : 'ungrounded',
+    userPhrase: utterance,
+    message: detected
+      ? 'This tool helps describe shoulder, neck, lower back and knee problems. ' +
+        'That description does not fit those areas, so this workflow will stop here rather than ' +
+        'send you to the wrong questions. Nothing has been recorded. ' +
+        'If you are worried about your symptoms, contact a clinician or your local emergency service directly.'
+      : 'I could not work out where on the body you are describing. Rather than guess, ' +
+        'this workflow will stop here. Nothing has been recorded. You can pick a region below, ' +
+        'or rephrase and try again. If you are worried about your symptoms, contact a clinician ' +
+        'or your local emergency service directly.',
+    supportedRegions: [...SUPPORTED_REGIONS],
+    outOfScopeRegions,
+  };
+}
+
+/**
+ * Localise, or refuse explicitly.
+ *
+ * There is no third option. A previous version fell back to `shoulder` when
+ * nothing matched, which meant any complaint at all — including a chest
+ * complaint — silently entered the shoulder questionnaire. That is the exact
+ * failure this function now makes impossible.
+ */
+export function groundOrRefuse(input: string): { ok: true; candidate: GroundingCandidate } | { ok: false; refusal: GroundingRefusal } {
+  const raw = input.trim();
+  if (!raw) {
+    return { ok: false, refusal: groundingRefusal(raw, null) };
+  }
+  const outOfScope = detectOutOfScope(raw);
+  if (outOfScope) {
+    return { ok: false, refusal: groundingRefusal(raw, outOfScope) };
+  }
+  const candidate = groundFromText(raw);
+  if (!candidate) {
+    return { ok: false, refusal: groundingRefusal(raw, null) };
+  }
+  return { ok: true, candidate };
 }
 
 interface RegionLexicon {
@@ -245,7 +367,7 @@ export function groundFromText(input: string): GroundingCandidate | null {
         structureId: structure.id,
         rationale: `You mentioned “${hit}”.`,
         confidence: 0.6,
-        confirmedByUser: false,
+        selectedByUser: false,
       });
     }
   }
@@ -259,7 +381,7 @@ export function groundFromText(input: string): GroundingCandidate | null {
         structureId: s.id,
         rationale: `“${hint}” is a term people use for this area.`,
         confidence: 0.45,
-        confirmedByUser: false,
+        selectedByUser: false,
       });
     }
   }
@@ -275,6 +397,7 @@ export function groundFromText(input: string): GroundingCandidate | null {
     matchedTerms: [...new Set(matchedTerms)],
     suggestedSubRegionId,
     consideredStructures,
+    candidateStructureIds: [...seen],
     userPhrase: raw,
   };
 }
