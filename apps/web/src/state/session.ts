@@ -85,6 +85,10 @@ interface SessionState {
   pinAt: (point: MapPoint) => void;
   select: (id: string) => void;
   deselect: (id: string) => void;
+  /** Dismiss a tool suggestion. Presentation-only; the candidate is kept. */
+  reject: (id: string) => void;
+  /** Undo a rejection. */
+  unreject: (id: string) => void;
   selectSubRegion: (id: string) => void;
   setSide: (side: Side) => void;
   setDepth: (depth: Depth) => void;
@@ -219,6 +223,26 @@ export const useSession = create<SessionState>((set, get) => {
     deselect: (id) => {
       const record = deselectStructure(get().record, id);
       set({ record });
+    },
+
+    /**
+     * Dismiss a tool suggestion: "not that one".
+     *
+     * This is a presentation-local decision about which SUGGESTION to show, not
+     * a statement about the user's body, so it is not written to the record. The
+     * candidate is kept exactly as it was — rejecting a suggestion must not
+     * delete the evidence that it was considered, which is the same reasoning
+     * that makes deselect lossless. It only changes what the viewer highlights.
+     */
+    reject: (id) => {
+      // The adapter subscription bumps viewerTick, so the map and any 3D viewer
+      // re-render from this alone.
+      anatomy.apply({ type: 'reject', structureIds: [id] });
+    },
+
+    /** Undo a rejection and let the suggestion be considered again. */
+    unreject: (id) => {
+      anatomy.apply({ type: 'clearReject', structureIds: [id] });
     },
 
     selectSubRegion: (id) => {
