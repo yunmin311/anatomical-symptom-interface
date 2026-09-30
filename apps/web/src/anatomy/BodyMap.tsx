@@ -1,11 +1,11 @@
-import { useState } from "react";
-import { getStructure, REGIONS } from "@asi/shared";
-import { anatomy, useSession } from "../state/session.ts";
-import { BODY_SILHOUETTE, toMapPoint } from "./svg2d.ts";
-import type { ViewName } from "./svg2d.ts";
-import { ChoiceGroup } from "../ui/primitives.tsx";
+import { useState } from 'react';
+import { getStructure, REGIONS } from '@asi/shared';
+import { anatomy, useSession } from '../state/session.ts';
+import { BODY_SILHOUETTE, toMapPoint } from './svg2d.ts';
+import type { ViewName } from './svg2d.ts';
+import { ChoiceGroup } from '../ui/primitives.tsx';
 
-type Inspector = "area" | "feeling" | "structures";
+type Inspector = 'area' | 'feeling' | 'structures';
 export function BodyMap() {
   const {
     record,
@@ -23,15 +23,15 @@ export function BodyMap() {
   const location = record.location,
     region = REGIONS[location.region];
   const [view, setView] = useState<ViewName>(
-    location.region === "lower_back" ||
-      location.subRegionId?.endsWith("posterior")
-      ? "posterior"
-      : "anterior",
+    location.region === 'lower_back' ||
+      location.subRegionId?.endsWith('posterior')
+      ? 'posterior'
+      : 'anterior',
   );
   const [pendingSub, setPendingSub] = useState<string | null>(null);
   const [pendingPoint, setPendingPoint] = useState(location.point);
-  const [inspector, setInspector] = useState<Inspector>("area");
-  const [layer, setLayer] = useState("all");
+  const [inspector, setInspector] = useState<Inspector>('area');
+  const [layer, setLayer] = useState('all');
   const shapes = anatomy.shapesForRegion(location.region, view);
   const candidates = record.consideredStructures;
   const selected = location.userSelectedStructureIds;
@@ -48,10 +48,10 @@ export function BodyMap() {
     if (!shapes.some((s) => s.subRegionId === id))
       setView(
         anatomy
-          .shapesForRegion(location.region, "posterior")
+          .shapesForRegion(location.region, 'posterior')
           .some((s) => s.subRegionId === id)
-          ? "posterior"
-          : "anterior",
+          ? 'posterior'
+          : 'anterior',
       );
   }
   return (
@@ -64,12 +64,12 @@ export function BodyMap() {
         <blockquote>{location.userPhrase}</blockquote>
         <div className="location-source">
           <span className="small">
-            {orchestratorKind === "model"
-              ? "Model suggestion"
-              : "Offline rules suggestion"}{" "}
+            {orchestratorKind === 'model'
+              ? 'Model suggestion'
+              : 'Offline rules suggestion'}{' '}
             · please check
           </span>
-          <button className="link" onClick={() => setStage("describe")}>
+          <button className="link" onClick={() => setStage('describe')}>
             Edit description
           </button>
         </div>
@@ -81,12 +81,12 @@ export function BodyMap() {
               label="Body view"
               value={view}
               options={[
-                { value: "anterior", label: "Front" },
-                { value: "posterior", label: "Back" },
+                { value: 'anterior', label: 'Front' },
+                { value: 'posterior', label: 'Back' },
               ]}
               onChange={(v) => {
                 setView(v);
-                anatomy.apply({ type: "setView", view: v });
+                anatomy.apply({ type: 'setView', view: v });
               }}
             />
             <span className="small">Schematic / 2D</span>
@@ -95,13 +95,13 @@ export function BodyMap() {
             <div className="viewer-caption">
               <span className="eyebrow">Location study</span>
               <strong>{region.label}</strong>
-              <span>{view === "anterior" ? "Front view" : "Back view"}</span>
+              <span>{view === 'anterior' ? 'Front view' : 'Back view'}</span>
             </div>
             <svg
               viewBox="0 0 100 186"
               className="bodymap__svg"
               role="img"
-              aria-label={`${region.label}, schematic ${view === "anterior" ? "front" : "back"} view. Use location buttons for keyboard selection.`}
+              aria-label={`${region.label}, schematic ${view === 'anterior' ? 'front' : 'back'} view. Use location buttons for keyboard selection.`}
               onClick={(e) => {
                 setPendingPoint(
                   toMapPoint(
@@ -111,7 +111,7 @@ export function BodyMap() {
                   ),
                 );
                 const target = (e.target as SVGElement).closest(
-                  "[data-subregion]",
+                  '[data-subregion]',
                 ) as SVGElement | null;
                 if (target?.dataset.subregion)
                   setPendingSub(target.dataset.subregion);
@@ -132,7 +132,7 @@ export function BodyMap() {
                     <title>{shape.label}</title>
                     <path
                       d={shape.d}
-                      className={`bodymap__zone-shape ${pendingSub === shape.subRegionId ? "is-active" : "has-candidate"}`}
+                      className={`bodymap__zone-shape ${pendingSub === shape.subRegionId ? 'is-active' : location.subRegionId === shape.subRegionId || candidates.some((c) => region.subRegions.find((sub) => sub.id === shape.subRegionId)?.structures.some((structure) => structure.id === c.structureId)) ? 'has-candidate' : ''}`}
                     />
                   </g>
                 ))}
@@ -181,9 +181,9 @@ export function BodyMap() {
           >
             {(
               [
-                ["area", "Area & pin"],
-                ["feeling", "Side & depth"],
-                ["structures", "Structures"],
+                ['area', 'Area & pin'],
+                ['feeling', 'Side & depth'],
+                ['structures', 'Structures'],
               ] as const
             ).map(([id, label]) => (
               <button
@@ -196,7 +196,7 @@ export function BodyMap() {
             ))}
           </div>
           <div className="inspector-body">
-            {inspector === "area" && (
+            {inspector === 'area' && (
               <section>
                 <span className="eyebrow">Your approximate location</span>
                 <h3>Where do you mean?</h3>
@@ -213,7 +213,7 @@ export function BodyMap() {
                     >
                       <span>{sub.label}</span>
                       <span aria-hidden="true">
-                        {pendingSub === sub.id ? "✓" : "↗"}
+                        {pendingSub === sub.id ? '✓' : '↗'}
                       </span>
                     </button>
                   ))}
@@ -266,7 +266,7 @@ export function BodyMap() {
                 </details>
               </section>
             )}
-            {inspector === "feeling" && (
+            {inspector === 'feeling' && (
               <section>
                 <span className="eyebrow">Your spatial description</span>
                 <h3>Side and depth</h3>
@@ -277,11 +277,11 @@ export function BodyMap() {
                   label="Your side"
                   value={location.side}
                   options={[
-                    { value: "left", label: "Left" },
-                    { value: "right", label: "Right" },
-                    { value: "midline", label: "Centre" },
-                    { value: "bilateral", label: "Both sides" },
-                    { value: "unknown", label: "Not sure" },
+                    { value: 'left', label: 'Left' },
+                    { value: 'right', label: 'Right' },
+                    { value: 'midline', label: 'Centre' },
+                    { value: 'bilateral', label: 'Both sides' },
+                    { value: 'unknown', label: 'Not sure' },
                   ]}
                   onChange={setSide}
                 />
@@ -289,16 +289,16 @@ export function BodyMap() {
                   label="Where does it feel?"
                   value={location.depth}
                   options={[
-                    { value: "superficial", label: "Near the surface" },
-                    { value: "intermediate", label: "In between" },
-                    { value: "deep", label: "Deep inside" },
-                    { value: "unknown", label: "Not sure" },
+                    { value: 'superficial', label: 'Near the surface' },
+                    { value: 'intermediate', label: 'In between' },
+                    { value: 'deep', label: 'Deep inside' },
+                    { value: 'unknown', label: 'Not sure' },
                   ]}
                   onChange={setDepth}
                 />
               </section>
             )}
-            {inspector === "structures" && (
+            {inspector === 'structures' && (
               <section>
                 <span className="eyebrow">Optional detail</span>
                 <h3>Structure suggestions</h3>
@@ -332,7 +332,7 @@ export function BodyMap() {
                   {candidates
                     .filter(
                       (c) =>
-                        layer === "all" ||
+                        layer === 'all' ||
                         getStructure(c.structureId)?.layer === layer,
                     )
                     .map((c) => {
@@ -342,12 +342,12 @@ export function BodyMap() {
                       return (
                         <li
                           key={c.structureId}
-                          className={`candidate-item ${isSelected ? "candidate-item--selected" : ""}`}
+                          className={`candidate-item ${isSelected ? 'candidate-item--selected' : ''}`}
                         >
                           <span className="small">
                             {isSelected
-                              ? "✓ Your visual selection"
-                              : "◇ Tool suggestion · not selected"}
+                              ? '✓ Your visual selection'
+                              : '◇ Tool suggestion · not selected'}
                           </span>
                           <h4>{structure.layTerm || structure.label}</h4>
                           {structure.layTerm && (
@@ -363,8 +363,8 @@ export function BodyMap() {
                             }
                           >
                             {isSelected
-                              ? "Remove visual selection"
-                              : "Indicate this structure"}
+                              ? 'Remove visual selection'
+                              : 'Indicate this structure'}
                           </button>
                         </li>
                       );
@@ -376,18 +376,18 @@ export function BodyMap() {
           <div className="inspector-receipt">
             <span className="eyebrow">Current description</span>
             <p>
-              {location.side === "unknown"
-                ? "Side not established"
-                : location.side}{" "}
-              ·{" "}
-              {location.depth === "unknown"
-                ? "depth not established"
+              {location.side === 'unknown'
+                ? 'Side not established'
+                : location.side}{' '}
+              ·{' '}
+              {location.depth === 'unknown'
+                ? 'depth not established'
                 : location.depth}
             </p>
             <p className="small">
               {selected.length} visual structure selection
-              {selected.length === 1 ? "" : "s"} ·{" "}
-              {pendingPoint ? "pin placed" : "no pin"}
+              {selected.length === 1 ? '' : 's'} ·{' '}
+              {pendingPoint ? 'pin placed' : 'no pin'}
             </p>
           </div>
         </aside>
@@ -395,7 +395,7 @@ export function BodyMap() {
       <div className="location-footer">
         <div role="status">
           <strong>
-            {chosen ? `✓ ${chosen.label}` : "Choose an approximate location"}
+            {chosen ? `✓ ${chosen.label}` : 'Choose an approximate location'}
           </strong>
           <span className="small">
             Location indication, not a clinical finding.

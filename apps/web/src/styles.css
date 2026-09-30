@@ -1,4 +1,4 @@
-@import "./tokens.css";
+@import './tokens.css';
 * {
   box-sizing: border-box;
 }
@@ -30,7 +30,7 @@ button {
   outline: 3px solid var(--accent);
   outline-offset: 3px;
 }
-[tabindex="-1"]:focus {
+[tabindex='-1']:focus {
   outline: none;
 }
 a {
@@ -98,14 +98,15 @@ ol {
 }
 .skip-link {
   position: fixed;
-  top: -80px;
+  top: 8px;
+  clip-path: inset(50%);
   left: 16px;
   z-index: 100;
   background: var(--surface);
   padding: 12px;
 }
 .skip-link:focus {
-  top: 8px;
+  clip-path: none;
 }
 .app {
   max-width: 1440px;
@@ -230,8 +231,8 @@ textarea {
   padding: 18px;
   line-height: 1.6;
 }
-input[type="radio"],
-input[type="checkbox"] {
+input[type='radio'],
+input[type='checkbox'] {
   accent-color: var(--accent);
   width: 18px;
   height: 18px;
@@ -329,19 +330,19 @@ details > p {
   text-align: left;
 }
 .body-index__label::before {
-  content: "";
+  content: '';
   height: 1px;
   width: 24px;
   background: var(--line);
   position: absolute;
   right: calc(100% + 4px);
 }
-.body-index__label[aria-pressed="true"],
+.body-index__label[aria-pressed='true'],
 .body-index__label.is-active {
   color: var(--accent);
   font-weight: 700;
 }
-.body-index__label[aria-pressed="true"]::before {
+.body-index__label[aria-pressed='true']::before {
   background: var(--accent);
   height: 2px;
 }
@@ -512,7 +513,7 @@ details > p {
   flex: 1;
   white-space: nowrap;
 }
-.inspector-switch button[aria-pressed="true"] {
+.inspector-switch button[aria-pressed='true'] {
   color: var(--accent);
   border-bottom-color: var(--accent);
   font-weight: 600;
@@ -544,7 +545,7 @@ details > p {
   text-align: left;
   font-size: 14px;
 }
-.subregion-option[aria-pressed="true"] {
+.subregion-option[aria-pressed='true'] {
   background: var(--accent-soft);
   color: var(--accent);
   font-weight: 600;
@@ -791,7 +792,7 @@ details > p {
   margin: 0;
   overflow-wrap: anywhere;
 }
-.facts dd[data-missing="true"] {
+.facts dd[data-missing='true'] {
   color: var(--muted);
   font-style: italic;
 }
@@ -836,7 +837,7 @@ details > p {
   margin: 32px auto 0;
 }
 .review-actions {
-  position: sticky;
+  position: static;
   bottom: 0;
   background: var(--bg);
   padding: 16px 0;
@@ -874,7 +875,7 @@ details > p {
   background: none;
   font-size: 14px;
 }
-.healthmap-region[aria-pressed="true"] {
+.healthmap-region[aria-pressed='true'] {
   color: var(--accent);
   font-weight: 600;
 }
@@ -899,7 +900,7 @@ details > p {
   margin-bottom: 28px;
 }
 .episode-timeline__item:before {
-  content: "";
+  content: '';
   position: absolute;
   left: -25px;
   top: 6px;
@@ -931,12 +932,12 @@ details > p {
   margin-top: 8px;
 }
 .episode > summary:after {
-  content: "+";
+  content: '+';
   font-size: 20px;
   color: var(--accent);
 }
 .episode[open] > summary:after {
-  content: "−";
+  content: '−';
 }
 .episode__detail {
   padding: 0 0 16px;
@@ -1477,4 +1478,10 @@ details > p {
     background: white;
     border: 2px solid black;
   }
+}
+
+.bodymap__zone-shape:not(.has-candidate):not(.is-active) {
+  fill: #c5c3b9;
+  stroke: #71766d;
+  stroke-dasharray: none;
 }

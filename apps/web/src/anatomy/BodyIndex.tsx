@@ -1,6 +1,6 @@
-import { REGIONS } from "@asi/shared";
-import type { BodyRegion } from "@asi/shared";
-import { BODY_SILHOUETTE } from "./svg2d.ts";
+import { REGIONS } from '@asi/shared';
+import type { BodyRegion } from '@asi/shared';
+import { BODY_SILHOUETTE } from './svg2d.ts';
 
 const POSITION: Record<BodyRegion, number> = {
   neck: 28,
@@ -32,28 +32,30 @@ export function BodyIndex({
         </g>
       </svg>
       <div className="body-index__labels">
-        {Object.values(REGIONS).map((region) =>
-          onSelect ? (
-            <button
-              key={region.id}
-              style={{ top: `${POSITION[region.id]}%` }}
-              className="body-index__label"
-              aria-pressed={active === region.id}
-              onClick={() => onSelect(region.id)}
-            >
-              <span>{region.label}</span>
-              {counts && <span>{counts[region.id] || 0}</span>}
-            </button>
-          ) : (
-            <span
-              key={region.id}
-              style={{ top: `${POSITION[region.id]}%` }}
-              className={`body-index__label ${active === region.id ? "is-active" : ""}`}
-            >
-              {region.label}
-            </span>
-          ),
-        )}
+        {Object.values(REGIONS)
+          .sort((a, b) => POSITION[a.id] - POSITION[b.id])
+          .map((region) =>
+            onSelect ? (
+              <button
+                key={region.id}
+                style={{ top: `${POSITION[region.id]}%` }}
+                className="body-index__label"
+                aria-pressed={active === region.id}
+                onClick={() => onSelect(region.id)}
+              >
+                <span>{region.label}</span>
+                {counts && <span>{counts[region.id] || 0}</span>}
+              </button>
+            ) : (
+              <span
+                key={region.id}
+                style={{ top: `${POSITION[region.id]}%` }}
+                className={`body-index__label ${active === region.id ? 'is-active' : ''}`}
+              >
+                {region.label}
+              </span>
+            ),
+          )}
       </div>
     </div>
   );

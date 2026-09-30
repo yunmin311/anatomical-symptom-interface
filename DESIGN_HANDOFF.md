@@ -1,41 +1,44 @@
-# Design / frontend handoff
+# Design / frontend handoff — V2
 
-Scope: UI only; `session.ts`, shared/server source, schema and contracts are unchanged.
-This is a development prototype, not a clinically reviewed product.
+2026-09-30. UI branch incorporates hardened main through `a0d64fe`. Shared/server,
+schema, safety rules, provenance policy, session.ts and state/logic.ts are unchanged
+relative to that main commit. The merges import the main agent's changes; they are
+not design-authored domain changes. No push or merge into main.
 
-## Interfaces needed from the main agent
+## Resolved since V1
 
-| Need | Current limitation / evidence | Smallest useful interface | Blocks design? |
+The old fallback-region presentation workaround is removed. UI uses authoritative
+`unsupported`, `refusal`, `clarification`, `answers`, `safety` and localisation `by`.
+Yes/no/unknown remain distinct. Candidate deselection calls main's `deselect` and
+retains the suggestion. The canonical selected-ID set determines visual selection.
+The review renders raw answers, never schema defaults as answers. Saved history
+uses the shared summary renderer with a complete coverage map from saved provenance.
+No private write endpoint, new field, medical question or altered rule was added.
+
+## Remaining interfaces / defects for the main agent
+
+| UI need | Current limitation / evidence | Minimal support | Blocking? |
 |---|---|---|---|
-| Distinguish proposed vs user-selected region/side/depth/sub-region after navigation and persistence | `describe` writes inferred values directly to `record.location`; no frontend-readable confirmation flags. `save` confirms all non-null location values. | Readable field-level source/verification state plus explicit location confirmation action. | Blocks truthful persisted confirmation labels. UI must say “recorded location”, not medically confirmed. |
-| Preserve multiple interview answers accurately | `shoulder.weakness` is a multi question, while `answer` tests `String(value) === 'true'`; several other mappings do not match question meanings. | Correct mapping of existing `answer(id, value, optionValues)` arguments, ideally stored answers keyed by question ID. | UI can collect multiple values, but cannot guarantee all values survive into the domain record. |
-| Edit/revisit answers without duplicate or stale semantics | `asked` is only an ID list; prior answer values are unavailable, and mutations are additive. | Readable answer map and replace-answer action. | Blocks accurate “Back/edit answer”; no fake back button implemented. |
-| Undo candidate selection safely | `rejectStructure` removes the candidate and clears viewer pin, but does not consistently clear viewer selection. | Deselect action that preserves candidate provenance and pin. | Blocks safe undo. Do not expose a misleading toggle. |
-| Correct/relocalise an existing saved episode | `describe` rebuilds record/asked but retains episodeId/summary; reset leaves some viewer/orchestrator state. | New-session and relocalisation semantics with stale-summary invalidation. | UI can require explicit new-episode reset; cannot silently repair store. |
-| Supported/unsupported/network/model states | `api()` discards error response bodies; `describe` drops score/matchedTerms. Baseline deterministic localise returns HTTP 200 and shoulder with score 0 for ungrounded text. | Retain score/matchedTerms or a typed no-match state in session; typed error reason and safe message; distinguish transport failure, model fallback and unsupported input. | UI reuses groundFromText only to suppress the deterministic fallback shoulder, including after returning to edit. Remove that presentation guard once the session exposes no-match. Model no-match/routing remains blocked. |
-| Region correction preserving the user's words | No setRegion action; calling describe resets record. | Region correction action with proper provenance and reset rules. | UI offers edit description instead of inventing a record mutation. |
-| Pin orientation and selected side | Point is just x/y; no view/side coordinate metadata. Existing hit shapes are schematic and side placement differs by region. | Define pin coordinate/view semantics before mirrored/lateral geometry or 3D. | Blocks faithful side-specific geometry. Current viewer labels schematic and controls side separately. |
-| Summary grouping independent of English labels | `summary.history` is label/value pairs without stable section IDs. | Optional stable field/section IDs, preserving current labels/values. | Non-blocking: presentation adapter groups known labels; unknown labels remain visible in Other details. |
-| Safety copy and rationale | Current rationale includes strong clinical claims. All rules unreviewed. | Clinically reviewed text and translations in shared registry, existing shape sufficient. | Blocks real-user release, not design. UI preserves exact wording. |
+| Natural English descriptions should reach supported regions | `My right shoulder hurts deep inside near the rotator cuff` returns unsupported. `detectOutOfScope` matches compact text substrings; `ear` matches `near`. Reproduced against the real deterministic service. | Fix lexical boundary matching in the router, keeping unsupported safety routing authoritative. Regression test for near/ear and other embedded tokens. | Blocks those descriptions; no frontend bypass. |
+| Truthful per-field “suggested” versus “chosen” labels after navigation | Session location contains proposed side/depth/subregion alongside user edits; no readable origin/interaction status per field in the frontend session. | Expose existing provenance/interaction status as read-only presentation metadata; do not invent another persisted authority. | Blocks precise per-field origin badges, not the workspace. UI says starting suggestion / current description, never medically confirmed. |
+| Restore approximate selection when returning to Locate | No reliable user-selected subregion marker separate from suggested subregion. Local pending choice is intentionally reset on remount. | Read-only marker distinguishing explicit user area choice from proposed subregion. | User must reselect area when returning; avoids silently accepting proposal. |
+| Faithful side/view/pin geometry | Point is x/y without a view or side coordinate frame. Existing 2D hit targets have schematic proportions and fixed side placement. | Specify coordinate/view semantics before geometry replacement, side mirroring, or 3D. | Blocks faithful mirrored/view-specific pins. UI explicitly says schematic; side/depth separate. |
+| Consistent question count meaning | `questionProgress.outstanding` uses triState for all question types; some answered non-boolean values normalise to unknown. An answered count can coexist with a high outstanding count. | Domain-provided per-question unresolved/missing status appropriate to each question type. | Non-blocking; UI displays returned counts and exact raw answers without redefining resolution. |
+| Stable summary grouping | `summary.history` has English labels only. | Optional stable field/section identifiers alongside unchanged labels/values. | Non-blocking; unknown labels remain in Other details. |
+| Editing a previously answered question | UI can read answers, but replacing an answer may require domain reconciliation of additive record fields. | Explicit replacement/recompute semantics for an existing answer. | Blocks truthful per-answer edit/back flow; no misleading edit action added. |
+| Clinically reviewed copy and rules | Rationale and rules remain unreviewed. Current service reports 10/10 rules unreviewed. | Clinical review through existing policy, not frontend changes. | Blocks real-user release, not prototype design. Exact supplied safety wording retained. |
 
-## Merge notes
+## Deliberate scope limits
 
-The front end continues to call existing session actions and shared question/summary helpers.
-No new medical content or record fields are introduced. Please coordinate any changes to action
-signatures; do not merge UI around a new contract without typecheck and browser verification.
+- No anatomy asset replacement or 3D; original schematic geometry remains. This is the largest remaining visual weakness.
+- No new body region or medical question; missing timeline/intensity data is not invented.
+- “Tissue filter” filters suggestions only. It does not pretend the 2D silhouette renders layers.
+- History counts are records, not severity or risk. No scores, trends or diagnostic claims.
+- Empty/loading/error are separate. Offline deterministic mode still needs its local API service.
+- Incomplete records can be reviewed/saved as main permits. No new safety gate or safety clearance.
 
-The visual selection pending in the location component is component-local; only explicit Continue
-calls the existing confirmSubRegion action. Side and depth use existing actions immediately.
+## Integration guidance
 
-## Additional UI limits to carry into integration
-
-- A multi-question submission passes the complete array as value and optionValues. The UI tests
-  prove multiple selection/submission, not correctness of medical record mapping.
-- Review can show an incomplete record and retains the existing ability to save early. Required
-  questions remaining are explicitly counted. Any mandatory safety gate belongs to the main agent.
-- View changes and left/right correction do not remap existing pins. Geometry remains the original
-  schematic to avoid silently changing the meaning of persisted normalised coordinates.
-- Localisation draft selection is component-local and must be selected again after leaving that view.
-- Timeline/onset fields not collected by the current interview stay absent/unknown. No new questions.
-- Safety rationale, default values and deterministic summary wording are displayed verbatim; design
-  does not validate them. In particular, default 'no' must not be mistaken for an actual answer.
+Main is the source of domain truth. Resolve later integration around current session signatures,
+then rerun typecheck, all tests, smoke and browser checks. The design branch owns component-local
+inspector stage, draft pin/subregion selection, history region filtering and copy feedback only.

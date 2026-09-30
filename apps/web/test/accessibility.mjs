@@ -16,6 +16,8 @@ const context = await browser.newContext({
 });
 const page = await context.newPage();
 async function scan(name) {
+ for (const width of [1440, 768, 375]) {
+  await page.setViewportSize({width, height: 1000});
   const result = await new AxeBuilder({ page })
     .withTags(['wcag2a', 'wcag2aa', 'wcag21aa'])
     .analyze();
@@ -27,11 +29,12 @@ async function scan(name) {
       summary: n.failureSummary,
     })),
   }));
-  console.log(name, JSON.stringify(violations));
-  assert.deepEqual(violations, [], name);
+  console.log(`${name} ${width}`, JSON.stringify(violations));
+  assert.deepEqual(violations, [], `${name} ${width}`);
+ }
 }
 try {
-  await page.goto(process.env.ASI_WEB_URL || 'http://127.0.0.1:5187');
+  await page.goto(process.env.ASI_WEB_URL || 'http://127.0.0.1:5189');
   await scan('entry');
   await page
     .getByLabel('What has been bothering you?')
@@ -39,11 +42,8 @@ try {
   await page.getByRole('button', { name: 'Locate on body map' }).click();
   await page.locator('.location-workbench').waitFor();
   await scan('location');
-  await page.setViewportSize({ width: 375, height: 900 });
-  await scan('location-mobile');
-  await page.setViewportSize({ width: 1440, height: 1000 });
   await page
-    .getByRole('button', { name: 'Front of shoulder', exact: true })
+    .getByRole('button', { name: /Front of shoulder/ })
     .click();
   await page
     .getByRole('button', { name: 'Use this location & continue' })
@@ -57,7 +57,7 @@ try {
   await page.getByRole('button', { name: 'Personal health map' }).click();
   await page.locator('.episode').first().waitFor();
   await scan('history');
-  console.log('PASS 7 accessibility states');
+  console.log('PASS 6 screens at 3 widths (18 accessibility scans)');
 } finally {
   await browser.close();
 }

@@ -3,10 +3,10 @@ import {
   REGIONS,
   buildPreVisitSummary,
   writablePaths,
-} from "@asi/shared";
-import type { SymptomRecord, AnswerMap, Episode } from "@asi/shared";
-import { FactList } from "./primitives.tsx";
-import { answerSections, groupSummaryRows, readable } from "./presentation.ts";
+} from '@asi/shared';
+import type { SymptomRecord, AnswerMap, Episode } from '@asi/shared';
+import { FactList } from './primitives.tsx';
+import { answerSections, groupSummaryRows, readable } from './presentation.ts';
 
 /** Read raw session answers, or use the domain's coverage-aware saved renderer. */
 export function RecordDetails({
@@ -36,7 +36,15 @@ export function RecordDetails({
         sections.map((section) => (
           <section className="record-section" key={section.title}>
             <h3>{section.title}</h3>
-            <FactList rows={section.rows} />
+            {section.title === 'Your own words' ? (
+              section.rows.map((row) => (
+                <blockquote className="own-words" key={row.label}>
+                  {row.value}
+                </blockquote>
+              ))
+            ) : (
+              <FactList rows={section.rows} />
+            )}
           </section>
         ))
       ) : (
@@ -44,7 +52,7 @@ export function RecordDetails({
           <section className="record-section">
             <h3>Your own words</h3>
             <blockquote className="own-words">
-              {record.location.userPhrase || "Not recorded"}
+              {record.location.userPhrase || 'Not recorded'}
             </blockquote>
           </section>
           <section className="record-section">
@@ -54,21 +62,21 @@ export function RecordDetails({
             </p>
             <FactList
               rows={[
-                { label: "Area", value: region.label },
+                { label: 'Area', value: region.label },
                 {
-                  label: "Location",
+                  label: 'Location',
                   value:
                     region.subRegions.find(
                       (s) => s.id === record.location.subRegionId,
-                    )?.label || "Not established",
+                    )?.label || 'Not established',
                 },
-                { label: "Side", value: readable(record.location.side) },
-                { label: "Depth", value: readable(record.location.depth) },
+                { label: 'Side', value: readable(record.location.side) },
+                { label: 'Depth', value: readable(record.location.depth) },
                 {
-                  label: "Pin",
+                  label: 'Pin',
                   value: record.location.point
-                    ? "Approximate schematic mark"
-                    : "No pin placed",
+                    ? 'Approximate schematic mark'
+                    : 'No pin placed',
                 },
               ]}
             />
@@ -80,7 +88,15 @@ export function RecordDetails({
           {answerSections(record, answers || {}).map((section) => (
             <section className="record-section" key={section.title}>
               <h3>{section.title}</h3>
-              <FactList rows={section.rows} />
+              {section.title === 'Your own words' ? (
+                section.rows.map((row) => (
+                  <blockquote className="own-words" key={row.label}>
+                    {row.value}
+                  </blockquote>
+                ))
+              ) : (
+                <FactList rows={section.rows} />
+              )}
             </section>
           ))}
         </>

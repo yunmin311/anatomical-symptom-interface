@@ -60,3 +60,18 @@ Sources: https://3d4medical.com/ and https://3d4medical.com/professional . Publi
 ## Evidence limits
 
 Static screenshots establish composition, not interaction correctness. None of these screenshots proves live accessibility, loading behavior or responsive breakpoints. ASI must independently verify those. No optional fashionable references were added.
+
+## Observation follow-up
+
+Complete Anatomy professional page was also inspected (`complete-professional.png`): the Library
+example places an anatomical neck close-up between compact dark supporting panels; the 3D Models
+example uses a skeleton on a dark open field with peripheral tools. ASI adopts the object/context
+ratio, not those educational controls or anatomy assets. Selection/focus behavior remains unknown.
+
+## Materialised reference decisions
+
+- BioDigital: `BodyMap` places the canvas at 60% of the desktop workspace; supporting controls are a bounded inspector. No editor ribbon copied.
+- Apple: record sections use heading/label/value hierarchy and minimal separators; actions remain below the content. Its white rounded topic-card stack was rejected.
+- Oura: `BodyIndex` leads into region-specific dated episodes. No fabricated score, graph or interpretation.
+- Linear: inspector controls keep a stable baseline and explicit pressed state; native choices give a visible selection marker independent of tint. No issue-management shell.
+- Complete Anatomy: the larger body object shares its surface with peripheral viewport controls. The simplistic existing body asset remains an explicit limitation.

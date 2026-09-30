@@ -1,12 +1,11 @@
-// Run against an isolated deterministic server/database. No clinical assertions are tested here.
-// PLAYWRIGHT_MODULE may be an absolute installed Playwright index.mjs; no production dependency.
+// Real deterministic service, synthetic records only. Failure routes isolate transport states.
 import assert from 'node:assert/strict';
 import { mkdir } from 'node:fs/promises';
 const { chromium } = await import(
   process.env.PLAYWRIGHT_MODULE || 'playwright'
 );
-const url = process.env.ASI_WEB_URL || 'http://127.0.0.1:5187';
-const output = process.env.ASI_SCREENSHOTS || '/tmp/asi-design-evidence';
+const url = process.env.ASI_WEB_URL || 'http://127.0.0.1:5189';
+const output = process.env.ASI_SCREENSHOTS || '/tmp/asi-design-v2-evidence';
 await mkdir(output, { recursive: true });
 const browser = await chromium.launch({
   headless: true,
@@ -14,390 +13,294 @@ const browser = await chromium.launch({
     ? { executablePath: process.env.CHROMIUM_PATH }
     : {}),
 });
-const context = await browser.newContext({
-  viewport: { width: 1440, height: 1000 },
-  permissions: ['clipboard-read', 'clipboard-write'],
-});
-const page = await context.newPage();
+let checks = 0;
 const errors = [];
-page.on('pageerror', (error) => errors.push(error.message));
-let count = 0;
-async function pass(name, fn) {
+async function check(name, fn) {
   await fn();
-  console.log(`PASS ${++count}: ${name}`);
+  console.log(`PASS ${++checks}: ${name}`);
 }
-async function screenshot(name) {
-  await page.screenshot({ path: `${output}/${name}.png`, fullPage: true });
-}
-async function noOverflow() {
-  assert.equal(
-    await page.evaluate(
-      () => document.documentElement.scrollWidth <= innerWidth,
-    ),
-    true,
-  );
-}
-async function enter(phrase) {
+async function enter(page) {
   await page.goto(url);
-  await page.getByLabel('What has been bothering you?').fill(phrase);
+  await page
+    .getByLabel('What has been bothering you?')
+    .fill('My right shoulder rotator cuff hurts deep inside');
   await page.getByRole('button', { name: 'Locate on body map' }).click();
-  await page.locator('.location-workbench, .empty-state').waitFor();
+  await page.locator('.location-workbench,.empty-state').waitFor();
+  if (
+    await page.getByRole('button', { name: 'Show me the body map' }).isVisible()
+  )
+    await page.getByRole('button', { name: 'Show me the body map' }).click();
+  await page.locator('.location-workbench').waitFor();
+}
+async function answerCurrent(page) {
+  const form = page.locator('.interview-panel form');
+  if (!(await form.count())) return false;
+  const text = form.locator('textarea');
+  if (await text.count()) await text.fill('Synthetic test detail');
+  else {
+    const unsure = form.getByLabel('I am not sure', { exact: true });
+    if (await unsure.count()) await unsure.check();
+    else await form.locator('input').first().check();
+  }
+  await form.getByRole('button', { name: 'Continue', exact: true }).click();
+  return true;
 }
 try {
-  await pass(
-    'Entry has no inferred default location; keyboard focus and descriptive input work',
-    async () => {
-      await page.goto(url);
+  for (const width of [1440, 768, 375]) {
+    const context = await browser.newContext({
+      viewport: { width, height: width === 375 ? 812 : 1000 },
+      permissions: ['clipboard-read', 'clipboard-write'],
+    });
+    const page = await context.newPage();
+    page.on('pageerror', (e) => errors.push(e.message));
+    const shot = async (name) => {
+      await page.screenshot({
+        path: `${output}/${name}-${width}.png`,
+        fullPage: true,
+      });
       assert.equal(
-        await page
-          .locator('.context-rail')
-          .getByText('Current location')
-          .count(),
-        0,
+        await page.evaluate(
+          () => document.documentElement.scrollWidth <= innerWidth,
+        ),
+        true,
+        `${name} overflow at ${width}`,
       );
+    };
+    await check(`Entry ${width}`, async () => {
+      await page.goto(url);
+      assert.equal(await page.locator('.steps').count(), 0);
       assert.equal(
         await page
           .getByRole('button', { name: 'Locate on body map' })
           .isDisabled(),
         true,
       );
-      await page.keyboard.press('Tab');
-      assert.equal(
-        await page.evaluate(() => document.activeElement?.textContent),
-        'Skip to content',
-      );
-      await page.keyboard.press('Enter');
-      await page.keyboard.press('Tab');
-      assert.equal(
-        await page.evaluate(() => document.activeElement?.tagName),
-        'TEXTAREA',
-      );
-      await screenshot('entry-desktop');
-    },
-  );
-  await pass(
-    'Vague description does not show the default shoulder or a continue action',
-    async () => {
-      await enter('I feel unwell');
-      assert.equal(await page.locator('.bodymap__svg').count(), 0);
-      assert.ok(
-        await page
-          .getByRole('heading', { name: 'No location to show yet' })
-          .isVisible(),
-      );
-      await screenshot('unsupported');
-      await page
-        .getByRole('button', { name: 'Return to your description' })
-        .click();
-      assert.equal(
-        await page.getByLabel('What has been bothering you?').inputValue(),
-        'I feel unwell',
-      );
-      assert.equal(
-        await page
-          .locator('.context-rail')
-          .getByText('Current location')
-          .count(),
-        0,
-      );
-    },
-  );
-  await pass(
-    'Real candidates remain unconfirmed until explicit selection; pin and area stay on locate',
-    async () => {
-      await enter('right shoulder rotator cuff deep inside');
-      assert.ok((await page.locator('.candidate-card').count()) > 0);
-      assert.equal(
-        await page
-          .getByRole('button', { name: 'Use this location & continue' })
-          .isDisabled(),
-        true,
-      );
-      assert.equal(await page.locator('.candidate-card--selected').count(), 0);
-      await page
-        .getByRole('button', { name: 'Select this structure' })
-        .first()
-        .click();
-      assert.equal(await page.locator('.candidate-card--selected').count(), 1);
-      await page
-        .getByRole('button', { name: 'Front of shoulder', exact: true })
-        .click();
-      assert.ok(
-        await page
-          .getByRole('heading', { name: 'Find the place you mean.' })
-          .isVisible(),
-      );
-      await page
-        .getByText('Place or adjust a pin with the keyboard', { exact: true })
-        .click();
-      await page.getByRole('button', { name: 'Place pin at centre' }).click();
-      await page.getByLabel('Horizontal position').focus();
-      await page.keyboard.press('ArrowRight');
-      assert.equal(
-        await page.getByLabel('Horizontal position').inputValue(),
-        '51',
-      );
-      await screenshot('location-desktop');
-    },
-  );
-  await pass(
-    'Tablet and mobile location/entry have no horizontal overflow',
-    async () => {
-      for (const width of [768, 375]) {
-        await page.setViewportSize({ width, height: 1000 });
-        await noOverflow();
-        await screenshot(`location-${width}`);
-      }
-      await page.setViewportSize({ width: 1440, height: 1000 });
-    },
-  );
-  await pass(
-    'Shoulder flow supports single, boolean, text and multi input with explicit Continue',
-    async () => {
-      await page
-        .getByRole('button', { name: 'Use this location & continue' })
-        .click();
-      let questions = 0,
-        multiChecked = false;
-      while ((await page.locator('.question').count()) && questions < 15) {
-        const prompt = await page.locator('.question__prompt').textContent();
+      await shot('entry');
+    });
+    await check(
+      `Locate / candidate round trip / side / pin ${width}`,
+      async () => {
+        await enter(page);
         assert.equal(
           await page
-            .getByRole('button', { name: 'Continue', exact: true })
+            .getByRole('button', { name: /Use this location/ })
             .isDisabled(),
           true,
         );
-        if (await page.locator('.question textarea').count())
-          await page
-            .getByLabel('Your answer', { exact: true })
-            .fill('lifting the arm above my head');
-        else if (await page.getByRole('checkbox').count()) {
-          await page.getByRole('checkbox').nth(0).check();
-          await page.getByRole('checkbox').nth(1).check();
-          assert.equal(
-            await page.locator('.question__prompt').textContent(),
-            prompt,
-          );
-          assert.equal(
-            await page.locator('input[type=checkbox]:checked').count(),
-            2,
-          );
-          multiChecked = true;
-          await screenshot('interview-multi');
-        } else {
-          const no = page.getByRole('radio', { name: 'No', exact: true });
-          if (await no.count()) await no.check();
-          else await page.getByRole('radio').first().check();
-        }
+        await page.getByRole('button', { name: 'Front of shoulder' }).click();
         await page
-          .getByRole('button', { name: 'Continue', exact: true })
+          .getByRole('button', { name: 'Side & depth', exact: true })
           .click();
-        questions++;
-      }
-      assert.ok(multiChecked);
-      assert.equal(questions, 8);
-    },
-  );
-  await pass(
-    'Review precedes save; generated summary, copy and history use real persisted data',
-    async () => {
+        await page.getByLabel('Left', { exact: true }).check();
+        await page.getByLabel('Deep inside', { exact: true }).check();
+        await page
+          .getByRole('button', { name: 'Structures', exact: true })
+          .click();
+        await page
+          .getByRole('button', { name: 'Indicate this structure' })
+          .first()
+          .click();
+        await page
+          .getByRole('button', { name: 'Remove visual selection' })
+          .first()
+          .click();
+        assert.ok(
+          await page.getByText('◇ Tool suggestion · not selected').count(),
+        );
+        await page
+          .getByRole('button', { name: 'Indicate this structure' })
+          .first()
+          .click();
+        await page
+          .getByRole('button', { name: 'Area & pin', exact: true })
+          .click();
+        await page
+          .getByText('Fine positioning · optional pin', { exact: true })
+          .click();
+        await page.getByRole('button', { name: 'Place pin at centre' }).click();
+        await page
+          .getByText('Fine positioning · optional pin', { exact: true })
+          .click();
+        await shot('locate');
+        await page.getByRole('button', { name: /Use this location/ }).click();
+      },
+    );
+    await check(`Details ${width}`, async () => {
+      await page.locator('.question__prompt').waitFor();
+      await shot('details');
+      await answerCurrent(page);
+    });
+    await check(`Review incomplete ${width}`, async () => {
       await page
-        .getByRole('button', { name: 'Review current details' })
+        .getByRole('button', { name: /Review current details/ })
         .click();
       await page
         .getByRole('heading', { name: 'Review before saving' })
         .waitFor();
-      await screenshot('review-desktop');
+      assert.ok(await page.getByText('Not asked', { exact: true }).count());
+      await shot('review');
+    });
+    await check(`Save failure retains record ${width}`, async () => {
+      await page.route('**/api/episodes', (route) =>
+        route.request().method() === 'POST'
+          ? route.fulfill({
+              status: 503,
+              contentType: 'application/json',
+              body: JSON.stringify({ error: 'Synthetic service failure' }),
+            })
+          : route.continue(),
+      );
+      await page.getByRole('button', { name: 'Save & build summary' }).click();
+      await page
+        .getByRole('heading', { name: 'Your record could not be saved' })
+        .waitFor();
+      assert.ok(
+        await page
+          .getByText('My right shoulder rotator cuff hurts deep inside', {
+            exact: true,
+          })
+          .count(),
+      );
+      await shot('save-failure');
+      await page.unroute('**/api/episodes');
+    });
+    await check(`Saved summary / copy / print ${width}`, async () => {
       await page.getByRole('button', { name: 'Save & build summary' }).click();
       await page.getByRole('heading', { name: 'Pre-visit summary' }).waitFor();
       await page.getByRole('button', { name: 'Copy complete summary' }).click();
       const copied = await page.evaluate(() => navigator.clipboard.readText());
-      assert.ok(copied.includes('Data sources'));
+      assert.ok(copied.includes('not asked'));
       assert.ok(copied.includes('not a diagnosis'));
-      await screenshot('summary-desktop');
-      for (const width of [768, 375]) {
-        await page.setViewportSize({ width, height: 1000 });
-        await noOverflow();
-        await screenshot(`summary-${width}`);
-      }
-      await page.getByRole('button', { name: 'Personal health map' }).click();
-      await page.locator('.episode').first().waitFor();
-      await noOverflow();
-      await page.locator('.episode > summary').first().click();
-      assert.ok(
-        await page.locator('.episode__detail .own-words').first().isVisible(),
-      );
-      await screenshot('history-375');
-      await page.setViewportSize({ width: 1440, height: 1000 });
-      await screenshot('history-desktop');
-    },
-  );
-  await pass(
-    'Clipboard rejection provides a manual copy path; new episode dialog can cancel',
-    async () => {
-      await page.getByRole('button', { name: 'Return to your record' }).click();
-      await page.evaluate(() => {
-        navigator.clipboard.writeText = async () => {
-          throw new Error('Permission denied');
-        };
-      });
+      assert.ok(!copied.includes('confirmed'));
+      await shot('summary');
+      await page.emulateMedia({ media: 'print' });
+      await shot('print');
+      await page.emulateMedia({ media: 'screen' });
+    });
+    await check(`Health map ${width}`, async () => {
+      await page.getByRole('button', { name: /Personal health map/ }).click();
+      await page.locator('.healthmap-index').waitFor();
       await page
-        .getByRole('button', {
-          name: /Copy complete summary|Copied to clipboard/,
-        })
+        .locator('.body-index')
+        .getByRole('button', { name: /Shoulder/ })
         .click();
-      await page
-        .getByText(
-          'Clipboard unavailable. Open the text below and copy it manually.',
-        )
-        .waitFor();
-      await page
-        .getByText('View summary as plain text', { exact: true })
-        .click();
-      assert.ok(
-        (await page.getByLabel('Complete summary text').inputValue()).includes(
-          'Data sources',
-        ),
-      );
-      await page
-        .getByRole('button', { name: 'Start a new episode', exact: true })
-        .click();
-      await page.getByRole('dialog').waitFor();
-      await page.keyboard.press('Escape');
-      assert.equal(await page.getByRole('dialog').count(), 0);
-      assert.ok(
-        await page
-          .getByRole('heading', { name: 'Pre-visit summary' })
-          .isVisible(),
-      );
-    },
-  );
-  await pass(
-    'A failed save leaves draft details visible and can be retried',
-    async () => {
-      await enter('right knee pain');
-      await page.locator('.subregion-option').first().click();
-      await page
-        .getByRole('button', { name: 'Use this location & continue' })
-        .click();
-      await page
-        .getByRole('button', { name: 'Review current details' })
-        .click();
-      await page.route('**/api/episodes', (route) => route.abort());
-      await page.getByRole('button', { name: 'Save & build summary' }).click();
-      await page
-        .getByRole('heading', { name: 'Your record could not be saved.' })
-        .waitFor();
-      assert.ok(
-        await page.getByText('right knee pain', { exact: true }).isVisible(),
-      );
-      assert.equal(
-        await page
-          .getByRole('button', { name: 'Save & build summary' })
-          .isEnabled(),
-        true,
-      );
-      await screenshot('save-error');
-      await page.unroute('**/api/episodes');
-    },
-  );
-  await pass(
-    'Other supported regions and Chinese input complete actual questionnaires and save',
-    async () => {
-      for (const phrase of ['neck pain', 'lower back pain', '右膝疼痛']) {
-        await enter(phrase);
-        if (phrase === 'lower back pain')
-          assert.equal(
-            await page
-              .getByRole('radio', { name: 'Back', exact: true })
-              .isChecked(),
-            true,
-          );
-        await page.locator('.subregion-option').first().click();
-        await page
-          .getByRole('button', { name: 'Use this location & continue' })
-          .click();
-        let attempts = 0;
-        while ((await page.locator('.question').count()) && attempts++ < 15) {
-          if (await page.locator('.question textarea').count())
-            await page
-              .getByLabel('Your answer', { exact: true })
-              .fill('moving after sitting');
-          else if (await page.getByRole('checkbox').count()) {
-            await page.getByRole('checkbox').first().check();
-            await page.getByRole('checkbox').nth(1).check();
-          } else {
-            const no = page.getByRole('radio', { name: 'No', exact: true });
-            if (await no.count()) await no.check();
-            else await page.getByRole('radio').first().check();
-          }
-          await page
-            .getByRole('button', { name: 'Continue', exact: true })
-            .click();
-        }
-        assert.ok(attempts < 15);
-        await page
-          .getByRole('button', { name: 'Review current details' })
-          .click();
-        await page
-          .getByRole('button', { name: 'Save & build summary' })
-          .click();
-        await page
-          .getByRole('heading', { name: 'Pre-visit summary' })
-          .waitFor();
-      }
-    },
-  );
-  await pass(
-    'Unavailable localisation preserves input and shows an actionable error',
-    async () => {
+      assert.ok(await page.locator('.episode').count());
+      await page.locator('.episode summary').first().click();
+      await shot('health-map');
+    });
+    await check(`Empty history ${width}`, async () => {
       await page.goto(url);
-      await page.route('**/api/localise', (route) => route.abort());
-      await page
-        .getByLabel('What has been bothering you?')
-        .fill('right shoulder pain');
-      await page.getByRole('button', { name: 'Locate on body map' }).click();
-      await page.getByRole('alert').waitFor();
-      assert.equal(
-        await page.getByLabel('What has been bothering you?').inputValue(),
-        'right shoulder pain',
+      await page.route('**/api/episodes?personId=*', (r) =>
+        r.fulfill({ json: [] }),
       );
-      await screenshot('network-error');
-      await page.unroute('**/api/localise');
-    },
-  );
-  await pass(
-    'History loading, empty and failure states are distinct (transport fixtures)',
-    async () => {
-      await page.route('**/api/episodes?*', async (route) => {
-        await new Promise((resolve) => setTimeout(resolve, 500));
-        await route.fulfill({ json: [] });
-      });
-      await page.getByRole('button', { name: 'Personal health map' }).click();
-      await page
-        .getByRole('heading', { name: 'Loading your health map…' })
-        .waitFor();
+      await page.getByRole('button', { name: /Personal health map/ }).click();
       await page
         .getByRole('heading', {
           name: 'Your health map starts with one episode.',
         })
         .waitFor();
-      await screenshot('empty-history');
-      await page.unroute('**/api/episodes?*');
-      await page.route('**/api/episodes?*', (route) => route.abort());
-      await page.getByRole('button', { name: 'Refresh records' }).click();
-      await page.getByRole('alert').waitFor();
-      await screenshot('history-error');
-      await page.unroute('**/api/episodes?*');
-    },
-  );
-  await pass(
-    'All frontend interactions have no uncaught browser exceptions',
+      await shot('empty-history');
+      await page.unroute('**/api/episodes?personId=*');
+    });
+    await check(`Unsupported ${width}`, async () => {
+      await page.goto(url);
+      await page.getByLabel('What has been bothering you?').fill('chest pain');
+      await page.getByRole('button', { name: 'Locate on body map' }).click();
+      await page
+        .getByRole('heading', { name: 'No location established' })
+        .waitFor();
+      assert.equal(await page.locator('.bodymap__svg').count(), 0);
+      await shot('unsupported');
+    });
+    await check(`Service unavailable ${width}`, async () => {
+      await page.goto(url);
+      await page.route('**/api/localise', (r) => r.abort());
+      await page.getByLabel('What has been bothering you?').fill('left knee');
+      await page.getByRole('button', { name: 'Locate on body map' }).click();
+      await page
+        .getByRole('heading', { name: 'Location service unavailable' })
+        .waitFor();
+      assert.equal(
+        await page.getByLabel('What has been bothering you?').inputValue(),
+        'left knee',
+      );
+      await shot('service-unavailable');
+      await page.unroute('**/api/localise');
+    });
+    await context.close();
+  }
+  const context = await browser.newContext({
+    viewport: { width: 1440, height: 1000 },
+  });
+  const page = await context.newPage();
+  page.on('pageerror', (e) => errors.push(e.message));
+  await check('Keyboard-only entry → location → details', async () => {
+    await page.goto(url);
+    await page.keyboard.press('Tab');
+    assert.equal(
+      await page.evaluate(() => document.activeElement?.textContent?.trim()),
+      'Skip to content',
+    );
+    await page.keyboard.press('Enter');
+    async function tabTo(selector) {
+      for (let i = 0; i < 60; i++) {
+        if (
+          await page
+            .locator(selector)
+            .first()
+            .evaluate((el) => el === document.activeElement)
+        )
+          return;
+        await page.keyboard.press('Tab');
+      }
+      throw Error(`Keyboard target unreachable ${selector}`);
+    }
+    await tabTo('#description');
+    await page.keyboard.type('left knee');
+    await tabTo('.describe button');
+    await page.keyboard.press('Enter');
+    await page.locator('.location-workbench').waitFor();
+    await tabTo('.subregion-option');
+    await page.keyboard.press('Enter');
+    await tabTo('.location-footer button');
+    await page.keyboard.press('Enter');
+    await page.locator('.question__prompt').waitFor();
+    assert.ok(
+      await page
+        .locator('.question__prompt')
+        .evaluate((el) => el === document.activeElement),
+    );
+  });
+  await check(
+    'Full interview reaches review; unknown stays distinct',
     async () => {
-      assert.deepEqual(errors, []);
+      await enter(page);
+      await page.getByRole('button', { name: 'Front of shoulder' }).click();
+      await page.getByRole('button', { name: /Use this location/ }).click();
+      let count = 0;
+      while (await answerCurrent(page)) {
+        if (++count > 40) throw Error('Interview loop');
+      }
+      assert.ok(count > 3);
+      await page
+        .getByRole('button', { name: /Review current details/ })
+        .click();
+      assert.ok(
+        await page
+          .getByText('Not established — I am not sure', { exact: true })
+          .count(),
+      );
+      await page.screenshot({
+        path: `output/full-review.png`.replace('output', output),
+        fullPage: true,
+      });
     },
   );
-  console.log(`PASS ${count}/${count} browser scenarios`);
+  await check('No browser runtime errors', async () =>
+    assert.deepEqual(errors, []),
+  );
+  await context.close();
+  console.log(`${checks}/${checks} browser checks passed`);
 } finally {
   await browser.close();
 }

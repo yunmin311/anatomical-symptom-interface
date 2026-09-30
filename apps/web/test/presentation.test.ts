@@ -57,3 +57,27 @@ test('copy retains safety action steps, uncertainty, earlier episodes and source
   ])
     assert.ok(text.includes(value), value);
 });
+
+test('review keeps no, yes, unknown and not asked separate without record defaults', async () => {
+  const { emptyRecord, buildAnswer } = await import('@asi/shared');
+  const { answerSections } = await import('../src/ui/presentation.ts');
+  const record = emptyRecord('shoulder');
+  for (const state of ['yes', 'no', 'unknown'] as const) {
+    const answer = buildAnswer({
+      questionId: 'shoulder.vascular',
+      raw: state,
+      triState: state,
+      provenance: { capturedAt: '2026-09-30T00:00:00Z', createdBy: 'user' },
+    });
+    const rows = answerSections(record, {
+      'shoulder.vascular': answer,
+    }).flatMap((section) => section.rows);
+    const row = rows.find((row) => row.label.includes('cold'));
+    assert.ok(row);
+    assert.equal(
+      row.value,
+      state === 'unknown' ? 'Not established — I am not sure' : state,
+    );
+    assert.ok(rows.some((row) => row.value === 'Not asked'));
+  }
+});
