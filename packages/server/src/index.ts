@@ -1,17 +1,14 @@
 import { serve } from '@hono/node-server';
 import { app } from './app.ts';
-import { env, hasModel } from './env.ts';
-import { unreviewedRuleCount } from '@asi/shared';
+import { env, gate, hasModel, releaseProfile, startupSafetyReport } from './env.ts';
 
 const server = serve({ fetch: app.fetch, port: env.ASI_PORT }, (info) => {
   console.log(`[asi] listening on http://localhost:${info.port}`);
   console.log(`[asi] orchestrator: ${hasModel() ? `model (${env.ASI_MODEL})` : 'deterministic (offline)'}`);
-  const unreviewed = unreviewedRuleCount();
-  if (unreviewed > 0) {
-    console.warn(
-      `[asi] WARNING: ${unreviewed} red-flag rule(s) are not clinically reviewed. ` +
-        `This build is for development only — do not point it at real users.`,
-    );
+  const report = startupSafetyReport();
+  if (report) console.warn(report);
+  if (releaseProfile === 'release') {
+    console.log(`[asi] release profile active; ${gate.unreviewed} rule(s) still unreviewed.`);
   }
 });
 

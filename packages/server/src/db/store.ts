@@ -1,120 +1,450 @@
 /**
- * Episode repository. The only place that writes to the store, so the
- * provenance invariant is enforced in exactly one code path.
+ * Episode repository — the ONLY writer of clinical/user-record state.
+ *
+ * Design: there is exactly one way to change a record, `applyMutations`. It
+ * validates each value against the field registry, validates its provenance,
+ * runs the claim-class merge, writes the field row (value + provenance
+ * together), records any losing value as a preserved parallel assertion, then
+ * rebuilds the materialised record projection — all inside ONE transaction.
+ *
+ * Because value and provenance share a row and share a transaction, they cannot
+ * diverge. There is deliberately no exported function that writes one without
+ * the other, and no endpoint that accepts a whole client-supplied record.
  */
 import { randomUUID } from 'node:crypto';
 import {
+  assertFieldWrite,
   assertProvenance,
+  buildAnswer,
   buildPreVisitSummary,
   emptyRecord,
-  evaluateRedFlags,
-  mergeAttributed,
+  evaluateSafety,
+  evidenceStatusFor,
+  FieldPolicyError,
+  getFieldPolicy,
+  mergeField,
+  QuestionAnswerSchema,
   renderPlainText,
+  signalsFromAnswers,
   SymptomRecordSchema,
-  highestSeverity,
+  writablePaths,
 } from '@asi/shared';
 import type {
+  AnswerMap,
   Attributed,
+  ClaimClass,
   Episode,
   PreVisitSummary,
   Provenance,
+  QuestionAnswer,
+  ReleaseProfile,
+  SafetyEvaluation,
   SymptomRecord,
 } from '@asi/shared';
+import type { FieldMutation as SharedFieldMutation } from '@asi/shared';
 import { all, get, run, tx } from './client.ts';
 
 const now = () => new Date().toISOString();
 
-/* ------------------------------------------------------------------ */
-/* Provenance writes                                                   */
-/* ------------------------------------------------------------------ */
-
-export function putProvenance(episodeId: string, fieldPath: string, p: Provenance): void {
-  // The invariant check lives here, once, for every write.
-  assertProvenance(fieldPath, p);
-  run(
-    `INSERT INTO field_provenance
-       (id, episode_id, field_path, source_type, source_reference, captured_at, confidence, verification_status, created_by, raw_text)
-     VALUES (?,?,?,?,?,?,?,?,?,?)
-     ON CONFLICT(episode_id, field_path) DO UPDATE SET
-       source_type = excluded.source_type,
-       source_reference = excluded.source_reference,
-       captured_at = excluded.captured_at,
-       confidence = excluded.confidence,
-       verification_status = excluded.verification_status,
-       created_by = excluded.created_by,
-       raw_text = excluded.raw_text`,
-    randomUUID(), episodeId, fieldPath, p.sourceType, p.sourceReference ?? null,
-    p.capturedAt, p.confidence ?? null, p.verificationStatus, p.createdBy, p.rawText ?? null,
-  );
+export class MutationRejected extends Error {
+  readonly fieldPath: string | undefined;
+  constructor(message: string, fieldPath?: string) {
+    super(message);
+    this.name = 'MutationRejected';
+    this.fieldPath = fieldPath;
+  }
 }
 
-/**
- * Re-read existing provenance and refuse to let a weaker source overwrite a
- * stronger one. This is the database-level version of mergeAttributed().
- */
-function currentProvenance(episodeId: string, fieldPath: string): Provenance | null {
-  const row = get<{
-    source_type: string; source_reference: string | null; captured_at: string;
-    confidence: number | null; verification_status: string; created_by: string; raw_text: string | null;
-  }>(
-    `SELECT source_type, source_reference, captured_at, confidence, verification_status, created_by, raw_text
-       FROM field_provenance WHERE episode_id = ? AND field_path = ?`,
-    episodeId, fieldPath,
-  );
-  if (!row) return null;
+/* ------------------------------------------------------------------ */
+/* Grounding                                                           */
+/* ------------------------------------------------------------------ */
+
+export type GroundingStatus = 'grounded' | 'unsupported';
+
+export interface GroundingInfo {
+  status: GroundingStatus;
+  reason: 'ungrounded' | 'out_of_scope' | null;
+  by: 'deterministic' | 'model' | null;
+  score: number | null;
+  clarification: string | null;
+}
+
+/* ------------------------------------------------------------------ */
+/* Field store reads                                                   */
+/* ------------------------------------------------------------------ */
+
+interface FieldRow {
+  field_path: string;
+  value_json: string;
+  source_type: Provenance['sourceType'];
+  source_reference: string | null;
+  captured_at: string;
+  confidence: number | null;
+  verification_status: Provenance['verificationStatus'];
+  created_by: string;
+  raw_text: string | null;
+  evidence_status: NonNullable<Provenance['evidenceStatus']>;
+  claim_class: ClaimClass;
+}
+
+function rowToAttributed<T>(row: FieldRow): Attributed<T> {
   return {
-    sourceType: row.source_type as Provenance['sourceType'],
-    sourceReference: row.source_reference,
-    capturedAt: row.captured_at,
-    confidence: row.confidence,
-    verificationStatus: row.verification_status as Provenance['verificationStatus'],
-    createdBy: row.created_by,
-    rawText: row.raw_text,
+    value: JSON.parse(row.value_json) as T,
+    provenance: {
+      sourceType: row.source_type,
+      sourceReference: row.source_reference,
+      capturedAt: row.captured_at,
+      confidence: row.confidence,
+      verificationStatus: row.verification_status,
+      createdBy: row.created_by,
+      rawText: row.raw_text,
+      evidenceStatus: row.evidence_status,
+    },
   };
 }
 
-export function recordField(
-  episodeId: string,
-  fieldPath: string,
-  value: unknown,
-  p: Provenance,
-): { applied: boolean; reason?: string } {
-  const existing = currentProvenance(episodeId, fieldPath);
-  if (existing && existing.sourceType !== p.sourceType) {
-    const winner = mergeAttributed<unknown>(
-      { value: undefined, provenance: existing },
-      { value, provenance: p },
-    );
-    const existingWins =
-      winner?.provenance.sourceType === existing.sourceType &&
-      winner?.provenance.capturedAt === existing.capturedAt;
-    if (existingWins) {
-      return { applied: false, reason: `field is owned by higher-authority source "${existing.sourceType}"` };
-    }
-  }
-  putProvenance(episodeId, fieldPath, p);
-  return { applied: true };
+function fieldRows(episodeId: string): FieldRow[] {
+  return all(
+    `SELECT field_path, value_json, source_type, source_reference, captured_at, confidence,
+            verification_status, created_by, raw_text, evidence_status, claim_class
+       FROM episode_fields WHERE episode_id = ?`,
+    episodeId,
+  ) as unknown as FieldRow[];
+}
+
+export function fieldStoreFor(episodeId: string): Record<string, Attributed<unknown>> {
+  const out: Record<string, Attributed<unknown>> = {};
+  for (const row of fieldRows(episodeId)) out[row.field_path] = rowToAttributed(row);
+  return out;
 }
 
 export function provenanceFor(episodeId: string): Record<string, Provenance> {
+  const out: Record<string, Provenance> = {};
+  for (const row of fieldRows(episodeId)) out[row.field_path] = rowToAttributed(row).provenance;
+  return out;
+}
+
+/** Which registry fields have a stored value. The honest basis for the summary. */
+export function coverageFor(episodeId: string): Record<string, boolean> {
+  const paths = new Set(fieldRows(episodeId).map((r) => r.field_path));
+  const out: Record<string, boolean> = {};
+  for (const p of writablePaths()) out[p] = paths.has(p);
+  return out;
+}
+
+export function preservedAssertions(episodeId: string): { fieldPath: string; sourceType: string; reason: string; value: unknown }[] {
+  return all(
+    `SELECT field_path, value_json, source_type, reason FROM episode_assertions WHERE episode_id = ?`,
+    episodeId,
+  ).map((r) => ({
+    fieldPath: String(r.field_path),
+    sourceType: String(r.source_type),
+    reason: String(r.reason),
+    value: JSON.parse(String(r.value_json)) as unknown,
+  }));
+}
+
+/* ------------------------------------------------------------------ */
+/* Answers                                                             */
+/* ------------------------------------------------------------------ */
+
+export function answersFor(episodeId: string): AnswerMap {
   const rows = all(
-    `SELECT field_path, source_type, source_reference, captured_at, confidence, verification_status, created_by, raw_text
-       FROM field_provenance WHERE episode_id = ?`,
+    `SELECT question_id, raw_json, tri_state, wrote_fields_json, source_type, captured_at,
+            verification_status, created_by, raw_text
+       FROM episode_answers WHERE episode_id = ?`,
     episodeId,
   );
-  const out: Record<string, Provenance> = {};
+  const out: Record<string, QuestionAnswer> = {};
   for (const r of rows) {
-    out[String(r.field_path)] = {
-      sourceType: r.source_type as Provenance['sourceType'],
-      sourceReference: r.source_reference as string | null,
-      capturedAt: r.captured_at as string,
-      confidence: r.confidence as number | null,
-      verificationStatus: r.verification_status as Provenance['verificationStatus'],
-      createdBy: r.created_by as string,
-      rawText: r.raw_text as string | null,
-    };
+    const parsed = QuestionAnswerSchema.safeParse({
+      questionId: String(r.question_id),
+      raw: JSON.parse(String(r.raw_json)) as unknown,
+      triState: String(r.tri_state),
+      wroteFields: JSON.parse(String(r.wrote_fields_json)) as string[],
+      provenance: {
+        sourceType: 'user_statement',
+        capturedAt: String(r.captured_at),
+        verificationStatus: 'unverified',
+        createdBy: String(r.created_by),
+        rawText: r.raw_text as string | null,
+      },
+    });
+    if (parsed.success) out[parsed.data.questionId] = parsed.data;
   }
-  return out;
+  return Object.freeze(out);
+}
+
+/* ------------------------------------------------------------------ */
+/* The atomic mutation path                                            */
+/* ------------------------------------------------------------------ */
+
+export interface FieldMutation extends SharedFieldMutation {}
+
+export interface AnswerMutation {
+  questionId: string;
+  raw: unknown;
+  /** Fields the answer wrote. Validated against what applyAnswer actually wrote. */
+  wroteFields: string[];
+  capturedAt?: string;
+  createdBy: string;
+  rawText?: string | null;
+}
+
+export interface ApplyInput {
+  fieldMutations?: FieldMutation[];
+  answerMutations?: AnswerMutation[];
+  /** Change the episode status in the same transaction. */
+  status?: Episode['status'];
+}
+
+export interface ApplyOutcome {
+  applied: { fieldPath: string; action: 'written' | 'kept_incumbent' | 'recorded_in_parallel' }[];
+  /**
+   * Always empty on a successful return. A field that fails validation throws
+   * and rolls the batch back, so a client is never told a forbidden write
+   * succeeded. Kept in the type so a future soft-fail path is explicit.
+   */
+  rejected: { fieldPath: string; reason: string }[];
+  answers: { questionId: string; triState: string }[];
+  coverage: Record<string, boolean>;
+  preserved: number;
+  safety: SafetyEvaluation;
+}
+
+/**
+ * THE single write path. Validates, merges, writes, rebuilds, re-evaluates
+ * safety, all in one transaction. Any rejection rolls the whole thing back.
+ */
+export function applyMutations(episodeId: string, input: ApplyInput, profile: ReleaseProfile = 'development'): ApplyOutcome {
+  const ep = get<{ region: string; grounding_status: string }>(
+    `SELECT region, grounding_status FROM episodes WHERE id = ?`, episodeId,
+  );
+  if (!ep) throw new MutationRejected(`episode ${episodeId} not found`);
+
+  return tx(() => {
+    const record = readRecord(episodeId, ep.region);
+    const applied: ApplyOutcome['applied'] = [];
+    const rejected: ApplyOutcome['rejected'] = [];
+    const answerResults: ApplyOutcome['answers'] = [];
+
+    // 1. Answers first: a safety question's signal must exist before rules run.
+    for (const m of input.answerMutations ?? []) {
+      const answer = buildAnswer({
+        questionId: m.questionId,
+        raw: m.raw,
+        wroteFields: m.wroteFields,
+        provenance: {
+          capturedAt: m.capturedAt ?? now(),
+          createdBy: m.createdBy,
+          rawText: m.rawText ?? null,
+        },
+      });
+      run(
+        `INSERT INTO episode_answers
+           (episode_id, question_id, raw_json, tri_state, wrote_fields_json, source_type,
+            captured_at, verification_status, created_by, raw_text)
+         VALUES (?,?,?,?,?,?,?,?,?,?)
+         ON CONFLICT(episode_id, question_id) DO UPDATE SET
+           raw_json = excluded.raw_json,
+           tri_state = excluded.tri_state,
+           wrote_fields_json = excluded.wrote_fields_json,
+           captured_at = excluded.captured_at,
+           raw_text = excluded.raw_text`,
+        episodeId,
+        m.questionId,
+        JSON.stringify(answer.raw),
+        answer.triState,
+        JSON.stringify(answer.wroteFields),
+        'user_statement',
+        answer.provenance.capturedAt,
+        'unverified',
+        answer.provenance.createdBy,
+        answer.provenance.rawText ?? null,
+      );
+      answerResults.push({ questionId: m.questionId, triState: answer.triState });
+    }
+
+    // 2. Field mutations.
+    //    A field that fails POLICY VALIDATION is fatal to the whole batch: the
+    //    client asked to write something forbidden, and silently committing the
+    //    rest of the batch would tell it the write succeeded. Validation
+    //    failures throw and roll the transaction back.
+    //    A field that merely LOSES A MERGE is not fatal: the incoming value is
+    //    preserved as a parallel assertion and the incumbent stands.
+    for (const m of input.fieldMutations ?? []) {
+      const policy = getFieldPolicy(m.fieldPath);
+      if (!policy) {
+        throw new FieldPolicyError(
+          `[store] "${m.fieldPath}" is not a writable field. ` +
+            `Every persisted field needs a declared provenance strategy.`,
+          m.fieldPath,
+        );
+      }
+
+      const provenance: Provenance = {
+        ...m.provenance,
+        capturedAt: m.provenance.capturedAt ?? now(),
+        evidenceStatus: m.provenance.evidenceStatus ?? evidenceStatusFor(m.provenance.sourceType),
+      };
+
+      const value = assertFieldWrite(m.fieldPath, m.value, provenance);
+      assertProvenance(m.fieldPath, provenance);
+
+      const existing = get<FieldRow>(
+        `SELECT field_path, value_json, source_type, source_reference, captured_at, confidence,
+                verification_status, created_by, raw_text, evidence_status, claim_class
+           FROM episode_fields WHERE episode_id = ? AND field_path = ?`,
+        episodeId, m.fieldPath,
+      );
+      const incumbent = existing ? rowToAttributed(existing) : null;
+      const outcome = mergeField(incumbent, { value, provenance }, policy.claimClass);
+
+      if (outcome.applied && outcome.winner) {
+        const p = outcome.winner.provenance;
+        run(
+          `INSERT INTO episode_fields
+             (episode_id, field_path, value_json, source_type, source_reference, captured_at,
+              confidence, verification_status, created_by, raw_text, evidence_status, claim_class)
+           VALUES (?,?,?,?,?,?,?,?,?,?,?,?)
+           ON CONFLICT(episode_id, field_path) DO UPDATE SET
+             value_json = excluded.value_json,
+             source_type = excluded.source_type,
+             source_reference = excluded.source_reference,
+             captured_at = excluded.captured_at,
+             confidence = excluded.confidence,
+             verification_status = excluded.verification_status,
+             created_by = excluded.created_by,
+             raw_text = excluded.raw_text,
+             evidence_status = excluded.evidence_status,
+             claim_class = excluded.claim_class`,
+          episodeId, m.fieldPath, JSON.stringify(outcome.winner.value),
+          p.sourceType, p.sourceReference ?? null, p.capturedAt, p.confidence ?? null,
+          p.verificationStatus, p.createdBy, p.rawText ?? null,
+          p.evidenceStatus ?? evidenceStatusFor(p.sourceType), policy.claimClass,
+        );
+        applied.push({ fieldPath: m.fieldPath, action: 'written' });
+      } else {
+        applied.push({ fieldPath: m.fieldPath, action: 'kept_incumbent' });
+      }
+
+      // Losers are kept, so a lab report can sit alongside what the patient
+      // feels instead of replacing it.
+      if (outcome.preserved.length && incumbent) {
+        for (const pres of outcome.preserved) {
+          run(
+            `INSERT INTO episode_assertions
+               (id, episode_id, field_path, value_json, source_type, evidence_status, reason, captured_at)
+             VALUES (?,?,?,?,?,?,?,?)`,
+            randomUUID(), episodeId, m.fieldPath, JSON.stringify(pres.value),
+            pres.provenance.sourceType, pres.provenance.evidenceStatus ?? evidenceStatusFor(pres.provenance.sourceType),
+            pres.reason, pres.provenance.capturedAt,
+          );
+        }
+        applied.push({ fieldPath: m.fieldPath, action: 'recorded_in_parallel' });
+      }
+    }
+
+    if (input.status) {
+      run(
+        `UPDATE episodes SET status = ?, updated_at = ? WHERE id = ?`,
+        input.status, now(), episodeId,
+      );
+    }
+
+    // 3. Rebuild the materialised projection, then gaps from real coverage.
+    const rebuilt = rebuildRecord(episodeId, ep.region);
+    run(`UPDATE episodes SET record_json = ?, updated_at = ? WHERE id = ?`, JSON.stringify(rebuilt), now(), episodeId);
+
+    // 4. Safety, from the answer-derived signals.
+    const answers = answersFor(episodeId);
+    const safety = evaluateSafety(rebuilt, {
+      region: rebuilt.location.region,
+      answers,
+      signals: signalsFromAnswers(answers),
+      profile,
+    });
+    recordSafetyFlags(episodeId, safety, profile);
+
+    return {
+      applied,
+      rejected,
+      answers: answerResults,
+      coverage: coverageFor(episodeId),
+      preserved: preservedAssertions(episodeId).length,
+      safety,
+    };
+  });
+}
+
+/* ------------------------------------------------------------------ */
+/* Record projection                                                   */
+/* ------------------------------------------------------------------ */
+
+function setPath(target: Record<string, unknown>, path: string, value: unknown): void {
+  const parts = path.split('.');
+  let cursor = target;
+  for (let i = 0; i < parts.length - 1; i++) {
+    const key = parts[i]!;
+    if (typeof cursor[key] !== 'object' || cursor[key] === null) cursor[key] = {};
+    cursor = cursor[key] as Record<string, unknown>;
+  }
+  cursor[parts[parts.length - 1]!] = value;
+}
+
+/**
+ * Rebuild the record from the field store. `gaps` is derived here from which
+ * registry fields have no value — which is the only thing that should ever
+ * populate it, and guarantees it can never contain an answer marker.
+ */
+function rebuildRecord(episodeId: string, region: string): SymptomRecord {
+  const record = emptyRecord(region as never);
+  const store = fieldStoreFor(episodeId);
+  for (const [path, attributed] of Object.entries(store)) {
+    if (path === 'gaps') continue;
+    setPath(record as unknown as Record<string, unknown>, path, attributed.value);
+  }
+  const coverage = coverageFor(episodeId);
+  record.gaps = writablePaths()
+    .filter((p) => !coverage[p])
+    .filter((p) => {
+      // A field whose value is a schema placeholder is still "not recorded".
+      const v = store[p]?.value;
+      return v === null || v === undefined || v === 'unknown' || v === 'no' || v === '' || (Array.isArray(v) && v.length === 0);
+    });
+  return SymptomRecordSchema.parse(record);
+}
+
+function readRecord(episodeId: string, region: string): SymptomRecord {
+  return rebuildRecord(episodeId, region);
+}
+
+/* ------------------------------------------------------------------ */
+/* Safety flags                                                        */
+/* ------------------------------------------------------------------ */
+
+function recordSafetyFlags(episodeId: string, safety: SafetyEvaluation, profile: ReleaseProfile): void {
+  for (const f of safety.flags) {
+    const exists = get(`SELECT id FROM safety_flags WHERE episode_id = ? AND rule_id = ?`, episodeId, f.ruleId);
+    if (exists) continue;
+    run(
+      `INSERT INTO safety_flags (id, episode_id, rule_id, severity, user_message, review_status, profile, raised_at)
+       VALUES (?,?,?,?,?,?,?,?)`,
+      randomUUID(), episodeId, f.ruleId, f.severity, f.userMessage, f.reviewStatus, profile, now(),
+    );
+  }
+  if (safety.blocked) {
+    // The release profile withheld a time-critical rule. Record that as an
+    // explicit system entry, so a clinician reading the record can see that
+    // something fired and was held back.
+    appendTranscript(
+      episodeId,
+      'system',
+      `[safety:blocked] ${safety.withheld.length} rule(s) fired but are not clinically reviewed ` +
+        `and were withheld in the "${profile}" profile: ${safety.withheld.map((w) => w.ruleId).join(', ')}. ` +
+        `This record must not be treated as safely assessed.`,
+    );
+  }
 }
 
 /* ------------------------------------------------------------------ */
@@ -167,63 +497,65 @@ export interface CreateEpisodeInput {
   displayName?: string;
   region: string;
   side?: string;
-  record?: SymptomRecord;
   title?: string;
-  userPhrase?: string;
+  grounding: GroundingInfo;
+  /** Initial field writes, each validated and given provenance. */
+  mutations?: FieldMutation[];
+  answers?: AnswerMutation[];
 }
 
+/**
+ * Create an episode. The client never supplies a record; it supplies grounding
+ * plus field mutations, and the record is built by the same validated path.
+ */
 export function createEpisode(input: CreateEpisodeInput): Episode {
   return tx(() => {
     ensurePerson(input.personId, input.displayName ?? 'Me');
-    const record = input.record ?? emptyRecord(input.region as never);
-    if (input.userPhrase) record.location.userPhrase = input.userPhrase;
-    const side = input.side ?? record.location.side;
-    const regionId = ensureRegion(input.personId, input.region, side, record.location.subRegionId, record.location.point);
+    const side = input.side ?? 'unknown';
+    const regionId = ensureRegion(input.personId, input.region, side, null, null);
     const id = randomUUID();
     const title = input.title ?? `${input.region} — ${new Date().toISOString().slice(0, 10)}`;
 
     run(
-      `INSERT INTO episodes (id, person_id, region_id, region, side, status, title, record_json, started_at, created_at, updated_at)
-       VALUES (?,?,?,?,?,?,?,?,?,?,?)`,
-      id, input.personId, regionId, input.region, side, 'open', title, JSON.stringify(record), now(), now(), now(),
+      `INSERT INTO episodes
+         (id, person_id, region_id, region, side, status, title,
+          grounding_status, grounding_reason, grounding_by, grounding_score, grounding_clarification,
+          record_json, started_at, created_at, updated_at)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+      id, input.personId, regionId, input.region, side, 'open', title,
+      input.grounding.status, input.grounding.reason, input.grounding.by,
+      input.grounding.score, input.grounding.clarification,
+      JSON.stringify(emptyRecord(input.region as never)), now(), now(), now(),
     );
-    const episode: Episode = {
-      id,
-      personId: input.personId,
-      region: input.region as Episode['region'],
-      side: side as Episode['side'],
-      status: 'open',
-      title,
-      record,
-      provenance: {},
-      startedAt: now(),
-      endedAt: null,
-      createdAt: now(),
-      updatedAt: now(),
-      safetyFlags: [],
-    };
+
+    if (input.mutations?.length || input.answers?.length) {
+      applyMutations(id, { fieldMutations: input.mutations, answerMutations: input.answers });
+    }
+    const episode = getEpisode(id);
+    if (!episode) throw new MutationRejected(`episode ${id} not found after create`);
     return episode;
   });
 }
 
 function hydrate(row: Record<string, unknown>): Episode {
+  const id = String(row.id);
   const record = SymptomRecordSchema.parse(JSON.parse(String(row.record_json)));
   const flags = all(
     `SELECT rule_id, severity, user_message, review_status, raised_at
        FROM safety_flags WHERE episode_id = ? ORDER BY raised_at`,
-    String(row.id),
+    id,
   );
   return {
-    id: String(row.id),
+    id,
     personId: String(row.person_id),
     region: String(row.region) as Episode['region'],
     side: String(row.side) as Episode['side'],
     status: String(row.status) as Episode['status'],
     title: String(row.title),
     record,
-    provenance: provenanceFor(String(row.id)),
+    provenance: provenanceFor(id),
     startedAt: String(row.started_at),
-    endedAt: row.ended_at as string | null,
+    endedAt: (row.ended_at as string | null) ?? null,
     createdAt: String(row.created_at),
     updatedAt: String(row.updated_at),
     safetyFlags: flags.map((f) => ({
@@ -238,6 +570,21 @@ function hydrate(row: Record<string, unknown>): Episode {
 export function getEpisode(id: string): Episode | null {
   const row = get(`SELECT * FROM episodes WHERE id = ?`, id);
   return row ? hydrate(row) : null;
+}
+
+export function getGrounding(id: string): GroundingInfo | null {
+  const row = get(
+    `SELECT grounding_status, grounding_reason, grounding_by, grounding_score, grounding_clarification
+       FROM episodes WHERE id = ?`, id,
+  );
+  if (!row) return null;
+  return {
+    status: String(row.grounding_status) as GroundingStatus,
+    reason: (row.grounding_reason as GroundingInfo['reason']) ?? null,
+    by: (row.grounding_by as GroundingInfo['by']) ?? null,
+    score: row.grounding_score != null ? Number(row.grounding_score) : null,
+    clarification: (row.grounding_clarification as string | null) ?? null,
+  };
 }
 
 export function listEpisodes(opts: { personId?: string; region?: string; side?: string; limit?: number } = {}): Episode[] {
@@ -262,14 +609,6 @@ export function priorEpisodes(episodeId: string): Episode[] {
   ).map(hydrate);
 }
 
-export function saveRecord(id: string, record: SymptomRecord): Episode {
-  run(`UPDATE episodes SET record_json = ?, updated_at = ? WHERE id = ?`, JSON.stringify(record), now(), id);
-  raiseSafetyFlags(id, record);
-  const ep = getEpisode(id);
-  if (!ep) throw new Error(`episode ${id} not found`);
-  return ep;
-}
-
 export function closeEpisode(id: string, endedAt = now()): void {
   run(`UPDATE episodes SET status = 'resolved', ended_at = ?, updated_at = ? WHERE id = ?`, endedAt, endedAt, id);
 }
@@ -282,40 +621,43 @@ export function appendTranscript(episodeId: string, role: string, content: strin
   );
 }
 
-/* ------------------------------------------------------------------ */
-/* Safety                                                              */
-/* ------------------------------------------------------------------ */
-
-export function raiseSafetyFlags(episodeId: string, record: SymptomRecord): string[] {
-  const flags = evaluateRedFlags(record, { region: record.location.region });
-  const raised: string[] = [];
-  for (const f of flags) {
-    const exists = get(
-      `SELECT id FROM safety_flags WHERE episode_id = ? AND rule_id = ?`,
-      episodeId, f.ruleId,
-    );
-    if (exists) continue;
-    run(
-      `INSERT INTO safety_flags (id, episode_id, rule_id, severity, user_message, review_status, raised_at)
-       VALUES (?,?,?,?,?,?,?)`,
-      randomUUID(), episodeId, f.ruleId, f.severity, f.userMessage, f.reviewStatus, now(),
-    );
-    raised.push(f.ruleId);
-    appendTranscript(episodeId, 'system', `[safety:${f.severity}] ${f.title}\n${f.userMessage}`);
-  }
-  return raised;
+/** Evaluation without a write, for GET endpoints. */
+export function safetyFor(episodeId: string, profile: ReleaseProfile): SafetyEvaluation | null {
+  const ep = getEpisode(episodeId);
+  if (!ep) return null;
+  const answers = answersFor(episodeId);
+  return evaluateSafety(ep.record, {
+    region: ep.record.location.region,
+    answers,
+    signals: signalsFromAnswers(answers),
+    profile,
+  });
 }
 
-/* ------------------------------------------------------------------ */
-/* Summary                                                             */
-/* ------------------------------------------------------------------ */
-
-export function summaryFor(id: string): { summary: PreVisitSummary; text: string } | null {
+export function summaryFor(
+  id: string,
+  profile: ReleaseProfile = 'development',
+): { summary: PreVisitSummary; text: string; blocked: boolean; withheld: unknown[] } | null {
   const ep = getEpisode(id);
   if (!ep) return null;
-  const flags = evaluateRedFlags(ep.record, { region: ep.record.location.region });
-  const summary = buildPreVisitSummary(ep, { flags, priorEpisodes: priorEpisodes(id) });
-  return { summary, text: renderPlainText(summary) };
+  const answers = answersFor(id);
+  const safety = evaluateSafety(ep.record, {
+    region: ep.record.location.region,
+    answers,
+    signals: signalsFromAnswers(answers),
+    profile,
+  });
+  // buildPreVisitSummary is deterministic, so the summary can never inherit a
+  // safety message the release profile withheld.
+  const summary = buildPreVisitSummary(ep, {
+    flags: safety.flags,
+    priorEpisodes: priorEpisodes(id),
+    answers,
+    coverage: coverageFor(id),
+    withheld: safety.withheld,
+    blocked: safety.blocked,
+  });
+  return { summary, text: renderPlainText(summary), blocked: safety.blocked, withheld: safety.withheld };
 }
 
 /* ------------------------------------------------------------------ */
@@ -355,5 +697,3 @@ export function healthMap(personId: string): HealthMapNode[] {
     lastTitle: (r.last_title as string | null) ?? null,
   }));
 }
-
-export type { Attributed };
