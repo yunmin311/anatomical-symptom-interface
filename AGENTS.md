@@ -119,6 +119,44 @@ apps/web/src/
   allowed sources and a note. A field with no provenance belongs in
   `DERIVED_FIELD_PATHS` with a reason.
 
+## Git and PR workflow
+
+**The default is no PR.** A PR is something you ask for explicitly. If a prompt
+does not say "create a PR", do not create one — not even to make the process look
+complete. The failure mode this replaces is one PR per two-line fix, which makes
+the real changes invisible in review.
+
+**No PR — work on the current task branch, commit, push, report:**
+
+- Bug fixes, including follow-ups to the same problem.
+- Test additions and doc/count sync.
+- Anything whose whole diff is a small number of files in one area.
+
+Keep the commits on that one branch logically separate. A bug fix, its
+regression tests and its doc sync are three commits on one branch, not three
+branches and three PRs.
+
+**A PR is warranted when:**
+
+- A milestone or a coherent group of changes is finished.
+- Work from several agents has to be integrated into `main` together.
+- The change touches a write path, a persisted field, a safety rule or safety
+  message, provenance semantics, the DB schema, or the architecture — anything
+  that deserves review on its own.
+
+**Aim for one integration PR per phase.** Main agent holds integration until a
+group of work is done, then: review → integration branch → full validation → one
+PR → merge. Do not open a PR mid-phase and then add more to it.
+
+**Design agents do not open PRs.** A design agent's job ends at
+branch → implementation → tests → commits → push → handoff. Main agent does the
+final integration, and only after the group is finished.
+
+**Branches.** Do not create a throwaway branch per small fix; stay on the current
+task branch. Sweep merged branches at the end of a phase, not after every task:
+confirm with `git branch --merged main` and check the remote is contained in
+`main` before deleting. `main` should be the only branch left between phases.
+
 ## Commands
 
 ```bash
