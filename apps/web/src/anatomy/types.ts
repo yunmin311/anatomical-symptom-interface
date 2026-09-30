@@ -36,7 +36,10 @@ export interface ViewerState {
   visibleSubRegionIds: string[];
   /** Tissue layers currently shown, superficial → deep. */
   visibleLayers: TissueLayer[];
-  /** Structures the user has explicitly confirmed. These are facts. */
+  /**
+   * Structures the user POINTED AT on the model. This records a visual location
+   * choice, not a clinical finding.
+   */
   selectedStructureIds: string[];
   /** Structures the model has proposed. These are candidates. */
   highlightedStructureIds: string[];
@@ -53,7 +56,7 @@ export type ViewerCommand =
   | { type: 'showLayers'; layers: TissueLayer[] }
   | { type: 'hideLayers'; layers: TissueLayer[] }
   | { type: 'focusSubRegion'; subRegionId: string }
-  | { type: 'highlight'; structureIds: string[]; as: 'candidate' | 'confirmed' }
+  | { type: 'highlight'; structureIds: string[]; as: 'candidate' | 'selected' }
   | { type: 'clearHighlight' }
   | { type: 'dropPin'; point: MapPoint }
   | { type: 'movePin'; point: MapPoint }

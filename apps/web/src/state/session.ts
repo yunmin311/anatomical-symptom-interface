@@ -1,21 +1,40 @@
 /**
- * Session state. Deliberately small: the record is the product, the store just
- * orchestrates fetching and the current view.
+ * Session state.
+ *
+ * All decision logic lives in ./logic.ts, which is pure and directly tested.
+ * This file is the thin shell: fetch, store, and viewer commands. The two
+ * rules it must never break are that it never writes a record field directly
+ * (it goes through `applyAnswer` in shared) and that it never posts a whole
+ * SymptomRecord to the server (it posts validated field mutations).
  */
 import { create } from 'zustand';
 import type {
+  AnswerMap,
   BodyRegion,
   ConsideredStructure,
   Depth,
   Episode,
   PreVisitSummary,
-  SafetyFlag,
+  SafetyEvaluation,
   Side,
   SymptomRecord,
 } from '@asi/shared';
-import { emptyRecord, evaluateRedFlags, nextQuestion, questionProgress } from '@asi/shared';
+import { emptyRecord, EMPTY_ANSWERS } from '@asi/shared';
 import { Svg2dAnatomyAdapter } from '../anatomy/svg2d.ts';
-import type { BodyPin, MapPoint, ViewerState } from '../anatomy/types.ts';
+import type { MapPoint, ViewerState } from '../anatomy/types.ts';
+import {
+  applyLocalisation,
+  deselectStructure,
+  evaluateSession,
+  labelFor,
+  mutationsForAnswer,
+  mutationsForField,
+  peekNextQuestion,
+  progressOf,
+  recordAnswer,
+  selectStructure,
+} from './logic.ts';
+import type { LocalisationOutcome } from './logic.ts';
 
 const API = '/api';
 
@@ -24,25 +43,16 @@ async function api<T>(path: string, init?: RequestInit): Promise<T> {
     ...init,
     headers: { 'content-type': 'application/json', ...(init?.headers ?? {}) },
   });
-  if (!res.ok) throw new Error(`${path} → ${res.status}`);
+  if (!res.ok) {
+    const body = (await res.json().catch(() => null)) as { reason?: string; error?: string } | null;
+    throw new Error(body?.reason ?? body?.error ?? `${path} → ${res.status}`);
+  }
   return res.json() as Promise<T>;
 }
 
 export const anatomy = new Svg2dAnatomyAdapter();
 
-export interface LocaliseResult {
-  region: BodyRegion;
-  side: Side;
-  depth: Depth;
-  suggestedSubRegionId: string | null;
-  consideredStructures: ConsideredStructure[];
-  userPhrase: string;
-  by: 'deterministic' | 'model';
-  matchedTerms: string[];
-  score: number;
-}
-
-export type Stage = 'describe' | 'locate' | 'interview' | 'review' | 'history';
+export type Stage = 'describe' | 'locate' | 'clarify' | 'interview' | 'review' | 'history' | 'unsupported';
 
 interface SessionState {
   stage: Stage;
@@ -51,46 +61,61 @@ interface SessionState {
   error: string | null;
 
   record: SymptomRecord;
-  asked: string[];
+  answers: AnswerMap;
   consideredStructures: ConsideredStructure[];
-  flags: SafetyFlag[];
+  safety: SafetyEvaluation;
+  /** Set when localisation refused. The MSK interview must not run. */
+  refusal: string | null;
 
   episodeId: string | null;
   summary: PreVisitSummary | null;
   history: Episode[];
   orchestratorKind: 'deterministic' | 'model' | null;
+  clarification: string | null;
 
   viewer: ViewerState;
-  /** Bumped whenever the anatomy adapter emits, to trigger React updates. */
   viewerTick: number;
 
   setStage: (s: Stage) => void;
   setUtterance: (u: string) => void;
-  setBusy: (b: boolean) => void;
   setError: (e: string | null) => void;
   syncViewer: () => void;
 
   describe: () => Promise<void>;
   pinAt: (point: MapPoint) => void;
-  confirmStructure: (id: string) => void;
-  rejectStructure: (id: string) => void;
-  confirmSubRegion: (id: string) => void;
+  select: (id: string) => void;
+  deselect: (id: string) => void;
+  selectSubRegion: (id: string) => void;
   setSide: (side: Side) => void;
   setDepth: (depth: Depth) => void;
-  answer: (questionId: string, value: unknown, optionValues: string[]) => void;
+  answer: (questionId: string, raw: unknown, triState?: 'yes' | 'no' | 'unknown') => void;
   save: () => Promise<void>;
   loadSummary: () => Promise<void>;
   loadHistory: (personId?: string) => Promise<void>;
   reset: () => void;
 }
 
-const reevaluate = (record: SymptomRecord): SafetyFlag[] => evaluateRedFlags(record, { region: record.location.region });
-
-/** Append without duplicating, preserving the element type. */
-const add = <T,>(arr: readonly T[], ...items: T[]): T[] => [...new Set([...arr, ...items])];
+const EMPTY_SAFETY = evaluateSession(emptyRecord('shoulder'), EMPTY_ANSWERS);
 
 export const useSession = create<SessionState>((set, get) => {
   anatomy.subscribe(() => set((s) => ({ viewerTick: s.viewerTick + 1 })));
+
+  const reevaluate = (record: SymptomRecord, answers: AnswerMap) => {
+    const safety = evaluateSession(record, answers);
+    set({ safety });
+  };
+
+  /** Persist field mutations and/or answers through the single write path. */
+  const pushMutations = async (
+    episodeId: string,
+    payload: { fieldPath: string; value: unknown; provenance: unknown }[],
+    answers: { questionId: string; raw: unknown; wroteFields: string[]; createdBy: string; rawText?: string | null }[],
+  ) => {
+    await api(`/episodes/${episodeId}/mutations`, {
+      method: 'POST',
+      body: JSON.stringify({ mutations: payload, answers }),
+    });
+  };
 
   return {
     stage: 'describe',
@@ -99,61 +124,67 @@ export const useSession = create<SessionState>((set, get) => {
     error: null,
 
     record: emptyRecord('shoulder'),
-    asked: [],
+    answers: EMPTY_ANSWERS,
     consideredStructures: [],
-    flags: [],
+    safety: EMPTY_SAFETY,
+    refusal: null,
 
     episodeId: null,
     summary: null,
     history: [],
     orchestratorKind: null,
+    clarification: null,
 
     viewer: anatomy.getState(),
     viewerTick: 0,
 
     setStage: (stage) => set({ stage }),
     setUtterance: (utterance) => set({ utterance }),
-    setBusy: (busy) => set({ busy }),
     setError: (error) => set({ error }),
     syncViewer: () => set((s) => ({ viewer: anatomy.getState(), viewerTick: s.viewerTick + 1 })),
 
-    /** Free text → grounded candidates → open the anatomy view there. */
     describe: async () => {
       const { utterance } = get();
       if (!utterance.trim()) return;
-      set({ busy: true, error: null });
+      set({ busy: true, error: null, refusal: null, clarification: null });
       try {
-        const r = await api<LocaliseResult>('/localise', {
+        const result = await api<LocalisationOutcome>('/localise', {
           method: 'POST',
           body: JSON.stringify({ utterance }),
         });
-        anatomy.apply({ type: 'focusRegion', region: r.region });
-        if (r.suggestedSubRegionId) {
-          anatomy.apply({ type: 'focusSubRegion', subRegionId: r.suggestedSubRegionId });
-        }
-        anatomy.apply({ type: 'highlight', structureIds: r.consideredStructures.map((c) => c.structureId), as: 'candidate' });
 
-        const record = emptyRecord(r.region);
-        record.location = {
-          ...record.location,
-          side: r.side,
-          depth: r.depth,
-          subRegionId: r.suggestedSubRegionId,
-          userPhrase: r.userPhrase,
-          point: null,
-          userConfirmedStructureIds: [],
-        };
-        record.consideredStructures = r.consideredStructures;
+        const { record, considered, allowed, refusal } = applyLocalisation(get().record, result);
+
+        if (!allowed) {
+          // Localisation refused. Stop here: do NOT open an anatomy view, do NOT
+          // fabricate a region, and do NOT start a region interview.
+          set({ record, consideredStructures: considered, refusal, busy: false, stage: 'unsupported' });
+          return;
+        }
+
+        anatomy.apply({ type: 'focusRegion', region: record.location.region });
+        if (record.location.subRegionId) {
+          anatomy.apply({ type: 'focusSubRegion', subRegionId: record.location.subRegionId });
+        }
+        anatomy.apply({
+          type: 'highlight',
+          structureIds: considered.map((c) => c.structureId),
+          as: 'candidate',
+        });
+
+        const clarification =
+          result.status === 'grounded' ? (result.clarificationQuestion ?? null) : null;
 
         set({
           record,
-          consideredStructures: r.consideredStructures,
-          asked: [],
-          flags: reevaluate(record),
-          orchestratorKind: r.by,
+          consideredStructures: considered,
+          answers: EMPTY_ANSWERS,
+          orchestratorKind: result.status === 'grounded' ? 'deterministic' : null,
+          clarification,
           busy: false,
-          stage: 'locate',
+          stage: clarification ? 'clarify' : 'locate',
         });
+        reevaluate(record, EMPTY_ANSWERS);
         get().syncViewer();
       } catch (e) {
         set({ error: e instanceof Error ? e.message : String(e), busy: false });
@@ -163,167 +194,119 @@ export const useSession = create<SessionState>((set, get) => {
     pinAt: (point) => {
       anatomy.apply({ type: 'dropPin', point });
       const record = { ...get().record, location: { ...get().record.location, point } };
-      set({ record, flags: reevaluate(record) });
+      set({ record });
+      reevaluate(record, get().answers);
       get().syncViewer();
     },
 
-    /** User confirmation: the only path by which a candidate becomes a fact. */
-    confirmStructure: (id) => {
-      anatomy.apply({ type: 'highlight', structureIds: [id], as: 'confirmed' });
-      const record = get().record;
-      record.location.userConfirmedStructureIds = [...new Set([...record.location.userConfirmedStructureIds, id])];
-      record.consideredStructures = record.consideredStructures.map((c) =>
-        c.structureId === id ? { ...c, confirmedByUser: true } : c,
-      );
+    /** Visual selection. NOT confirmation of a structure being the problem. */
+    select: (id) => {
+      anatomy.apply({ type: 'highlight', structureIds: [id], as: 'selected' });
+      const record = selectStructure(get().record, id);
       set({ record });
       get().syncViewer();
     },
 
-    rejectStructure: (id) => {
-      const v = anatomy.getState();
-      anatomy.apply({ type: 'removePin', pinId: v.activePin ? '__none__' : '__none__' });
-      const record = get().record;
-      record.location.userConfirmedStructureIds = record.location.userConfirmedStructureIds.filter((x) => x !== id);
-      record.consideredStructures = record.consideredStructures.filter((c) => c.structureId !== id);
+    deselect: (id) => {
+      const record = deselectStructure(get().record, id);
       set({ record });
     },
 
-    confirmSubRegion: (id) => {
+    selectSubRegion: (id) => {
       anatomy.apply({ type: 'focusSubRegion', subRegionId: id });
       const record = { ...get().record, location: { ...get().record.location, subRegionId: id } };
-      set({ record, stage: 'interview', flags: reevaluate(record) });
+      set({ record, stage: 'interview' });
+      reevaluate(record, get().answers);
       get().syncViewer();
     },
 
     setSide: (side) => {
       const record = { ...get().record, location: { ...get().record.location, side } };
-      set({ record, flags: reevaluate(record) });
+      set({ record });
+      reevaluate(record, get().answers);
     },
 
     setDepth: (depth) => {
       anatomy.apply({ type: 'setDepth', depth });
       const record = { ...get().record, location: { ...get().record.location, depth } };
-      set({ record, flags: reevaluate(record) });
+      set({ record });
+      reevaluate(record, get().answers);
       get().syncViewer();
     },
 
-    answer: (questionId, value, optionValues) => {
-      const record = structuredClone(get().record);
-      const { asked } = get();
+    answer: (questionId, raw, triState) => {
+      const { record, answers, wroteFields, answer } = recordAnswer(
+        get().record,
+        get().answers,
+        questionId,
+        raw,
+        triState,
+      );
+      set({ record, answers, error: null });
+      reevaluate(record, answers);
 
-      switch (questionId) {
-        case 'shoulder.injury_context':
-        case 'neck.mechanism':
-        case 'lower_back.mechanism':
-        case 'knee.mechanism':
-          record.context.recentInjury = String(value);
-          break;
-        case 'shoulder.weakness':
-        case 'lower_back.weakness':
-          if (String(value) === 'true') {
-            record.quality = add(record.quality, 'instability');
-            record.function.activitiesAffected = [...record.function.activitiesAffected, 'leg feels weak'];
-          }
-          break;
-        case 'shoulder.radiation':
-        case 'neck.arming':
-        case 'lower_back.leg_symptoms':
-          if (value !== 'none') record.radiation = [String(value)];
-          break;
-        case 'lower_back.numbness':
-          if (String(value) === 'true') record.quality = add(record.quality, 'numbness');
-          break;
-        case 'shoulder.night_pain':
-          if (String(value) === 'true') record.triggers = add(record.triggers, 'night');
-          break;
-        case 'shoulder.tenderness':
-          record.tendernessOnPalpation = String(value) as never;
-          break;
-        case 'shoulder.elevation':
-        case 'neck.movement':
-        case 'knee.stairs':
-          record.triggerDetail = optionValues.join(', ');
-          record.triggers = add(record.triggers, 'movement' as never);
-          break;
-        case 'shoulder.vascular':
-        case 'neck.systemic':
-        case 'lower_back.systemic':
-        case 'knee.instability':
-          if (String(value) === 'true') {
-            record.context.systemicSymptoms = add(record.context.systemicSymptoms, 'fever');
-          }
-          break;
-        case 'knee.swelling':
-          if (String(value) !== 'none') record.quality = add(record.quality, 'swelling');
-          break;
-        case 'knee.weight_bearing':
-          record.function.unableWeighBearing = String(value) as never;
-          break;
-        case 'lower_back.bladder':
-        case 'lower_back.movement':
-        case 'shoulder.trauma_urgent':
-        case 'neck.trauma_urgent':
-        case 'shoulder.headache':
-        case 'neck.headache':
-        case 'knee.locking':
-          if (questionId === 'lower_back.movement') record.triggerDetail = optionValues.join(', ');
-          if (questionId === 'knee.locking' && String(value) === 'true') {
-            record.quality = add(record.quality, 'clicking');
-          }
-          break;
-        default:
-          break;
+      // Persist asynchronously. A failure here must not desynchronise the UI,
+      // so it surfaces as an error rather than a silent success.
+      const id = get().episodeId;
+      if (id) {
+        void pushMutations(id, mutationsForAnswer(record, answer, wroteFields), [
+          {
+            questionId,
+            raw: answer.raw,
+            wroteFields,
+            createdBy: 'user',
+            rawText: answer.provenance.rawText ?? null,
+          },
+        ]).catch((e: unknown) => set({ error: e instanceof Error ? e.message : String(e) }));
       }
-
-      // Question ids whose safety rule fired become explicit record gaps so the
-      // rule engine can see the signal without us smuggling free text.
-      record.gaps = [...new Set([...record.gaps, `asked:${questionId}`])];
-
-      set({
-        record,
-        asked: [...asked, questionId],
-        flags: reevaluate(record),
-      });
     },
 
     save: async () => {
-      const { record, episodeId, utterance } = get();
+      const { record, answers, episodeId, utterance } = get();
       set({ busy: true, error: null });
       try {
         let id = episodeId;
+        const locationMutations = [
+          ...mutationsForField('location.region', record.location.region),
+          ...mutationsForField('location.side', record.location.side),
+          ...mutationsForField('location.depth', record.location.depth),
+          ...(record.location.subRegionId
+            ? mutationsForField('location.subRegionId', record.location.subRegionId)
+            : []),
+          ...(record.location.point ? mutationsForField('location.point', record.location.point) : []),
+          ...(record.location.userSelectedStructureIds.length
+            ? mutationsForField('location.userSelectedStructureIds', record.location.userSelectedStructureIds)
+            : []),
+          ...(utterance ? mutationsForField('location.userPhrase', utterance) : []),
+        ];
+
         if (!id) {
           const ep = await api<Episode>('/episodes', {
             method: 'POST',
             body: JSON.stringify({
               personId: 'local',
               displayName: 'Me',
-              region: record.location.region,
-              side: record.location.side,
-              userPhrase: utterance,
-              record,
+              grounding: { status: 'grounded', region: record.location.region, side: record.location.side, by: get().orchestratorKind ?? 'deterministic' },
+              mutations: locationMutations,
+              answers: Object.values(answers).map((a) => ({
+                questionId: a.questionId,
+                raw: a.raw,
+                wroteFields: a.wroteFields,
+                createdBy: 'user',
+                rawText: a.provenance.rawText ?? null,
+              })),
             }),
           });
           id = ep.id;
           set({ episodeId: ep.id });
-        } else {
-          await api(`/episodes/${id}/record`, {
-            method: 'PATCH',
-            body: JSON.stringify({ record }),
-          });
+          // The create call already wrote the location and answers.
+          const { summary } = await api<{ summary: PreVisitSummary }>(`/episodes/${ep.id}/summary`);
+          set({ summary, busy: false, stage: 'review' });
+          void get().loadHistory();
+          return;
         }
 
-        // Persist the user-confirmation side of the record as real provenance.
-        for (const fieldPath of ['location.side', 'location.depth', 'location.subRegionId', 'location.point']) {
-          const value = fieldPath
-            .split('.')
-            .reduce<unknown>((acc, k) => (acc as Record<string, unknown>)?.[k], record);
-          if (value == null) continue;
-          await api(`/episodes/${id}/confirm`, {
-            method: 'POST',
-            body: JSON.stringify({ fieldPath, value, verificationStatus: 'user_confirmed' }),
-          });
-        }
-
+        await pushMutations(id, locationMutations, []);
         const { summary } = await api<{ summary: PreVisitSummary }>(`/episodes/${id}/summary`);
         set({ summary, busy: false, stage: 'review' });
         void get().loadHistory();
@@ -345,24 +328,27 @@ export const useSession = create<SessionState>((set, get) => {
     },
 
     reset: () => {
-      const viewer = anatomy.getState();
       anatomy.apply({ type: 'focusRegion', region: 'shoulder' });
+      const record = emptyRecord('shoulder');
       set({
         stage: 'describe',
         utterance: '',
-        record: emptyRecord('shoulder'),
-        asked: [],
+        record,
+        answers: EMPTY_ANSWERS,
         consideredStructures: [],
-        flags: [],
+        safety: evaluateSession(record, EMPTY_ANSWERS),
+        refusal: null,
+        clarification: null,
         episodeId: null,
         summary: null,
         error: null,
         viewer: anatomy.getState(),
-        viewerTick: viewer ? 0 : 0,
+        viewerTick: 0,
       });
     },
   };
 });
 
-export { nextQuestion, questionProgress };
-export type { BodyPin, MapPoint, ViewerState };
+export { peekNextQuestion, progressOf, labelFor };
+export type { LocalisationOutcome };
+export type { AnswerMap, BodyRegion, ConsideredStructure, MapPoint, SafetyEvaluation, SymptomRecord };

@@ -151,7 +151,7 @@ export class Svg2dAnatomyAdapter implements AnatomyAdapter {
         break;
       case 'highlight': {
         const set = new Set(cmd.structureIds);
-        if (cmd.as === 'confirmed') {
+        if (cmd.as === 'selected') {
           s.selectedStructureIds = [...new Set([...s.selectedStructureIds, ...set])];
           s.highlightedStructureIds = s.highlightedStructureIds.filter((id) => !set.has(id));
           s.rejectedStructureIds = s.rejectedStructureIds.filter((id) => !set.has(id));

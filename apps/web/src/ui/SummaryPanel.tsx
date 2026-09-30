@@ -1,13 +1,9 @@
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { useSession } from '../state/session.ts';
 
 export function SummaryPanel() {
   const summary = useSession((s) => s.summary);
   const [copied, setCopied] = useState(false);
-
-  useEffect(() => {
-    if (summary) void useSession.getState().loadHistory();
-  }, [summary]);
 
   if (!summary) return <p className="muted">Save the episode to generate a summary.</p>;
 
@@ -16,15 +12,26 @@ export function SummaryPanel() {
     '',
     ...summary.history.map((h) => `${h.label}: ${h.value}`),
     '',
-    summary.unconfirmedConsiderations.length
-      ? `CONSIDERED BUT NOT CONFIRMED (AI candidates, not findings):\n${summary.unconfirmedConsiderations
-          .map((u) => `  - ${u}`)
-          .join('\n')}`
-      : '',
+    ...(summary.visualSelections.length
+      ? [
+          'AREAS YOU POINTED TO ON THE BODY MAP (a location you indicated, not a finding):',
+          ...summary.visualSelections.map((v) => `  - ${v}`),
+        ]
+      : []),
+    ...(summary.unselectedSuggestions.length
+      ? [
+          '',
+          'SUGGESTED BY THE TOOL AND NOT ACTED ON (not findings):',
+          ...summary.unselectedSuggestions.map((u) => `  - ${u}`),
+        ]
+      : []),
+    ...(summary.safetyGateBlocked
+      ? ['', '*** SAFETY GATE BLOCKED ***', 'One or more safety rules matched but have not completed clinical review. This record has NOT been safely assessed.']
+      : []),
     '',
     'This summary was produced by a patient self-report tool. It is not a diagnosis.',
   ]
-    .filter(Boolean)
+    .filter((x) => x !== undefined)
     .join('\n');
 
   return (
@@ -54,16 +61,36 @@ export function SummaryPanel() {
         </>
       )}
 
-      {summary.unconfirmedConsiderations.length > 0 && (
+      {summary.visualSelections.length > 0 && (
         <>
-          <h3 className="summary__h3">Considered, not confirmed</h3>
+          <h3 className="summary__h3">Areas you pointed to</h3>
+          <p className="muted">A location you indicated on the body map. Not a finding.</p>
+          <ul className="summary__cands">
+            {summary.visualSelections.map((v) => (
+              <li key={v}>{v}</li>
+            ))}
+          </ul>
+        </>
+      )}
+
+      {summary.unselectedSuggestions.length > 0 && (
+        <>
+          <h3 className="summary__h3">Suggested, not acted on</h3>
           <p className="muted">Suggestions only. These are not findings.</p>
           <ul className="summary__cands">
-            {summary.unconfirmedConsiderations.map((u) => (
+            {summary.unselectedSuggestions.map((u) => (
               <li key={u}>{u}</li>
             ))}
           </ul>
         </>
+      )}
+
+      {summary.safetyGateBlocked && (
+        <div className="summary__blocked" role="alert">
+          <strong>Safety gate blocked.</strong> A safety rule matched but has not completed
+          clinical review, so its guidance was withheld. This record must not be treated as
+          safely assessed.
+        </div>
       )}
 
       <footer className="summary__foot">

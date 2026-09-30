@@ -3,12 +3,13 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "Anatomical Symptom Interface — web client and anatomy model layer",
+  "description": "Anatomical Symptom Interface - web client and anatomy model layer",
   "scripts": {
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "test": "node --experimental-strip-types --test test/*.test.ts"
   },
   "dependencies": {
     "@asi/shared": "workspace:*",
@@ -21,6 +22,7 @@
     "@types/react-dom": "^19.0.3",
     "@vitejs/plugin-react": "^4.3.4",
     "typescript": "^5.9.3",
-    "vite": "^6.1.0"
+    "vite": "^6.1.0",
+    "@types/node": "^22.13.1"
   }
 }
