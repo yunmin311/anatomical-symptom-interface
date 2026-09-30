@@ -93,17 +93,69 @@ const OUT_OF_SCOPE_TERMS: Readonly<Record<string, readonly string[]>> = Object.f
 /** Regions this build localises. */
 const SUPPORTED_REGIONS: readonly BodyRegion[] = ['shoulder', 'neck', 'lower_back', 'knee'];
 
+/** Han characters. Chinese is written without spaces, so it has no word boundaries. */
+const HAN = /[\u4e00-\u9fff]/;
+
+/** True when `term` contains Han characters and must therefore be matched as a substring. */
+function needsSubstringMatch(term: string): boolean {
+  return HAN.test(term);
+}
+
+/** A term as the sequence of tokens a user would actually type. */
+function termTokens(term: string): string[] {
+  return normalisePhrase(term).split(' ').filter(Boolean);
+}
+
+/**
+ * True when `needle` appears in `haystack` as a whole run of adjacent tokens.
+ *
+ * Adjacency, not just membership: "shortness of breath" is three tokens and has
+ * to be found as three neighbours, or "breath" alone would satisfy it.
+ */
+function containsTokenSequence(haystack: readonly string[], needle: readonly string[]): boolean {
+  if (needle.length === 0 || needle.length > haystack.length) return false;
+  outer: for (let start = 0; start <= haystack.length - needle.length; start++) {
+    for (let offset = 0; offset < needle.length; offset++) {
+      if (haystack[start + offset] !== needle[offset]) continue outer;
+    }
+    return true;
+  }
+  return false;
+}
+
 /**
  * Detect a region this build cannot localise. Returns null when nothing matches.
  *
  * Deliberately conservative: only unambiguous, explicit body-part terms. A word
  * like "arm" is NOT out of scope, because the shoulder workflow covers it.
+ *
+ * Terms are matched on LEXICAL BOUNDARIES, not as raw substrings. Substring
+ * matching is the wrong tool here and was a real routing bug: "ear" is contained
+ * in "near", "year", "years", "clear", "wears", "hear" and "tear", and "fit" is
+ * contained in "fitness" and "benefit". So "my knee has hurt for 3 years" and
+ * "my back hurts near the spine" - both squarely in scope - were refused, and
+ * the user was routed to an ear or a seizure pathway because of how they
+ * described how long it had been going on. Any chronic complaint that mentions
+ * its duration in years was dead on arrival.
+ *
+ * Han terms keep substring matching, because Chinese is written without spaces
+ * and a boundary is not a thing we can compute without a segmenter. That is not
+ * a compromise: for a run of Han characters the substring IS the unit of
+ * meaning, and the embedding problem above cannot arise in the same way because
+ * there are no Latin words embedded inside a Han run.
  */
 export function detectOutOfScope(text: string): { area: string; term: string } | null {
   const compact = normalisePhrase(text);
+  // Han runs are stripped from the Latin token stream so that a Latin term still
+  // matches when it sits against Chinese text with no space between them.
+  const tokens = compact.replace(/[\u4e00-\u9fff]+/g, ' ').split(' ').filter(Boolean);
   for (const [area, terms] of Object.entries(OUT_OF_SCOPE_TERMS)) {
     for (const term of terms) {
-      if (compact.includes(term)) return { area, term };
+      if (needsSubstringMatch(term)) {
+        if (compact.includes(normalisePhrase(term))) return { area, term };
+        continue;
+      }
+      if (containsTokenSequence(tokens, termTokens(term))) return { area, term };
     }
   }
   return null;
