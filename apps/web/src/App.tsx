@@ -1,231 +1,324 @@
-import { useEffect } from 'react';
-import { BodyMap } from './anatomy/BodyMap.tsx';
-import { InterviewPanel } from './ui/InterviewPanel.tsx';
-import { SafetyBanner } from './ui/SafetyBanner.tsx';
-import { SummaryPanel } from './ui/SummaryPanel.tsx';
-import { HistoryPanel } from './ui/HistoryPanel.tsx';
-import { useSession } from './state/session.ts';
-import { peekNextQuestion, progressOf } from './state/session.ts';
-import { REGIONS } from '@asi/shared';
+import { useEffect, useRef, useState } from "react";
+import { REGIONS } from "@asi/shared";
+import { BodyMap } from "./anatomy/BodyMap.tsx";
+import { BodyIndex } from "./anatomy/BodyIndex.tsx";
+import { InterviewPanel } from "./ui/InterviewPanel.tsx";
+import { SafetyBanner } from "./ui/SafetyBanner.tsx";
+import { SummaryPanel } from "./ui/SummaryPanel.tsx";
+import { HistoryPanel } from "./ui/HistoryPanel.tsx";
+import { PageHeading, EmptyState } from "./ui/primitives.tsx";
+import { useSession } from "./state/session.ts";
+import type { Stage } from "./state/session.ts";
 
-const STAGES = [
-  { id: 'describe', label: 'Describe' },
-  { id: 'locate', label: 'Locate' },
-  { id: 'interview', label: 'Detail' },
-  { id: 'review', label: 'Summary' },
-  { id: 'history', label: 'History' },
-] as const;
+const TITLES: Record<Stage, string> = {
+  describe: "What are you feeling?",
+  locate: "Locate your discomfort",
+  clarify: "Check the starting area",
+  unsupported: "No location established",
+  interview: "Describe the experience",
+  review: "Review your account",
+  history: "Your body, over time",
+};
+const TASKS: Record<Stage, string> = {
+  describe: "New episode",
+  locate: "Body / Location",
+  clarify: "Body / Location",
+  unsupported: "New episode",
+  interview: "Location / Experience",
+  review: "Experience / Record",
+  history: "Body / History",
+};
 
 export function App() {
-  const stage = useSession((s) => s.stage);
-  const setStage = useSession((s) => s.setStage);
-  const utterance = useSession((s) => s.utterance);
-  const setUtterance = useSession((s) => s.setUtterance);
-  const describe = useSession((s) => s.describe);
-  const busy = useSession((s) => s.busy);
-  const error = useSession((s) => s.error);
-  const setError = useSession((s) => s.setError);
-  const safety = useSession((s) => s.safety);
-  const record = useSession((s) => s.record);
-  const answers = useSession((s) => s.answers);
-  const save = useSession((s) => s.save);
-  const reset = useSession((s) => s.reset);
-  const loadHistory = useSession((s) => s.loadHistory);
-  const refusal = useSession((s) => s.refusal);
-  const clarification = useSession((s) => s.clarification);
-  const orchestratorKind = useSession((s) => s.orchestratorKind);
-
+  const {
+    stage,
+    setStage,
+    utterance,
+    setUtterance,
+    describe,
+    busy,
+    error,
+    safety,
+    refusal,
+    clarification,
+    record,
+    save,
+    reset,
+    summary,
+  } = useSession();
+  const [returnStage, setReturnStage] = useState<Stage>("describe");
+  const dialog = useRef<HTMLDialogElement>(null);
+  const previousStage = useRef(stage);
   useEffect(() => {
-    void loadHistory();
-  }, [loadHistory]);
-
-  const next = peekNextQuestion(record, answers);
-  const progress = progressOf(record, answers);
-
+    if (previousStage.current !== stage)
+      document.getElementById("page-title")?.focus();
+    previousStage.current = stage;
+  }, [stage]);
+  const located = ["locate", "interview", "review", "clarify"].includes(stage);
   return (
-    <div className="app">
+    <div className={`app app--${stage}`}>
+      <a className="skip-link" href="#main">
+        Skip to content
+      </a>
       <header className="app__head">
-        <h1 className="app__title">Anatomical Symptom Interface</h1>
-        <nav className="app__steps">
-          {STAGES.map((s, i) => (
-            <button
-              key={s.id}
-              className={`step ${stage === s.id ? 'step--on' : ''}`}
-              onClick={() => setStage(s.id)}
-            >
-              <span className="step__n">{i + 1}</span>
-              {s.label}
-            </button>
-          ))}
-        </nav>
+        <div className="brand">
+          <span className="brand__mark" aria-hidden="true">
+            a<span>·</span>s
+          </span>
+          <span>
+            Anatomical
+            <br />
+            <strong>Symptom Interface</strong>
+          </span>
+        </div>
+        <span className="workspace-name">Personal anatomical workspace</span>
+        <button
+          className="btn btn--quiet"
+          disabled={busy}
+          onClick={() => {
+            if (stage === "history") setStage(returnStage);
+            else {
+              setReturnStage(stage);
+              setStage("history");
+            }
+          }}
+        >
+          {stage === "history"
+            ? "Return to your record"
+            : "Personal health map"}
+          <span aria-hidden="true"> ↗</span>
+        </button>
       </header>
-
-      <main className="app__main">
-        <section className="app__col">
-          {stage === 'describe' && (
-            <div className="panel">
-              <h2 className="panel__h">Where does it hurt?</h2>
-              <p className="muted">
-                Say it however you would say it out loud. You do not need to know any anatomy.
+      <main id="main" className={`app__main app__main--${stage}`} tabIndex={-1}>
+        <div className="task-context">
+          <span>{TASKS[stage]}</span>
+          <span>
+            {summary && stage === "review"
+              ? "Saved episode"
+              : "Development prototype"}
+          </span>
+        </div>
+        <PageHeading
+          title={
+            summary && stage === "review"
+              ? "A record to take with you"
+              : TITLES[stage]
+          }
+        />
+        {stage !== "history" && (
+          <SafetyBanner
+            flags={safety.flags}
+            withheld={safety.withheld}
+            blocked={safety.blocked}
+          />
+        )}
+        {error && stage !== "history" && (
+          <section className="notice notice--error" role="alert">
+            <h2>
+              {stage === "describe"
+                ? "Location service unavailable"
+                : "Your record could not be saved"}
+            </h2>
+            <p>
+              {stage === "describe"
+                ? "Your words are still here. Try again when the local service is available. Offline rules also need the local service."
+                : "Your details are still here. Try saving again when the local service is available."}
+            </p>
+            <details>
+              <summary>Technical details</summary>
+              <p>{error}</p>
+            </details>
+          </section>
+        )}
+        {stage === "describe" && (
+          <div className="entry-layout">
+            <section className="entry">
+              <p className="entry-intro">
+                Describe it in your words. Locate it on your body.
+                <br />
+                Build a record you can share.
               </p>
               <form
                 className="describe"
+                aria-busy={busy}
                 onSubmit={(e) => {
                   e.preventDefault();
                   void describe();
                 }}
               >
+                <label htmlFor="description">
+                  What has been bothering you?
+                </label>
                 <textarea
+                  id="description"
                   value={utterance}
                   onChange={(e) => setUtterance(e.target.value)}
-                  rows={3}
-                  placeholder="e.g. right shoulder, deep inside, hurts when I lift my arm"
-                  autoFocus
+                  aria-describedby="description-help"
+                  maxLength={2000}
+                  rows={5}
+                  placeholder="For example: my right shoulder hurts deep inside when I lift my arm."
                 />
-                <button type="submit" className="btn btn--primary" disabled={busy || !utterance.trim()}>
-                  {busy ? 'Working…' : 'Show me where'}
+                <div className="actions">
+                  <span id="description-help" className="small">
+                    Your own words · English or 中文
+                  </span>
+                  <span className="small">{utterance.length} / 2,000</span>
+                </div>
+                <button
+                  className="btn btn--primary"
+                  disabled={busy || !utterance.trim()}
+                >
+                  {busy ? "Finding a starting area…" : "Locate on body map"}{" "}
+                  <span aria-hidden="true">→</span>
                 </button>
               </form>
-
-              <div className="regions">
-                <p className="regions__label">Or pick an area</p>
-                <div className="regions__grid">
-                  {Object.values(REGIONS).map((r) => (
-                    <button
-                      key={r.id}
-                      className="region"
-                      onClick={() => {
-                        // Picking a region IS grounding, so it goes through the
-                        // same localise path with a pinned region.
-                        setUtterance(`${r.label.toLowerCase()}`);
-                        void useSession.getState().describe();
-                      }}
-                    >
-                      {r.label}
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              {error && <p className="error">{error}</p>}
-            </div>
-          )}
-
-          {stage === 'unsupported' && (
-            <div className="panel">
-              <h2 className="panel__h">This workflow cannot help with that</h2>
-              <p>{refusal}</p>
-              <p className="muted">
-                Nothing has been recorded. No body region was guessed, and none of the
-                shoulder / neck / lower back / knee questions were asked.
+              <p className="entry-boundary">
+                For symptom location and organisation. Not diagnosis or
+                treatment.
               </p>
-              <button className="btn" onClick={reset}>
-                Start again
-              </button>
-            </div>
-          )}
-
-          {stage === 'clarify' && (
-            <div className="panel">
-              <h2 className="panel__h">One quick thing</h2>
-              <p>{clarification}</p>
-              <div className="panel--actions">
-                <button className="btn btn--primary" onClick={() => setStage('locate')}>
-                  Show me the body
-                </button>
-              </div>
-            </div>
-          )}
-
-          {stage === 'locate' && <BodyMap />}
-
-          {stage === 'interview' && (
-            <>
-              <InterviewPanel />
-              <div className="panel panel--actions">
-                <button className="btn btn--primary" onClick={() => void save()} disabled={busy}>
-                  {busy ? 'Saving…' : 'Save & build summary'}
-                </button>
-                <button className="btn" onClick={() => void save()}>
-                  Skip to summary
-                </button>
-              </div>
-            </>
-          )}
-
-          {stage === 'review' && (
-            <>
-              <button className="link" onClick={reset}>
-                Start a new episode
-              </button>
-              <SummaryPanel />
-            </>
-          )}
-
-          {stage === 'history' && <HistoryPanel />}
-        </section>
-
-        <aside className="app__col app__col--side">
-          <SafetyBanner flags={safety.flags} withheld={safety.withheld} blocked={safety.blocked} />
-
-          <section className="panel panel--tight">
-            <h3 className="panel__h3">This session</h3>
-            <dl className="facts">
-              <div>
-                <dt>Area</dt>
-                <dd>{REGIONS[record.location.region].label}</dd>
-              </div>
-              <div>
-                <dt>Side</dt>
-                <dd>{record.location.side}</dd>
-              </div>
-              <div>
-                <dt>Depth</dt>
-                <dd>{record.location.depth}</dd>
-              </div>
-              <div>
-                <dt>Your words</dt>
-                <dd>{record.location.userPhrase ?? '—'}</dd>
-              </div>
-              <div>
-                <dt>Answered</dt>
-                <dd>
-                  {progress.answered}/{progress.total}
-                  {progress.outstanding.length > 0 && ` (${progress.outstanding.length} not established)`}
-                </dd>
-              </div>
-            </dl>
-            {orchestratorKind && (
-              <p className="muted facts__note">
-                Location read by {orchestratorKind === 'model' ? 'the assistant' : 'offline rules'} —
-                please correct it on the map.
-              </p>
-            )}
-            {next && (
-              <p className="muted facts__note">Next question: {next.rationale}</p>
-            )}
-          </section>
-
-          <section className="panel panel--tight">
-            <h3 className="panel__h3">What this is not</h3>
-            <p className="muted">
-              This tool records what you feel and helps you describe it. It does not diagnose, and
-              pointing at a structure on the body map is a location, not a finding. If something is
-              wrong, a clinician decides that, not this.
-            </p>
-          </section>
-
-          {error && (
-            <section className="panel panel--tight">
-              <h3 className="panel__h3">Not saved</h3>
-              <p className="error">{error}</p>
-              <button className="link" onClick={() => setError(null)}>
-                Dismiss
-              </button>
             </section>
-          )}
-        </aside>
+            <aside className="entry-body" aria-label="Supported body areas">
+              <BodyIndex />
+              <p className="small">
+                Four areas available in this prototype.
+                <br />
+                Other symptoms may not be supported.
+              </p>
+            </aside>
+          </div>
+        )}
+        {stage === "unsupported" && (
+          <div className="unsupported-layout">
+            <span className="unlocated-mark" aria-hidden="true">
+              ⊙
+            </span>
+            <blockquote className="own-words">{utterance}</blockquote>
+            <EmptyState
+              title="This description cannot enter the body-map workflow"
+              action={
+                <button
+                  className="btn btn--primary"
+                  onClick={() => setStage("describe")}
+                >
+                  Edit description
+                </button>
+              }
+            >
+              {refusal} No record has been created and no body region has been
+              assumed.
+            </EmptyState>
+            <p className="small">
+              Supported areas:{" "}
+              {Object.values(REGIONS)
+                .map((r) => r.label)
+                .join(" · ")}
+              .
+            </p>
+          </div>
+        )}
+        {stage === "clarify" && (
+          <EmptyState
+            title="A little more location context"
+            action={
+              <button
+                className="btn btn--primary"
+                onClick={() => setStage("locate")}
+              >
+                Show me the body map
+              </button>
+            }
+          >
+            {clarification}
+          </EmptyState>
+        )}
+        {stage === "locate" && <BodyMap />}
+        {stage === "interview" && (
+          <div className="experience-layout">
+            <aside className="experience-context">
+              <BodyIndex active={record.location.region} />
+              <blockquote>{record.location.userPhrase}</blockquote>
+              <p className="small">
+                {REGIONS[record.location.region].label} · {record.location.side}{" "}
+                · {record.location.depth}
+              </p>
+              <button className="link" onClick={() => setStage("locate")}>
+                Adjust location
+              </button>
+            </aside>
+            <div>
+              <InterviewPanel />
+              <div className="actions interview-exit">
+                <span className="small">
+                  You can review an incomplete record.
+                </span>
+                <button className="link" onClick={() => setStage("review")}>
+                  Review current details →
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+        {stage === "review" && (
+          <div className="review-layout">
+            <SummaryPanel />
+            {!summary && (
+              <div className="actions review-actions">
+                <button
+                  className="btn"
+                  disabled={busy}
+                  onClick={() => setStage("interview")}
+                >
+                  Continue questions
+                </button>
+                <button
+                  className="btn btn--primary"
+                  disabled={busy}
+                  onClick={() => void save()}
+                >
+                  {busy ? "Saving your record…" : "Save & build summary"}
+                </button>
+              </div>
+            )}
+            <button
+              className="link new-episode"
+              disabled={busy}
+              onClick={() => dialog.current?.showModal()}
+            >
+              Start a new episode
+            </button>
+          </div>
+        )}
+        {stage === "history" && <HistoryPanel />}
+        {located && stage !== "locate" && (
+          <p className="small workflow-boundary">
+            Location indications and self-reported information. Not clinical
+            findings.
+          </p>
+        )}
       </main>
+      <footer className="app__footer">
+        <span>Development build · Not for real-world medical use.</span>
+        <span>Safety rules have not been clinically reviewed.</span>
+      </footer>
+      <dialog
+        ref={dialog}
+        className="confirm-dialog"
+        aria-labelledby="new-episode-title"
+      >
+        <h2 id="new-episode-title">Start a new episode?</h2>
+        <p>
+          Unsaved details in this session will be cleared. Saved episodes remain
+          in your health map.
+        </p>
+        <form method="dialog" className="actions">
+          <button className="btn" autoFocus>
+            Keep this record
+          </button>
+          <button className="btn btn--primary" onClick={() => reset()}>
+            Start new episode
+          </button>
+        </form>
+      </dialog>
     </div>
   );
 }

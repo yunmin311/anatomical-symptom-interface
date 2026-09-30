@@ -26,20 +26,32 @@ import type {
 
 export type ViewName = 'anterior' | 'posterior' | 'lateral_left' | 'lateral_right';
 
-/** Schematic body outline, 0..100 x 0..180 coordinate space. */
+/**
+ * Schematic body outline, 0..100 x 0..180 coordinate space.
+ *
+ * Proportioned so the figure reads as a person rather than a pictogram: the
+ * head is ~19% of total height, the shoulders slope from the neck, and the
+ * waist draws in before the hips. Every path still spans the landmark bands the
+ * sub-region hit shapes occupy (deltoid x66..84 y58..80, lumbar x40..60
+ * y118..148, knee x33..50 y156..168) so a redrawn silhouette can never move a
+ * click target off the body.
+ */
 const BODY_SILHOUETTE = {
-  head: 'M 50 6 C 62 6 70 15 70 26 C 70 37 62 45 50 45 C 38 45 30 37 30 26 C 30 15 38 6 50 6 Z',
-  neck: 'M 42 44 L 58 44 L 60 58 L 40 58 Z',
+  head: 'M 50 8 C 60 8 66 16 66 26 C 66 35 59 42 50 42 C 41 42 34 35 34 26 C 34 16 40 8 50 8 Z',
+  neck: 'M 43 40 L 57 40 L 59 57 L 41 57 Z',
   torso:
-    'M 38 56 C 30 58 24 62 22 70 L 18 100 C 17 106 20 110 24 110 L 26 138 ' +
-    'C 27 146 30 150 34 150 L 66 150 C 70 150 73 146 74 138 L 76 110 ' +
-    'C 80 110 83 106 82 100 L 78 70 C 76 62 70 58 62 56 Z',
-  armLeft: 'M 22 70 C 16 74 13 82 12 92 L 8 128 C 7 136 10 140 15 140 L 21 140 C 24 140 25 136 25 130 L 27 92 C 27 84 26 76 25 72 Z',
-  armRight: 'M 78 70 C 84 74 87 82 88 92 L 92 128 C 93 136 90 140 85 140 L 79 140 C 76 140 75 136 75 130 L 73 92 C 73 84 74 76 75 72 Z',
-  legLeft: 'M 30 148 L 49 148 L 47 176 L 33 176 Z',
-  legRight: 'M 51 148 L 70 148 L 67 176 L 53 176 Z',
-  footLeft: 'M 33 174 L 47 174 L 46 180 L 31 180 Z',
-  footRight: 'M 53 174 L 67 174 L 69 180 L 54 180 Z',
+    'M 41 57 C 34 58 28 62 25 69 C 23 74 23 80 24 88 C 25 96 27 100 28 106 ' +
+    'C 29 116 28 130 30 143 C 30 147 33 150 37 150 L 63 150 C 67 150 70 147 70 143 ' +
+    'C 72 130 71 116 72 106 C 73 100 75 96 76 88 C 77 80 77 74 75 69 ' +
+    'C 72 62 66 58 59 57 Z',
+  // The arm inner edge is tucked under the torso edge so the two read as one
+  // shoulder mass instead of a slab floating beside it.
+  armLeft: 'M 25 69 C 19 73 15 81 13 91 L 9 126 C 8 134 11 139 16 139 L 21 139 C 24 139 24 135 24 129 L 23 92 C 23 84 24 76 25 71 Z',
+  armRight: 'M 75 69 C 81 73 85 81 87 91 L 91 126 C 92 134 89 139 84 139 L 79 139 C 76 139 76 135 76 129 L 77 92 C 77 84 76 76 75 71 Z',
+  legLeft: 'M 31 147 L 49 147 L 47 175 L 34 175 Z',
+  legRight: 'M 51 147 L 69 147 L 66 175 L 53 175 Z',
+  footLeft: 'M 34 173 L 47 173 L 46 180 L 32 180 Z',
+  footRight: 'M 53 173 L 66 173 L 68 180 L 54 180 Z',
 };
 
 export interface HitShape {
@@ -68,16 +80,19 @@ const HIT_SHAPES: HitShape[] = [
   { subRegionId: 'neck.posterior', mapId: 'neck-posterior', label: 'Back of neck', d: 'M 43 46 L 57 46 L 58 58 L 42 58 Z', views: ['posterior'] },
 
   // ---- lower back ----
-  { subRegionId: 'lower_back.central', mapId: 'lower-back-central', label: 'Centre of lower back', d: 'M 40 118 L 60 118 L 60 138 L 40 138 Z', views: ['posterior'] },
-  { subRegionId: 'lower_back.left_paravertebral', mapId: 'lower-back-left', label: 'Left side of lower back', d: 'M 40 118 L 50 118 L 50 138 L 40 138 Z', views: ['posterior'] },
-  { subRegionId: 'lower_back.right_paravertebral', mapId: 'lower-back-right', label: 'Right side of lower back', d: 'M 50 118 L 60 118 L 60 138 L 50 138 Z', views: ['posterior'] },
+  // The midline and the two paravertebral bands are drawn as adjacent, not
+  // nested: central used to span the full width and was therefore completely
+  // covered by its neighbours, so it could never be clicked on the map.
+  { subRegionId: 'lower_back.left_paravertebral', mapId: 'lower-back-left', label: 'Left side of lower back', d: 'M 40 118 L 47 118 L 47 138 L 40 138 Z', views: ['posterior'] },
+  { subRegionId: 'lower_back.central', mapId: 'lower-back-central', label: 'Centre of lower back', d: 'M 47 118 L 53 118 L 53 138 L 47 138 Z', views: ['posterior'] },
+  { subRegionId: 'lower_back.right_paravertebral', mapId: 'lower-back-right', label: 'Right side of lower back', d: 'M 53 118 L 60 118 L 60 138 L 53 138 Z', views: ['posterior'] },
   { subRegionId: 'lower_back.sacrococcygeal', mapId: 'lower-back-sacral', label: 'Tailbone', d: 'M 40 138 L 60 138 L 60 148 L 40 148 Z', views: ['posterior'] },
 
   // ---- knee ----
-  { subRegionId: 'knee.anterior', mapId: 'knee-anterior', label: 'Front of knee', d: 'M 36 156 L 46 156 L 46 168 L 36 168 Z', views: ['anterior'] },
+  { subRegionId: 'knee.anterior', mapId: 'knee-anterior', label: 'Front of knee', d: 'M 38 156 L 46 156 L 46 168 L 38 168 Z', views: ['anterior'] },
   { subRegionId: 'knee.medial', mapId: 'knee-medial', label: 'Inside of knee', d: 'M 46 156 L 50 156 L 50 168 L 46 168 Z', views: ['anterior'] },
   { subRegionId: 'knee.lateral', mapId: 'knee-lateral', label: 'Outside of knee', d: 'M 33 156 L 37 156 L 37 168 L 33 168 Z', views: ['anterior', 'lateral_left', 'lateral_right'] },
-  { subRegionId: 'knee.posterior', mapId: 'knee-posterior', label: 'Back of knee', d: 'M 36 156 L 46 156 L 46 168 L 36 168 Z', views: ['posterior'] },
+  { subRegionId: 'knee.posterior', mapId: 'knee-posterior', label: 'Back of knee', d: 'M 38 156 L 46 156 L 46 168 L 38 168 Z', views: ['posterior'] },
 ];
 
 const SHAPE_INDEX = new Map(HIT_SHAPES.map((s) => [s.subRegionId, s] as const));

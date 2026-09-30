@@ -1,0 +1,22 @@
+:root {
+  --bg: #f7f6f2;
+  --surface: #fdfcf9;
+  --workspace: #e7e6e0;
+  --ink: #282a29;
+  --muted: #60635f;
+  --line: #c8c8bf;
+  --accent: #69485f;
+  --accent-soft: #e9e0e5;
+  --candidate: #78623b;
+  --danger: #963a32;
+  --danger-soft: #f6e7e2;
+  --font: "Segoe UI", system-ui, sans-serif;
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-6: 24px;
+  --space-8: 32px;
+  --space-12: 48px;
+  --radius: 4px;
+}
