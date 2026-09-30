@@ -374,8 +374,13 @@ details > p {
 }
 .location-workbench__grid {
   display: grid;
-  grid-template-columns: minmax(0, 1.5fr) minmax(320px, 1fr);
-  min-height: 600px;
+  /* Anatomy is the primary object, so the field keeps the larger share and the
+     whole bench is bounded rather than stretched to the page width. A stretched
+     bench turned the body into a small figure marooned in empty grey. */
+  grid-template-columns: minmax(0, 1fr) minmax(340px, 420px);
+  max-width: 1120px;
+  margin-inline: auto;
+  min-height: 680px;
 }
 .viewer-panel {
   background: var(--workspace);
@@ -403,14 +408,19 @@ details > p {
 .viewer-canvas {
   flex: 1;
   position: relative;
-  min-height: 430px;
+  min-height: 560px;
   display: flex;
   justify-content: center;
   align-items: center;
 }
 .bodymap__svg {
-  height: 440px;
-  width: 236.56px;
+  /* The body scales with the stage instead of a fixed 440px, so the silhouette
+     reads as the dominant object. The 100/186 ratio matches the viewBox. */
+  height: 100%;
+  max-height: 600px;
+  min-height: 320px;
+  width: auto;
+  aspect-ratio: 100 / 186;
   max-width: 100%;
   display: block;
   cursor: crosshair;
@@ -1028,11 +1038,11 @@ details > p {
 }
 @media (min-width: 1500px) {
   .location-workbench__grid {
-    min-height: 650px;
+    min-height: 760px;
+    max-width: 1240px;
   }
   .bodymap__svg {
-    height: 480px;
-    width: 258px;
+    max-height: 680px;
   }
 }
 @media (max-width: 1000px) {
@@ -1056,6 +1066,7 @@ details > p {
   }
   .location-workbench__grid {
     grid-template-columns: minmax(0, 1.15fr) minmax(310px, 1fr);
+    max-width: 900px;
   }
   .viewer-panel {
     padding: 16px;
@@ -1067,8 +1078,8 @@ details > p {
     display: none;
   }
   .bodymap__svg {
-    height: 370px;
-    width: 199px;
+    max-height: 440px;
+    min-height: 260px;
   }
   .canvas-instruction {
     display: none;
@@ -1077,7 +1088,7 @@ details > p {
     padding-left: 20px;
   }
   .viewer-canvas {
-    min-height: 410px;
+    min-height: 470px;
   }
   .map-legend {
     gap: 12px;
@@ -1209,6 +1220,7 @@ details > p {
   .location-workbench__grid {
     display: block;
     min-height: 0;
+    max-width: none;
   }
   .viewer-panel {
     margin: 0 -20px;
@@ -1227,6 +1239,8 @@ details > p {
   .bodymap__svg {
     height: 250px;
     width: 134.4px;
+    max-height: 250px;
+    min-height: 0;
   }
   .viewer-caption {
     top: 24px;
