@@ -25,7 +25,8 @@ test('copy retains safety action steps, uncertainty, earlier episodes and source
     chiefComplaint: 'Test complaint',
     locationLine: 'Test location',
     history: [{ label: 'Location', value: 'Test location' }],
-    unconfirmedConsiderations: ['Candidate A'],
+    visualSelections: ['Structure the user pointed at'],
+    unselectedSuggestions: ['Candidate A'],
     priorEpisodes: [
       {
         id: 'prior',
@@ -42,6 +43,11 @@ test('copy retains safety action steps, uncertainty, earlier episodes and source
         steps: ['Verbatim action one', 'Verbatim action two'],
       },
     ],
+    withheldNotes: [
+      { ruleId: 'rule.withheld', severity: 'urgent', reason: 'Withheld reason' },
+    ],
+    safetyGateBlocked: true,
+    outstandingFields: ['temporal.onset'],
     dataSources: [{ sourceType: 'user_statement', count: 2 }],
     structured: {},
   });
@@ -49,13 +55,22 @@ test('copy retains safety action steps, uncertainty, earlier episodes and source
     'Verbatim action one',
     'Verbatim action two',
     'Verbatim rule message',
-    'suggestions, not findings',
+    'not findings',
     'Candidate A',
+    'Structure the user pointed at',
+    'location, not a finding',
     'Prior episode',
     'user_statement: 2',
     'not a diagnosis',
   ])
     assert.ok(text.includes(value), value);
+
+  // A withheld urgent rule and a blocked gate must never be copied out as if the
+  // record were safe; missing fields must read as missing, not as a negative.
+  assert.ok(text.includes('SAFETY GATE BLOCKED'));
+  assert.ok(text.includes('Withheld [urgent]: Withheld reason'));
+  assert.ok(text.includes('Not established'));
+  assert.ok(text.includes('temporal.onset'));
 });
 
 test('review keeps no, yes, unknown and not asked separate without record defaults', async () => {
