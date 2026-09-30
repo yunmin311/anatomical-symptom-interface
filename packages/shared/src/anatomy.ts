@@ -123,13 +123,22 @@ export const LocationSchema = z.object({
 });
 export type Location = z.infer<typeof LocationSchema>;
 
-/** A structure the model surfaced — candidate only until the user confirms. */
+/**
+ * A structure the model surfaced, and whether the user went on to point at it.
+ *
+ * `selectedByUser` means exactly one thing: the user clicked this structure on
+ * the anatomy map. It is a statement about a VISUAL LOCATION, not a claim that
+ * this structure is the source of the problem. A patient who taps the nearest
+ * landmark to their pain has told us where it is, which is the point of the
+ * product — but they have not told us what is wrong with it.
+ * See docs/adr/0004-visual-selection-is-not-a-finding.md.
+ */
 export const ConsideredStructureSchema = z.object({
   structureId: z.string(),
   /** How the model arrived at it, so the UI can be honest about it. */
   rationale: z.string().nullish(),
   confidence: z.number().min(0).max(1).nullish(),
-  confirmedByUser: z.boolean().default(false),
+  selectedByUser: z.boolean().default(false),
 });
 export type ConsideredStructure = z.infer<typeof ConsideredStructureSchema>;
 
