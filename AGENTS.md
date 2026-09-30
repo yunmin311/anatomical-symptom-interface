@@ -71,7 +71,61 @@ These are architecture, not style. Do not weaken them to make a task easier.
    something look finished.
 
 11. **No disease vocabulary in the core product.** If you want to add a condition name
-   to a type, that is the signal to stop — it belongs in the future Medical Layer.
+    to a type, that is the signal to stop — it belongs in the future Medical Layer.
+
+## Model and provider boundary
+
+**The product is provider-agnostic. Do not design it as a Claude integration.**
+
+- **Business logic depends only on the `Orchestrator` / analysis-provider
+  interface** — today `{ kind: 'deterministic' | 'model', localise(...) }`. Never on a
+  vendor client, a vendor SDK, or a vendor URL.
+- **No vendor naming in the layers above.** `callClaude()`, `claudeAnalysis`,
+  `/api/claude/*` and similar are all wrong even when they happen to work, because
+  they make the next provider a rename rather than an implementation.
+- **The public API names ASI's capability**, not the model behind it: localise a
+  symptom, analyse a description, generate a structured candidate. That is already
+  true — `/api/localise`, `/api/episodes/:id/summary`, `/api/ground` — so keep it
+  that way.
+- **A provider may be swapped without touching anything above the seam**: Anthropic,
+  OpenAI, DeepSeek, any OpenAI-compatible or Anthropic-compatible endpoint, or a
+  local model.
+- **Structured validation, provenance, safety and domain semantics stay ours.** A
+  provider returns a proposal; the schemas, the claim classes and the rule engine
+  decide what is allowed into the record. Never delegate that to a prompt.
+
+**Live model calls are optional and never a gate.** CI and `pnpm test` run
+deterministic, fake or fixture providers only. A test that needs a real provider
+must be opt-in and skipped by default, and must not be a hard dependency for anyone
+else's checkout.
+
+**Keys come from the local environment or an uncommitted secret file only.** Never
+into the repo, a test snapshot, a fixture, or a log. `.env.example` documents names
+and stays empty.
+
+**Do not refactor for this proactively.** Apply the boundary the next time the
+model or API interface is genuinely touched. The current Anthropic pinning is
+recorded below and is a known, accepted state — not a reason to go and rewrite it on
+a quiet afternoon.
+
+## Known provider coupling (accepted for now)
+
+These are Anthropic-specific today. They are the list to work through *when the
+model interface is next touched*, not a task in its own right.
+
+- `packages/server/src/orchestrator/index.ts` — the model call hardcodes
+  `https://api.anthropic.com/v1/messages` and an `anthropic-version` header. This
+  is the real lock-in: an Anthropic-compatible endpoint cannot be used without
+  editing this line, which matters because this machine already talks to DeepSeek
+  through exactly that shape.
+- `packages/server/src/env.ts` — `ANTHROPIC_API_KEY` and an `ASI_MODEL` default of
+  `claude-sonnet-5`. `hasModel()` keys off the vendor-specific variable name.
+- `docs/03-tech-stack.md`, `docs/01-architecture.md`, `README.md` — name Anthropic
+  Claude as the implementation.
+
+The `Orchestrator` interface, the business-named routes and the domain's
+`'deterministic' | 'model'` identity are already provider-neutral. The seam is in
+the right place; only the implementation behind it is pinned.
 
 ## Layout
 
@@ -185,6 +239,9 @@ so a clean checkout and CI behave the same way.
 - [ ] `scripts/check-safety-metadata.mjs` passes against a running server
 - [ ] The unreviewed-rules count is still reported honestly — if it went to zero
       without clinical review, something bypassed the review metadata, which is a bug
+- [ ] No vendor naming crept in above the provider seam (`callClaude`, `/api/claude/*`,
+      a vendor SDK in business logic), and any new model test is opt-in rather than a
+      gate on someone else's checkout
 
 ## Health data
 
