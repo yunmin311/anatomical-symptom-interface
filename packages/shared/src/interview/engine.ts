@@ -13,6 +13,8 @@ import { z } from 'zod';
 import type { BodyRegion, Structure } from '../anatomy.ts';
 import { getStructure, structureBelongsToRegion } from '../anatomy.ts';
 import type { SymptomRecord } from '../symptom.ts';
+import type { QuestionAnswer, AnswerMap } from '../answers.ts';
+import { isUncertain } from '../answers.ts';
 
 export const QuestionTypeSchema = z.enum(['single', 'multi', 'scale', 'boolean', 'text']);
 export type QuestionType = z.infer<typeof QuestionTypeSchema>;
@@ -31,7 +33,7 @@ export interface AnswerOption {
 export interface InterviewQuestion {
   id: string;
   region: BodyRegion;
-  /** Which record field this writes to, for provenance bookkeeping. */
+  /** Which record fields this writes to, for provenance bookkeeping. */
   field: string;
   /** Why we're asking — shown in the UI to build trust, not hidden. */
   rationale: string;
@@ -43,17 +45,75 @@ export interface InterviewQuestion {
   showIf?: (record: SymptomRecord, asked: ReadonlySet<string>) => boolean;
   /** Structures to highlight on the model while this question is on screen. */
   highlightStructureIds?: string[];
-  /** Safety gating: if answered `true`, stop and show a red flag. */
+  /** Safety gating: answering this feeds a rule. See safety-signals.ts. */
   safetyRuleId?: string;
+  /**
+   * Record fields this answer writes, when the answer is affirmative or a
+   * non-negative option. Used by the provenance strategy and by tests.
+   */
+  writesOnYes?: string[];
+  /**
+   * THE ANSWER → RECORD MAPPING.
+   *
+   * This used to live in `apps/web/src/state/session.ts` as a `switch` on
+   * question id, which meant the mapping was untested, could silently drift
+   * from the question list, and — worst — collapsed yes and no into the same
+   * side effects. It is colocated with the question it belongs to, is a pure
+   * mutation, and is applied only through `applyAnswer`.
+   *
+   * MUST NOT touch anything a safety rule reads. Safety rules read
+   * `SafetySignals` derived from the answer map, never from record fields, so
+   * that a yes and a no can never be confused.
+   */
+  applyTo?: (record: SymptomRecord, answer: QuestionAnswer) => string[];
 }
 
-/** Everything already known, flattened for predicate convenience. */
+/** Everything already known, for predicate and queue decisions. */
 export interface InterviewContext {
   record: SymptomRecord;
-  asked: Set<string>;
+  /** The answer map. A question is asked iff its id is a key here. */
+  answers: AnswerMap;
+}
+
+/** Ids of questions that have been asked. */
+export function askedIds(answers: AnswerMap): ReadonlySet<string> {
+  return new Set(Object.keys(answers));
 }
 
 const q = (question: InterviewQuestion): InterviewQuestion => question;
+
+/** Append without duplicating, preserving the element type. */
+const add = <T,>(arr: readonly T[], ...items: T[]): T[] => [...new Set([...arr, ...items])];
+
+/**
+ * Apply one answer to a record, returning the field paths written.
+ *
+ * This is the single place an interview answer changes the record. It is pure:
+ * it mutates the record it is given and returns the touched paths, so the
+ * caller can create exactly those mutations with the right provenance.
+ */
+export function applyAnswer(
+  record: SymptomRecord,
+  questionId: string,
+  answer: QuestionAnswer,
+): string[] {
+  const question = getQuestionAnyRegion(questionId);
+  if (!question?.applyTo) {
+    // A question with no mapping is still a real answer; it just writes nothing.
+    return [];
+  }
+  return question.applyTo(record, answer);
+}
+
+function getQuestionAnyRegion(questionId: string): InterviewQuestion | undefined {
+  const region = questionId.split('.')[0] as BodyRegion;
+  return INTERVIEW[region]?.find((x) => x.id === questionId);
+}
+
+/** Yes/no helper for applyTo bodies: an affirmative that is genuinely an affirmative. */
+export const affirmed = (a: QuestionAnswer): boolean => a.triState === 'yes';
+export const denied = (a: QuestionAnswer): boolean => a.triState === 'no';
+export const uncertain = (a: QuestionAnswer): boolean => a.triState === 'unknown';
 
 /* ================================================================== */
 /* SHOULDER                                                            */
@@ -75,6 +135,10 @@ const SHOULDER_QUESTIONS: InterviewQuestion[] = [
       { value: 'unknown', label: 'I am not sure' },
     ],
     showIf: () => true,
+    applyTo: (record, a) => {
+      record.context.recentInjury = String(a.raw);
+      return ['context.recentInjury'];
+    },
   }),
   q({
     id: 'shoulder.night_pain',
@@ -85,6 +149,13 @@ const SHOULDER_QUESTIONS: InterviewQuestion[] = [
     prompt: 'Does it wake you from sleep, or stop you falling asleep?',
     required: true,
     highlightStructureIds: ['asi:shoulder.supraspinatus-tendon', 'asi:shoulder.subacromial-bursa', 'asi:shoulder.acromion'],
+    applyTo: (record, a) => {
+      // Only an explicit yes adds a trigger. 'no', 'unknown' and 'not_asked'
+      // must never add or remove a trigger.
+      if (denied(a) || uncertain(a)) return [];
+      record.triggers = add(record.triggers, 'night');
+      return ['triggers'];
+    },
   }),
   q({
     id: 'shoulder.elevation',
@@ -95,6 +166,13 @@ const SHOULDER_QUESTIONS: InterviewQuestion[] = [
     prompt: 'Which arm movements set it off? Try to be specific about the point where it starts.',
     required: true,
     highlightStructureIds: ['asi:shoulder.supraspinatus-tendon', 'asi:shoulder.biceps-long-head-tendon', 'asi:shoulder.glenohumeral-joint'],
+    applyTo: (record, a) => {
+      const text = typeof a.raw === 'string' ? a.raw.trim() : '';
+      if (!text) return [];
+      record.triggerDetail = text;
+      record.triggers = add(record.triggers, 'movement');
+      return ['triggerDetail', 'triggers'];
+    },
   }),
   q({
     id: 'shoulder.weakness',
@@ -111,6 +189,22 @@ const SHOULDER_QUESTIONS: InterviewQuestion[] = [
       { value: 'pain_only', label: 'Just pain, strength feels normal' },
     ],
     highlightStructureIds: ['asi:shoulder.supraspinatus-tendon', 'asi:shoulder.infraspinatus', 'asi:shoulder.subscapularis'],
+    applyTo: (record, a) => {
+      const picked = Array.isArray(a.raw) ? (a.raw as string[]) : [String(a.raw)];
+      const wrote: string[] = [];
+      if (picked.includes('weak_above_head')) {
+        record.quality = add(record.quality, 'instability');
+        record.function.activitiesAffected = add(record.function.activitiesAffected, 'weak reaching overhead');
+        wrote.push('quality', 'function.activitiesAffected');
+      }
+      if (picked.length === 1 && picked[0] === 'pain_only') {
+        record.function.activitiesAffected = record.function.activitiesAffected.filter(
+          (x) => x !== 'leg feels weak',
+        );
+        wrote.push('function.activitiesAffected');
+      }
+      return wrote;
+    },
   }),
   q({
     id: 'shoulder.radiation',
@@ -127,6 +221,14 @@ const SHOULDER_QUESTIONS: InterviewQuestion[] = [
       { value: 'hand_tingle', label: 'Into my hand with tingling or numbness' },
       { value: 'neck_related', label: 'It comes from my neck', impliesStructureIds: ['asi:neck.brachial-plexus'] },
     ],
+    applyTo: (record, a) => {
+      const v = String(a.raw);
+      // 'none' is a real negative: record it as an explicitly empty radiation
+      // rather than leaving the field looking unasked.
+      record.radiation = v === 'none' ? [] : [v];
+      if (v === 'hand_tingle') record.quality = add(record.quality, 'numbness');
+      return ['radiation', 'quality'];
+    },
   }),
   q({
     id: 'shoulder.tenderness',
@@ -143,6 +245,10 @@ const SHOULDER_QUESTIONS: InterviewQuestion[] = [
       { value: 'severe', label: 'Very tender, I flinch' },
       { value: 'not_tested', label: 'I have not tried' },
     ],
+    applyTo: (record, a) => {
+      record.tendernessOnPalpation = String(a.raw) as SymptomRecord['tendernessOnPalpation'];
+      return ['tendernessOnPalpation'];
+    },
   }),
   q({
     id: 'shoulder.trauma_urgent',
@@ -153,6 +259,9 @@ const SHOULDER_QUESTIONS: InterviewQuestion[] = [
     prompt: 'Do you have a fall or injury where the shoulder looks deformed, or you cannot lift the arm at all?',
     required: true,
     safetyRuleId: 'msk.trauma_deformity_no_lift',
+    // Deliberately writes NOTHING. This answer reaches the safety rule through
+    // SafetySignals, so a 'no' here is provably not the same as a 'yes'.
+    applyTo: () => [],
   }),
   q({
     id: 'shoulder.vascular',
@@ -163,6 +272,9 @@ const SHOULDER_QUESTIONS: InterviewQuestion[] = [
     prompt: 'Is the hand on that side cold, pale, or numb compared with the other?',
     required: true,
     safetyRuleId: 'msk.cold_pale_hand',
+    // No record write. The previous version set systemicSymptoms:['fever'] here,
+    // which was simply wrong — the question is about a hand, not a fever.
+    applyTo: () => [],
   }),
 ];
 
@@ -186,6 +298,10 @@ const NECK_QUESTIONS: InterviewQuestion[] = [
       { value: 'effort', label: 'After lifting or exertion' },
       { value: 'unknown', label: 'No clear cause' },
     ],
+    applyTo: (record, a) => {
+      record.context.recentInjury = String(a.raw);
+      return ['context.recentInjury'];
+    },
   }),
   q({
     id: 'neck.arming',
@@ -203,6 +319,12 @@ const NECK_QUESTIONS: InterviewQuestion[] = [
       { value: 'hand_specific', label: 'Into specific fingers' },
     ],
     highlightStructureIds: ['asi:neck.brachial-plexus', 'asi:neck.scalenes'],
+    applyTo: (record, a) => {
+      const v = String(a.raw);
+      record.radiation = v === 'none' ? [] : [v];
+      if (v === 'arm_numb') record.quality = add(record.quality, 'numbness');
+      return ['radiation', 'quality'];
+    },
   }),
   q({
     id: 'neck.headache',
@@ -212,6 +334,10 @@ const NECK_QUESTIONS: InterviewQuestion[] = [
     type: 'boolean',
     prompt: 'Do you get a headache that starts at the back of your head or behind your eyes when this is bad?',
     required: false,
+    applyTo: (_record, a) => {
+      // Recorded as a note only; it carries no record field of its own.
+      return affirmed(a) ? [] : [];
+    },
   }),
   q({
     id: 'neck.movement',
@@ -221,6 +347,13 @@ const NECK_QUESTIONS: InterviewQuestion[] = [
     type: 'text',
     prompt: 'Which neck movements bring it on — turning, looking down, tilting, holding a posture?',
     required: true,
+    applyTo: (record, a) => {
+      const text = typeof a.raw === 'string' ? a.raw.trim() : '';
+      if (!text) return [];
+      record.triggerDetail = text;
+      record.triggers = add(record.triggers, 'movement');
+      return ['triggerDetail', 'triggers'];
+    },
   }),
   q({
     id: 'neck.trauma_urgent',
@@ -231,6 +364,7 @@ const NECK_QUESTIONS: InterviewQuestion[] = [
     prompt: 'After the injury, do you also have weakness, numbness, or trouble walking?',
     required: true,
     safetyRuleId: 'msk.neck_trauma_neuro',
+    applyTo: () => [],
   }),
   q({
     id: 'neck.systemic',
@@ -241,6 +375,18 @@ const NECK_QUESTIONS: InterviewQuestion[] = [
     prompt: 'Do you have a fever, night sweats, or weight loss you cannot explain?',
     required: true,
     safetyRuleId: 'msk.systemic_symptoms',
+    applyTo: (record, a) => {
+      // Only a yes adds systemic features. The previous version set 'fever' for
+      // four unrelated questions including the cold/pale hand one.
+      if (!affirmed(a)) return [];
+      record.context.systemicSymptoms = add(
+        record.context.systemicSymptoms.filter((s) => s !== 'none'),
+        'fever',
+        'weight_loss',
+        'night_sweats',
+      );
+      return ['context.systemicSymptoms'];
+    },
   }),
 ];
 
@@ -264,6 +410,10 @@ const LOWER_BACK_QUESTIONS: InterviewQuestion[] = [
       { value: 'fall', label: 'A fall or slip' },
       { value: 'nothing', label: 'Nothing in particular' },
     ],
+    applyTo: (record, a) => {
+      record.context.recentInjury = String(a.raw);
+      return ['context.recentInjury'];
+    },
   }),
   q({
     id: 'lower_back.leg_symptoms',
@@ -281,6 +431,11 @@ const LOWER_BACK_QUESTIONS: InterviewQuestion[] = [
       { value: 'below_knee', label: 'Past the knee' },
       { value: 'groin', label: 'Into the groin' },
     ],
+    applyTo: (record, a) => {
+      const v = String(a.raw);
+      record.radiation = v === 'none' ? [] : [v];
+      return ['radiation'];
+    },
   }),
   q({
     id: 'lower_back.numbness',
@@ -291,6 +446,13 @@ const LOWER_BACK_QUESTIONS: InterviewQuestion[] = [
     prompt: 'Any numbness, tingling or "pins and needles" in your leg, foot, or the saddle area?',
     required: true,
     highlightStructureIds: ['asi:lower-back.lumbar-spine'],
+    // Reaches msk.cauda_equina only in combination with leg weakness, via
+    // SafetySignals. Alone it records the sensation.
+    applyTo: (record, a) => {
+      if (!affirmed(a)) return [];
+      record.quality = add(record.quality, 'numbness', 'tingling');
+      return ['quality'];
+    },
   }),
   q({
     id: 'lower_back.weakness',
@@ -301,6 +463,12 @@ const LOWER_BACK_QUESTIONS: InterviewQuestion[] = [
     prompt: 'Is your leg weak, or does your walking feel different from usual?',
     required: true,
     safetyRuleId: 'msk.cauda_equina',
+    applyTo: (record, a) => {
+      if (!affirmed(a)) return [];
+      record.quality = add(record.quality, 'instability');
+      record.function.activitiesAffected = add(record.function.activitiesAffected, 'leg feels weak');
+      return ['quality', 'function.activitiesAffected'];
+    },
   }),
   q({
     id: 'lower_back.bladder',
@@ -311,6 +479,9 @@ const LOWER_BACK_QUESTIONS: InterviewQuestion[] = [
     prompt: 'Have you had difficulty starting to urinate, or new trouble controlling your bladder or bowels?',
     required: true,
     safetyRuleId: 'msk.cauda_equina',
+    // THE critical question. Writes nothing. Its only effect is the
+    // bladder_or_bowel_change signal, which is why 'no' can never fire the rule.
+    applyTo: () => [],
   }),
   q({
     id: 'lower_back.movement',
@@ -330,6 +501,13 @@ const LOWER_BACK_QUESTIONS: InterviewQuestion[] = [
       { value: 'better_walking', label: 'Easier walking' },
       { value: 'better_rest', label: 'Easier lying down' },
     ],
+    applyTo: (record, a) => {
+      const picked = Array.isArray(a.raw) ? (a.raw as string[]) : [String(a.raw)];
+      record.triggerDetail = picked.join(', ');
+      record.triggers = add(record.triggers, 'movement');
+      if (picked.includes('worse_cough')) record.triggers = add(record.triggers, 'coughing_sneezing');
+      return ['triggerDetail', 'triggers'];
+    },
   }),
   q({
     id: 'lower_back.systemic',
@@ -340,6 +518,16 @@ const LOWER_BACK_QUESTIONS: InterviewQuestion[] = [
     prompt: 'Any unexplained weight loss, fever, or night sweats?',
     required: true,
     safetyRuleId: 'msk.systemic_symptoms',
+    applyTo: (record, a) => {
+      if (!affirmed(a)) return [];
+      record.context.systemicSymptoms = add(
+        record.context.systemicSymptoms.filter((s) => s !== 'none'),
+        'fever',
+        'weight_loss',
+        'night_sweats',
+      );
+      return ['context.systemicSymptoms'];
+    },
   }),
 ];
 
@@ -363,6 +551,10 @@ const KNEE_QUESTIONS: InterviewQuestion[] = [
       { value: 'stairs', label: 'Gradually, and it started with stairs or squatting' },
       { value: 'nothing', label: 'No clear cause' },
     ],
+    applyTo: (record, a) => {
+      record.context.recentInjury = String(a.raw);
+      return ['context.recentInjury'];
+    },
   }),
   q({
     id: 'knee.locking',
@@ -373,6 +565,13 @@ const KNEE_QUESTIONS: InterviewQuestion[] = [
     prompt: 'Does the knee catch, lock, or give way?',
     required: true,
     highlightStructureIds: ['asi:knee.meniscus-medial', 'asi:knee.meniscus-lateral'],
+    // Feeds the joint_locking signal for msk.joint_locking. Writing a quality
+    // as well is fine because no safety rule reads `quality` for this pairing.
+    applyTo: (record, a) => {
+      if (!affirmed(a)) return [];
+      record.quality = add(record.quality, 'clicking', 'instability');
+      return ['quality'];
+    },
   }),
   q({
     id: 'knee.swelling',
@@ -388,6 +587,16 @@ const KNEE_QUESTIONS: InterviewQuestion[] = [
       { value: 'gradual', label: 'Swollen the next day' },
       { value: 'slow', label: 'Swollen gradually over a week or more' },
     ],
+    applyTo: (record, a) => {
+      // 'none' is a real negative and must clear any prior swelling.
+      if (String(a.raw) === 'none') {
+        if (!record.quality.includes('swelling')) return [];
+        record.quality = record.quality.filter((q) => q !== 'swelling');
+        return ['quality'];
+      }
+      record.quality = add(record.quality, 'swelling');
+      return ['quality'];
+    },
   }),
   q({
     id: 'knee.weight_bearing',
@@ -402,6 +611,10 @@ const KNEE_QUESTIONS: InterviewQuestion[] = [
       { value: 'partial', label: 'Only part of my weight, or I limp' },
       { value: 'no', label: 'No, I cannot put weight on it' },
     ],
+    applyTo: (record, a) => {
+      record.function.unableWeighBearing = String(a.raw) as SymptomRecord['function']['unableWeighBearing'];
+      return ['function.unableWeighBearing'];
+    },
   }),
   q({
     id: 'knee.stairs',
@@ -421,6 +634,13 @@ const KNEE_QUESTIONS: InterviewQuestion[] = [
       { value: 'twisting_in', label: 'Twisting the leg inwards', impliesStructureIds: ['asi:knee.mcl'] },
       { value: 'twisting_out', label: 'Twisting the leg outwards', impliesStructureIds: ['asi:knee.lcl'] },
     ],
+    applyTo: (record, a) => {
+      const picked = Array.isArray(a.raw) ? (a.raw as string[]) : [String(a.raw)];
+      record.triggerDetail = picked.join(', ');
+      record.triggers = add(record.triggers, 'movement');
+      if (picked.includes('running')) record.triggers = add(record.triggers, 'exercise');
+      return ['triggerDetail', 'triggers'];
+    },
   }),
   q({
     id: 'knee.instability',
@@ -431,6 +651,17 @@ const KNEE_QUESTIONS: InterviewQuestion[] = [
     prompt: 'Is the knee hot and red, and do you have a fever or feel unwell?',
     required: true,
     safetyRuleId: 'msk.hot_joint_fever',
+    // The previous version set systemicSymptoms:['fever'] for this AND for the
+    // cold/pale hand question. Now the two signals stay separate.
+    applyTo: (record, a) => {
+      if (!affirmed(a)) return [];
+      record.context.systemicSymptoms = add(
+        record.context.systemicSymptoms.filter((s) => s !== 'none'),
+        'fever',
+      );
+      record.quality = add(record.quality, 'swelling');
+      return ['context.systemicSymptoms', 'quality'];
+    },
   }),
 ];
 
@@ -449,23 +680,45 @@ export function getQuestion(region: BodyRegion, id: string): InterviewQuestion |
   return INTERVIEW[region]?.find((x) => x.id === id);
 }
 
-/** Next question for a region, given what we already know. */
+/**
+ * Next question for a region, given what we already know.
+ *
+ * A question whose answer is "I don't know" is NOT re-asked: re-asking a
+ * question the patient has already been unable to answer is how a 2-3 minute
+ * interview becomes a 10 minute one. `questionProgress` still reports it as
+ * outstanding.
+ */
 export function nextQuestion(ctx: InterviewContext): InterviewQuestion | undefined {
   const list = INTERVIEW[ctx.record.location.region];
   if (!list) return undefined;
+  const asked = askedIds(ctx.answers);
   return list.find(
     (question) =>
-      !ctx.asked.has(question.id) && (!question.showIf || question.showIf(ctx.record, ctx.asked)),
+      !asked.has(question.id) &&
+      // Skip anything already answered with "don't know".
+      !isUncertain(ctx.answers, question.id) &&
+      (!question.showIf || question.showIf(ctx.record, asked)),
   );
 }
 
-export function questionProgress(ctx: InterviewContext): { answered: number; total: number; requiredLeft: number } {
+export function questionProgress(ctx: InterviewContext): {
+  answered: number;
+  total: number;
+  requiredLeft: number;
+  outstanding: string[];
+} {
   const list = INTERVIEW[ctx.record.location.region] ?? [];
-  const applicable = list.filter((question) => !question.showIf || question.showIf(ctx.record, ctx.asked));
+  const asked = askedIds(ctx.answers);
+  const applicable = list.filter((question) => !question.showIf || question.showIf(ctx.record, asked));
   return {
-    answered: applicable.filter((question) => ctx.asked.has(question.id)).length,
+    answered: applicable.filter((question) => asked.has(question.id)).length,
     total: applicable.length,
-    requiredLeft: applicable.filter((question) => question.required && !ctx.asked.has(question.id)).length,
+    requiredLeft: applicable.filter((question) => question.required && !asked.has(question.id)).length,
+    // Outstanding means asked-and-uncertain OR never asked. An answer of
+    // "don't know" leaves the question genuinely open, so it belongs here.
+    outstanding: applicable
+      .filter((question) => !asked.has(question.id) || isUncertain(ctx.answers, question.id))
+      .map((question) => question.id),
   };
 }
 

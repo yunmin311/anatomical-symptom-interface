@@ -8,6 +8,7 @@
  */
 import { z } from 'zod';
 import { BodyRegionSchema, ConsideredStructureSchema, SideSchema, DepthSchema } from './anatomy.ts';
+import { ProvenanceSchema } from './provenance.ts';
 
 /* ---------------- Symptom attributes (§3.2) ---------------- */
 
@@ -118,10 +119,16 @@ export const SymptomRecordSchema = z.object({
     /** The single coordinate the user actually pinned. */
     point: z.object({ x: z.number(), y: z.number() }).nullish(),
     /**
-     * Structures the user explicitly confirmed on the model. These are facts.
-     * Distinct from `consideredStructures`, which are only candidates.
+     * Structures the user POINTED AT on the anatomy map.
+     *
+     * This is a record of a visual selection, not a finding. It means "the user
+     * indicated this region of the body", which is exactly what makes the
+     * record useful — and it does NOT mean this structure is the problem.
+     * Never render it as a confirmed diagnosis site.
+     * Kept structurally separate from `consideredStructures` so the type system
+     * prevents a candidate being read as a selection.
      */
-    userConfirmedStructureIds: z.array(z.string()).default([]),
+    userSelectedStructureIds: z.array(z.string()).default([]),
   }),
   consideredStructures: z.array(ConsideredStructureSchema).default([]),
   quality: z.array(QualitySchema).default([]),
@@ -133,7 +140,16 @@ export const SymptomRecordSchema = z.object({
   temporal: TemporalSchema,
   function: FunctionImpactSchema,
   context: ClinicalContextSchema,
-  /** Unanswered fields, so the UI can show "3 things we didn't ask about". */
+  /**
+   * MISSING INFORMATION ONLY. Dotted paths into this record that were never
+   * filled in, e.g. 'temporal.trend'.
+   *
+   * It must never contain answer markers, question ids, or anything else
+   * meaning "the user answered something". Answer state lives in the
+   * QuestionAnswer map, which distinguishes yes / no / unknown / not_asked —
+   * a distinction `gaps` cannot represent and which safety rules depend on.
+   * A test asserts no value here matches /asked:/ or any question id.
+   */
   gaps: z.array(z.string()).default([]),
 });
 export type SymptomRecord = z.infer<typeof SymptomRecordSchema>;
@@ -149,8 +165,11 @@ export const EpisodeSchema = z.object({
   endedAt: z.string().datetime().nullish(),
   title: z.string(),
   record: SymptomRecordSchema,
-  /** Every field's provenance, keyed by dotted path. */
-  provenance: z.record(z.string(), z.unknown()),
+  /**
+   * Every written field's provenance, keyed by dotted path. Typed, not `unknown`,
+   * so a caller cannot read a field's source without also seeing its authority.
+   */
+  provenance: z.record(z.string(), ProvenanceSchema),
   createdAt: z.string().datetime(),
   updatedAt: z.string().datetime(),
   /** Red-flag / safety flags raised for this episode. */
@@ -167,7 +186,7 @@ export type Episode = z.infer<typeof EpisodeSchema>;
 
 export function emptyRecord(region: z.infer<typeof BodyRegionSchema> = 'shoulder'): SymptomRecord {
   return SymptomRecordSchema.parse({
-    location: { region, side: 'unknown', depth: 'unknown', subRegionId: null, userPhrase: null, point: null, userConfirmedStructureIds: [] },
+    location: { region, side: 'unknown', depth: 'unknown', subRegionId: null, userPhrase: null, point: null, userSelectedStructureIds: [] },
     consideredStructures: [],
     quality: [],
     triggers: [],

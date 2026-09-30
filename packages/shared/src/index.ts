@@ -8,9 +8,12 @@
  * without a model in the loop.
  */
 export * from './provenance.ts';
+export * from './answers.ts';
 export * from './anatomy.ts';
 export * from './symptom.ts';
 export * from './grounding.ts';
 export * from './summary.ts';
+export * from './field-policy.ts';
 export * from './interview/engine.ts';
+export * from './safety-signals.ts';
 export * from './rules/redflags.ts';
