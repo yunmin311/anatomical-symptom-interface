@@ -1,27 +1,28 @@
-import { useEffect, useRef, useState } from 'react';
-import { nextQuestion, questionProgress, REGIONS } from '@asi/shared';
-import type { InterviewQuestion } from '@asi/shared';
-import { anatomy, useSession } from '../state/session.ts';
-import { EmptyState, StatusTag } from './primitives.tsx';
+import { useEffect, useRef, useState } from "react";
+import { nextQuestion, questionProgress, REGIONS } from "@asi/shared";
+import type { InterviewQuestion } from "@asi/shared";
+import { anatomy, useSession } from "../state/session.ts";
+import { EmptyState, StatusTag } from "./primitives.tsx";
 
 export function InterviewPanel() {
-  const { record, asked, answer } = useSession();
-  const context = { record, asked: new Set(asked) };
+  const { record, answers, answer } = useSession();
+  const context = { record, answers };
   const question = nextQuestion(context);
   const progress = questionProgress(context);
 
   if (!question)
     return (
       <EmptyState
-        title="The questions for this area are complete."
+        title="You have reached the end of these questions."
         action={
           <p className="small">
             Review the details before saving your episode.
           </p>
         }
       >
-        {progress.answered} answers added to this session. This is a symptom
-        record, not a diagnosis.
+        {progress.answered} answers added; {progress.outstanding.length}{" "}
+        questions remain unanswered or uncertain. This is a symptom record, not
+        a diagnosis.
       </EmptyState>
     );
 
@@ -33,21 +34,16 @@ export function InterviewPanel() {
           {progress.answered} of {progress.total} answered
         </span>
       </div>
-      <progress
-        value={progress.answered}
-        max={Math.max(progress.total, 1)}
-        aria-label="Questions answered"
-      />
       <QuestionForm
         key={question.id}
         question={question}
-        onAnswer={(value, values) => {
-          answer(question.id, value, values);
+        onAnswer={(value, triState) => {
+          answer(question.id, value, triState);
           if (question.highlightStructureIds)
             anatomy.apply({
-              type: 'highlight',
+              type: "highlight",
               structureIds: question.highlightStructureIds,
-              as: 'candidate',
+              as: "candidate",
             });
         }}
       />
@@ -60,21 +56,22 @@ function QuestionForm({
   onAnswer,
 }: {
   question: InterviewQuestion;
-  onAnswer: (value: unknown, values: string[]) => void;
+  onAnswer: (value: unknown, triState?: "yes" | "no" | "unknown") => void;
 }) {
   const [selected, setSelected] = useState<string[]>([]);
-  const [text, setText] = useState('');
+  const [text, setText] = useState("");
   const prompt = useRef<HTMLLegendElement>(null);
   useEffect(() => {
     prompt.current?.focus();
   }, []);
-  const isMulti = question.type === 'multi';
-  const isText = question.type === 'text';
+  const isMulti = question.type === "multi";
+  const isText = question.type === "text";
   const options =
-    question.type === 'boolean'
+    question.type === "boolean"
       ? [
-          { value: 'true', label: 'Yes' },
-          { value: 'false', label: 'No' },
+          { value: "yes", label: "Yes" },
+          { value: "no", label: "No" },
+          { value: "unknown", label: "I am not sure" },
         ]
       : question.options;
   const canContinue = isText ? Boolean(text.trim()) : selected.length > 0;
@@ -85,7 +82,7 @@ function QuestionForm({
         event.preventDefault();
         if (!canContinue) return;
         const values = isText ? [text.trim()] : selected;
-        onAnswer(isMulti ? values : values[0], values);
+        onAnswer(isMulti ? values : values[0], isText ? "yes" : undefined);
       }}
     >
       <div className="question-context">
@@ -93,7 +90,7 @@ function QuestionForm({
           <StatusTag>Safety-related question</StatusTag>
         )}
         <span className="small">
-          {question.required ? 'Required question' : 'Optional question'}
+          {question.required ? "Required question" : "Optional question"}
         </span>
       </div>
       <fieldset className="question" aria-describedby="question-instruction">
@@ -102,22 +99,22 @@ function QuestionForm({
         </legend>
         <p id="question-instruction" className="small">
           {isMulti
-            ? 'Select all that apply, then continue.'
+            ? "Select all that apply, then continue."
             : isText
-              ? 'Answer in your own words.'
-              : 'Select one answer, then continue.'}
+              ? "Answer in your own words."
+              : "Select one answer, then continue."}
         </p>
         {options && (
           <div
-            className={`answer-options ${isMulti ? 'answer-options--multi' : ''}`}
+            className={`answer-options ${isMulti ? "answer-options--multi" : ""}`}
           >
             {options.map((option) => (
               <label
                 key={option.value}
-                className={`answer-option ${selected.includes(option.value) ? 'answer-option--selected' : ''}`}
+                className={`answer-option ${selected.includes(option.value) ? "answer-option--selected" : ""}`}
               >
                 <input
-                  type={isMulti ? 'checkbox' : 'radio'}
+                  type={isMulti ? "checkbox" : "radio"}
                   name={question.id}
                   value={option.value}
                   checked={selected.includes(option.value)}
@@ -133,7 +130,7 @@ function QuestionForm({
                 />
                 <span>
                   <span className="option__label">{option.label}</span>
-                  {'hint' in option && (
+                  {"hint" in option && (
                     <span className="option__hint">{option.hint}</span>
                   )}
                 </span>
@@ -171,7 +168,7 @@ function QuestionForm({
         <span className="small">
           {isMulti && selected.length > 0
             ? `${selected.length} selected`
-            : 'Your answer is added when you continue.'}
+            : "Your answer is added when you continue."}
         </span>
         <button className="btn btn--primary" disabled={!canContinue}>
           Continue

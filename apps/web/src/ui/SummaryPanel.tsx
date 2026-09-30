@@ -1,17 +1,17 @@
-import { useState } from 'react';
-import { questionProgress } from '@asi/shared';
-import { useSession } from '../state/session.ts';
-import { RecordDetails } from './RecordDetails.tsx';
-import { FactList, StatusTag } from './primitives.tsx';
-import { formatDate, groupSummaryRows, summaryText } from './presentation.ts';
+import { useState } from "react";
+import { questionProgress } from "@asi/shared";
+import { useSession } from "../state/session.ts";
+import { RecordDetails } from "./RecordDetails.tsx";
+import { FactList, StatusTag } from "./primitives.tsx";
+import { formatDate, groupSummaryRows, summaryText } from "./presentation.ts";
 
 export function SummaryPanel() {
-  const { summary, record, asked } = useSession();
-  const [copyState, setCopyState] = useState<'idle' | 'copied' | 'error'>(
-    'idle',
+  const { summary, record, answers } = useSession();
+  const [copyState, setCopyState] = useState<"idle" | "copied" | "error">(
+    "idle",
   );
   if (!summary) {
-    const progress = questionProgress({ record, asked: new Set(asked) });
+    const progress = questionProgress({ record, answers });
     return (
       <section className="summary">
         <div className="section-heading">
@@ -19,13 +19,13 @@ export function SummaryPanel() {
           <StatusTag>Not saved yet</StatusTag>
         </div>
         <p className="muted">
-          {progress.answered} of {progress.total} questions answered.{' '}
-          {progress.requiredLeft > 0
-            ? `${progress.requiredLeft} required questions remain. This record is incomplete.`
-            : 'Review what is recorded below.'}{' '}
+          {progress.answered} of {progress.total} questions answered.{" "}
+          {progress.outstanding.length > 0
+            ? `${progress.outstanding.length} questions are unanswered or uncertain. This record is incomplete.`
+            : "Review what is recorded below."}{" "}
           Missing information is not a negative answer.
         </p>
-        <RecordDetails record={record} />
+        <RecordDetails record={record} answers={answers} />
       </section>
     );
   }
@@ -45,7 +45,7 @@ export function SummaryPanel() {
       {groupSummaryRows(summary.history).map((section) => (
         <section className="record-section" key={section.title}>
           <h3>{section.title}</h3>
-          {section.title === 'Anatomical location' && (
+          {section.title === "Anatomical location" && (
             <p className="small">
               Patient-reported location and selections, not clinical findings.
             </p>
@@ -53,18 +53,38 @@ export function SummaryPanel() {
           <FactList rows={section.rows} />
         </section>
       ))}
-      <section className="record-section record-section--candidates">
-        <h3>Unconfirmed candidates</h3>
-        <StatusTag kind="candidate">Suggestions, not findings</StatusTag>
-        {summary.unconfirmedConsiderations.length ? (
+      {summary.safetyGateBlocked && (
+        <div className="notice notice--error" role="alert">
+          <h3>Safety gate blocked</h3>
+          <p>
+            One or more safety rules matched but have not completed clinical
+            review. This record has NOT been safely assessed.
+          </p>
+        </div>
+      )}
+      {summary.visualSelections.length > 0 && (
+        <section className="record-section">
+          <h3>Areas you pointed to</h3>
+          <p className="small">A location indication, not a finding.</p>
           <ul>
-            {summary.unconfirmedConsiderations.map((item) => (
+            {summary.visualSelections.map((value) => (
+              <li key={value}>{value}</li>
+            ))}
+          </ul>
+        </section>
+      )}
+      <section className="record-section record-section--candidates">
+        <h3>Suggested, not acted on</h3>
+        <StatusTag kind="candidate">Suggestions, not findings</StatusTag>
+        {summary.unselectedSuggestions.length ? (
+          <ul>
+            {summary.unselectedSuggestions.map((item) => (
               <li key={item}>{item}</li>
             ))}
           </ul>
         ) : (
           <p className="small">
-            No unconfirmed structure candidates in this summary.
+            No unselected structure suggestions in this summary.
           </p>
         )}
       </section>
@@ -76,7 +96,7 @@ export function SummaryPanel() {
               <li key={episode.id}>
                 <time dateTime={episode.startedAt}>
                   {formatDate(episode.startedAt)}
-                </time>{' '}
+                </time>{" "}
                 — {episode.title} ({episode.status})
               </li>
             ))}
@@ -108,14 +128,45 @@ export function SummaryPanel() {
           </p>
         )}
       </section>
+      {summary.withheldNotes.length > 0 && (
+        <section className="record-section">
+          <h3>Withheld safety guidance</h3>
+          <ul>
+            {summary.withheldNotes.map((note) => (
+              <li key={note.ruleId}>
+                {note.severity}: {note.reason}
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
+      {summary.outstandingFields.length > 0 && (
+        <section className="record-section">
+          <h3>Information not established</h3>
+          <p className="small">
+            {summary.outstandingFields.length} fields have no stored value.
+            Missing information is not a negative answer.
+          </p>
+          <details>
+            <summary>View unrecorded fields</summary>
+            <ul>
+              {summary.outstandingFields.map((field) => (
+                <li key={field}>
+                  {field.replaceAll(".", " / ").replaceAll("_", " ")}
+                </li>
+              ))}
+            </ul>
+          </details>
+        </section>
+      )}
       <footer className="summary__foot">
         <h3>Sources in this record</h3>
         <ul className="source-list">
           {summary.dataSources.map((source) => (
             <li key={source.sourceType}>
-              {source.sourceType.replaceAll('_', ' ')}{' '}
+              {source.sourceType.replaceAll("_", " ")}{" "}
               <span>
-                {source.count} field{source.count === 1 ? '' : 's'}
+                {source.count} field{source.count === 1 ? "" : "s"}
               </span>
             </li>
           ))}
@@ -130,25 +181,25 @@ export function SummaryPanel() {
             onClick={async () => {
               try {
                 await navigator.clipboard.writeText(text);
-                setCopyState('copied');
+                setCopyState("copied");
               } catch {
-                setCopyState('error');
+                setCopyState("error");
               }
             }}
           >
-            {copyState === 'copied'
-              ? 'Copied to clipboard'
-              : 'Copy complete summary'}
+            {copyState === "copied"
+              ? "Copied to clipboard"
+              : "Copy complete summary"}
           </button>
           <button className="btn" onClick={() => window.print()}>
             Print summary
           </button>
           <span role="status" className="small">
-            {copyState === 'copied'
-              ? 'Includes safety information and sources.'
-              : copyState === 'error'
-                ? 'Clipboard unavailable. Open the text below and copy it manually.'
-                : ''}
+            {copyState === "copied"
+              ? "Includes safety information and sources."
+              : copyState === "error"
+                ? "Clipboard unavailable. Open the text below and copy it manually."
+                : ""}
           </span>
         </div>
         <details className="copy-fallback">

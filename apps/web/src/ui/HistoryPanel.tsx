@@ -1,41 +1,42 @@
-import { useEffect, useState } from 'react';
-import { REGIONS } from '@asi/shared';
-import type { BodyRegion } from '@asi/shared';
-import { useSession } from '../state/session.ts';
-import { EmptyState, StatusTag } from './primitives.tsx';
-import { RecordDetails } from './RecordDetails.tsx';
-import { formatDate } from './presentation.ts';
+import { useEffect, useState } from "react";
+import { REGIONS } from "@asi/shared";
+import type { BodyRegion } from "@asi/shared";
+import { useSession } from "../state/session.ts";
+import { EmptyState, StatusTag } from "./primitives.tsx";
+import { BodyIndex } from "../anatomy/BodyIndex.tsx";
+import { RecordDetails } from "./RecordDetails.tsx";
+import { formatDate } from "./presentation.ts";
 
 export function HistoryPanel() {
   const { history, loadHistory } = useSession();
-  const [filter, setFilter] = useState<BodyRegion | 'all'>('all');
-  const [request, setRequest] = useState<'loading' | 'ready' | 'error'>(
-    'loading',
+  const [filter, setFilter] = useState<BodyRegion | "all">("all");
+  const [request, setRequest] = useState<"loading" | "ready" | "error">(
+    "loading",
   );
   const [revision, setRevision] = useState(0);
   useEffect(() => {
     let active = true;
-    setRequest('loading');
+    setRequest("loading");
     void loadHistory()
       .then(() => {
-        if (active) setRequest('ready');
+        if (active) setRequest("ready");
       })
       .catch(() => {
-        if (active) setRequest('error');
+        if (active) setRequest("error");
       });
     return () => {
       active = false;
     };
   }, [loadHistory, revision]);
 
-  if (request === 'loading')
+  if (request === "loading")
     return (
       <div className="empty-state" role="status">
         <h2>Loading your health map…</h2>
         <p className="muted">Looking for saved episodes.</p>
       </div>
     );
-  if (request === 'error')
+  if (request === "error")
     return (
       <div className="notice notice--error" role="alert">
         <h2>Your health map could not be loaded.</h2>
@@ -70,35 +71,32 @@ export function HistoryPanel() {
     );
 
   const regions = Object.values(REGIONS).filter(
-    (region) => filter === 'all' || filter === region.id,
+    (region) => filter === "all" || filter === region.id,
   );
   return (
     <div className="healthmap-layout">
       <aside className="healthmap-index" aria-label="Filter by body area">
         <h2>Body areas</h2>
         <p className="small">
-          {history.length} saved episode{history.length === 1 ? '' : 's'}
+          {history.length} saved episode{history.length === 1 ? "" : "s"}
         </p>
         <button
-          aria-pressed={filter === 'all'}
+          aria-pressed={filter === "all"}
           className="healthmap-region"
-          onClick={() => setFilter('all')}
+          onClick={() => setFilter("all")}
         >
           All areas <span>{history.length}</span>
         </button>
-        {Object.values(REGIONS).map((region) => (
-          <button
-            key={region.id}
-            aria-pressed={filter === region.id}
-            className="healthmap-region"
-            onClick={() => setFilter(region.id)}
-          >
-            {region.label}
-            <span>
-              {history.filter((episode) => episode.region === region.id).length}
-            </span>
-          </button>
-        ))}
+        <BodyIndex
+          active={filter === "all" ? undefined : filter}
+          onSelect={setFilter}
+          counts={Object.fromEntries(
+            Object.values(REGIONS).map((region) => [
+              region.id,
+              history.filter((episode) => episode.region === region.id).length,
+            ]),
+          )}
+        />
         <p className="small">
           Counts reflect saved records, not symptom severity.
         </p>
@@ -114,13 +112,13 @@ export function HistoryPanel() {
           const episodes = history
             .filter((episode) => episode.region === region.id)
             .sort((a, b) => b.startedAt.localeCompare(a.startedAt));
-          if (!episodes.length && filter === 'all') return null;
+          if (!episodes.length && filter === "all") return null;
           return (
             <section className="history__group" key={region.id}>
               <div className="history-group-heading">
                 <h2>{region.label}</h2>
                 <span className="small">
-                  {episodes.length} episode{episodes.length === 1 ? '' : 's'}
+                  {episodes.length} episode{episodes.length === 1 ? "" : "s"}
                 </span>
               </div>
               {episodes.length === 0 ? (
@@ -141,22 +139,25 @@ export function HistoryPanel() {
                           <span className="episode__heading">
                             <strong>{episode.title}</strong>
                             <span className="small">
-                              {episode.side === 'unknown'
-                                ? 'Side not recorded'
-                                : episode.side.replaceAll('_', ' ')}
+                              {episode.side === "unknown"
+                                ? "Side not recorded"
+                                : episode.side.replaceAll("_", " ")}
                             </span>
                           </span>
                           <StatusTag>{episode.status}</StatusTag>
                         </summary>
                         <div className="episode__detail">
-                          <RecordDetails record={episode.record} />
+                          <RecordDetails
+                            record={episode.record}
+                            episode={episode}
+                          />
                           {episode.safetyFlags.length > 0 && (
                             <section className="record-section">
                               <h3>Recorded safety flags</h3>
                               <ul>
                                 {episode.safetyFlags.map((flag) => (
                                   <li key={flag.ruleId}>
-                                    <strong>{flag.severity}</strong>:{' '}
+                                    <strong>{flag.severity}</strong>:{" "}
                                     {flag.reason}
                                     <p className="small">
                                       Review status: {flag.ruleReviewStatus}

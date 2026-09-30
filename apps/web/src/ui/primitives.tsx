@@ -1,10 +1,10 @@
-import type { ReactNode } from 'react';
+import type { ReactNode } from "react";
 
 export function StatusTag({
-  kind = 'neutral',
+  kind = "neutral",
   children,
 }: {
-  kind?: 'neutral' | 'candidate' | 'selected';
+  kind?: "neutral" | "candidate" | "selected";
   children: ReactNode;
 }) {
   return <span className={`status-tag status-tag--${kind}`}>{children}</span>;
@@ -55,7 +55,14 @@ export function FactList({
       {rows.map(({ label, value }) => (
         <div key={label}>
           <dt>{label}</dt>
-          <dd>{value}</dd>
+          <dd
+            data-missing={
+              typeof value === "string" &&
+              /^(not asked|not recorded|not established|unknown)/i.test(value)
+            }
+          >
+            {value}
+          </dd>
         </div>
       ))}
     </dl>
@@ -79,7 +86,7 @@ export function ChoiceGroup<T extends string>({
       <div className="choice-group__options">
         {options.map((option) => (
           <label
-            className={`choice ${value === option.value ? 'choice--selected' : ''}`}
+            className={`choice ${value === option.value ? "choice--selected" : ""}`}
             key={option.value}
           >
             <input
