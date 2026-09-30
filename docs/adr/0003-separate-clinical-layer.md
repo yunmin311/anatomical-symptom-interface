@@ -54,7 +54,7 @@ the safety path does not involve a model at all.
 ```text
 model output  →  consideredStructures[]  (candidate, ai_inference, unverified)
               →  user clicks on the model
-              →  userConfirmedStructureIds[]  (fact, user_selection, user_confirmed)
+              →  userSelectedStructureIds[]  (visual selection, NOT a finding — see ADR 0004)
 ```
 
 `assertProvenance` throws if anything tries to mark an `ai_inference` as

@@ -32,21 +32,60 @@ type VerificationStatus =
   | 'unverified' | 'user_confirmed' | 'clinician_confirmed' | 'refuted';
 ```
 
-### Authority ranking
+### Axis 2 — evidence status: what KIND of claim it is
 
-Conflicts resolve by authority, not recency. A doctor's diagnosis beats a user
-self-report, which beats an AI guess.
+```ts
+type EvidenceStatus =
+  | 'user_report'       // the patient described it in words
+  | 'visual_selection'  // the patient pointed at it on the body map
+  | 'ai_candidate'      // the model proposed it; nobody asserted it
+  | 'clinician_finding' // a clinician asserted it
+  | 'system_derived';   // computed by our own deterministic code
+```
 
-| Source | Rank | Rationale |
-|---|---:|---|
-| `ai_inference` | 10 | A guess. Useful for search, worthless as fact. |
-| `system_rule` | 20 | Deterministic, but only about *our* rules, not about you. |
-| `user_selection` | 30 | Pointing at a body map is weaker than describing it. |
-| `user_statement` | 40 | The primary source for symptoms. |
-| `user_edited` | 50 | A correction beats the original. |
-| `device_import` | 60 | Measured, but measures something narrow. |
-| `external_record` | 70 | A report, about a test rather than a symptom. |
-| `clinician_confirmed` | 90 | The only source that can be a diagnosis. |
+These two axes are independent, and conflating them was a real defect. A user
+clicking a tendon has `sourceType: 'user_selection'` AND
+`evidenceStatus: 'visual_selection'`: that means "the user indicated this place",
+and emphatically **not** "this tendon is the problem". See
+`docs/adr/0004-visual-selection-is-not-a-finding.md`.
+
+`assertProvenance` enforces compatibility: a model can only produce an
+`ai_candidate`; only a clinician or an external record can produce a
+`clinician_finding`.
+
+### Authority is per claim class, not a global ladder
+
+A single global rank was wrong for health data. With one ladder,
+`device_import` outranked `user_statement`, so a wearable step count would
+silently overwrite "my knee hurts" — indefensible, because a device measures
+something narrow and objective, while the patient's subjective report is the
+*primary* source for symptoms and is not replaceable by a measurement of a
+different thing.
+
+So a field also declares a **claim class**, and each class has its own ranking:
+
+| Claim class | Fields | Ranking highlights |
+|---|---|---|
+| `symptom_subjective` | quality, triggers, radiation, tenderness, temporal, function | `user_edited` 70 › `user_statement` 60 › `user_selection` 20 › `ai_inference` 10. **`device_import` and `external_record` are absent.** |
+| `location_anatomical` | region, side, depth, subRegion, point, structure selections | `clinician` 80 › `user_edited` 70 › `user_selection` 60 › `user_statement` 40 › `ai_inference` 10 |
+| `measurement` | future: temperature, range of motion | `clinician` 90 › `external_record` 85 › `device_import` 80 › `user_edited` 40 |
+| `clinical_conclusion` | future: diagnosis, treatment | `clinician` 95 › `external_record` 50 |
+| `derived` | candidates, computed values | `system_rule` 50 › `ai_inference` 40 |
+
+**Absence is the mechanism, not an oversight.** A source type missing from a
+class may never become the winner for that class; its value is *preserved in
+parallel* instead. That is how a lab report ends up recorded **alongside** "my
+knee hurts" rather than replacing it.
+
+```ts
+// A device reading cannot overwrite what the patient said they feel.
+mergeField(userSays, deviceImport, 'symptom_subjective')
+// → { winner: userSays, applied: false,
+//     preserved: [{ value: deviceValue, reason: 'not authoritative for class' }] }
+
+// On a measurement field the same two sources rank the other way.
+mergeField(userSays, deviceImport, 'measurement').winner.value === deviceValue
+```
 
 ### Enforced invariants
 
@@ -57,14 +96,38 @@ self-report, which beats an AI guess.
 3. `clinician_confirmed` cannot be `unverified` — if a clinician said it, it's confirmed.
 4. `user_edited` is always `user_confirmed`.
 5. An unknown `sourceType` is a hard error, not a warning.
+6. A `sourceType` / `evidenceStatus` pair must be compatible.
 
-A field already owned by a higher-authority source is **not overwritten** by a lower one.
-The losing write returns `{applied: false, reason}` and the original is preserved.
+A field already owned by a higher-authority source for its claim class is **not
+overwritten** by a lower one. The losing value is written to `episode_assertions`
+with a reason, so the conflict stays visible instead of one side silently winning.
 
 ```ts
 // The user says "dull", the model is confident it's "sharp". User wins.
-mergeAttributed(aiGuess, userStatement).value === 'dull'
+mergeField(aiGuess, userStatement, 'symptom_subjective').winner.value === 'dull'
 ```
+
+## The field registry
+
+Every field a client may write is declared in `packages/shared/src/field-policy.ts`
+with a validator, a claim class, a strategy, an allow-list of source types, and a
+note. A field is **either** in the registry **or** in `DERIVED_FIELD_PATHS` with a
+reason for having no provenance. There is no third option, and a test enforces
+completeness.
+
+```ts
+{
+  path: 'location.userSelectedStructureIds',
+  claimClass: 'location_anatomical',
+  strategy: 'user_grounded',
+  requiresUserSource: true,
+  allowedSources: ['user_selection', 'user_edited'],
+  note: 'VISUAL SELECTION ONLY ... AI may never write this field.',
+}
+```
+
+`requiresUserSource: true` is the switch that stops a client manufacturing a
+user-confirmed fact: an `ai_inference` write to that field is rejected outright.
 
 ## Tables
 
@@ -114,7 +177,7 @@ verification_status, created_by, raw_text
 the original sentence is still there.
 
 This table being relational rather than a JSON blob is what makes
-`SELECT * FROM field_provenance WHERE source_type = 'ai_inference'` a real capability
+`SELECT * FROM episode_fields WHERE source_type = 'ai_inference'` a real capability
 rather than a wish.
 
 ### `safety_flags` — append-only
@@ -126,7 +189,7 @@ and when, even after the rules change. Never updated, never deleted on rule chan
 
 A separate table for `diagnosis | test | treatment | outcome | imaging | lab`, with
 `asserted_by`, `institution`, `source_document`. Kept separate from
-`field_provenance` on purpose: a clinician's diagnosis is not a field value competing
+`clinical_assertions` on purpose: a clinician's diagnosis is not a field value competing
 with an AI guess — it is a different kind of object with its own authority.
 
 ## SymptomRecord
@@ -136,7 +199,7 @@ interface SymptomRecord {
   location: {
     region, side, depth, subRegionId, userPhrase,
     point: {x, y} | null,
-    userConfirmedStructureIds: string[]   // FACTS
+    userSelectedStructureIds: string[]  // VISUAL SELECTIONS, not findings
   };
   consideredStructures: ConsideredStructure[]  // CANDIDATES, never facts
   quality: Quality[];                 // dull | sharp | burning | pulling | ...
@@ -156,15 +219,66 @@ interface SymptomRecord {
 
 ### Two structural decisions worth arguing for
 
-**`userConfirmedStructureIds` and `consideredStructures` are separate fields, not one
-list with a flag.** It is tempting to have `structures: [{id, confirmed: boolean}]`.
+**`userSelectedStructureIds` and `consideredStructures` are separate fields, not one
+list with a flag.** It is tempting to have `structures: [{id, selected: boolean}]`.
 Splitting them means the type system makes it impossible to render a candidate as a
 finding, and impossible for a bug in one code path to promote a candidate. The summary
 generator reads them as two separate sections for exactly this reason.
 
-**`gaps` is a first-class field.** Recording "the user answered yes to the bladder
-question" is what lets the rule engine fire on a signal that is not a clinical value.
-Without it, safety rules would have to smuggle state through `radiation` as free text.
+**`gaps` is missing information, and only that.** A gap is a dotted path into the
+record with no stored value, derived by the store from the field registry. It must
+never contain an answer marker, and it never does: answer state lives in
+`episode_answers`, which distinguishes `yes` / `no` / `unknown` / `not_asked` — a
+distinction `gaps` cannot represent and which safety rules depend on.
+
+**A value with no provenance cannot exist.** `episode_fields` holds the value and its
+provenance in one row, written in one transaction. The previous design had two tables
+written by two independent code paths, so a value could be stored with no provenance
+and provenance could be asserted for a value nobody wrote. There is now no code path
+that writes one without the other.
+
+## Answers
+
+`record.gaps` cannot hold answer state, so answers get their own table and their own
+type. Four states, and the difference between the last two is the whole point:
+
+| State | Meaning |
+|---|---|
+| `yes` | asked, patient said yes |
+| `no` | asked, patient said **no** — a real negative |
+| `unknown` | asked, patient did not know — genuinely indeterminate |
+| `not_asked` | nobody has asked yet — missing |
+
+Collapsing `unknown` into `no` is how a safety rule silently learns to treat "I don't
+know" as reassurance, so the interview UI offers a third button and
+`normaliseYesNo` returns `unknown` for anything it does not recognise. It **never**
+defaults to `no`.
+
+Safety rules do not read answer values directly, and they do not read record fields.
+They read typed **signals** derived from the answer map:
+
+```ts
+signalsFromAnswers(answers).bladder_or_bowel_change  // 'yes' | 'no' | 'unknown' | 'not_asked'
+```
+
+where a signal driven by several questions combines them explicitly — any `yes` wins;
+`unknown` beats `no`; `no` requires *every* driving question to have been answered no.
+The previous implementation looped the mapping table and let the later entry overwrite
+the earlier one, which silently erased the `neck.systemic` answer.
+
+## Missingness in the summary
+
+The record schema is full of defaults: `sleepAffected: 'no'`,
+`takesPainkiller: 'no'`, `systemicSymptoms: ['none']`, `side: 'unknown'`. Those are
+placeholders, not answers. Rendering them told a clinician "Systemic symptoms: none
+reported" for a patient who had never been asked.
+
+Every field is now rendered against a **coverage map** derived from the field store,
+and an unrecorded field says `not asked` — never `no`. The machine-readable
+`structured` block applies the same rule by nulling anything uncovered, because
+`"sleepAffected": "no"` in a JSON payload is a negative claim in the one part of the
+output a downstream system would trust without reading the prose. The summary also
+lists `outstandingFields` so a clinician can see what to ask about.
 
 ## Anatomy ontology
 

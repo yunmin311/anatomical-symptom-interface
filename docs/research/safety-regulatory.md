@@ -4,13 +4,62 @@
 
 ## The current honest state
 
-**All 8 red-flag rules are `status: 'unreviewed'`.** The server prints a warning at
-startup while that is true, and `evaluateRedFlags(record, { requireReviewed: true })`
-returns nothing. This is a **development build**. It is not a medical device, it has
-not been clinically reviewed, and it must not be pointed at real users.
+**All 10 red-flag rules are `status: 'unreviewed'`, and 7 of them are urgent or
+emergency.** The server prints this at startup, `/api/health` reports
+`releaseReady: false` with the blocking rule ids named, and
+`ASI_RELEASE_PROFILE=release` **refuses to start** while any time-critical rule is
+unreviewed. This is a **development build**. It is not a medical device, it has not
+been clinically reviewed, and it must not be pointed at real users.
 
 That friction is deliberate. The default in this codebase is "assume you are wrong" —
 it is much easier to loosen a gate later than to explain a missed red flag.
+
+## The two profiles
+
+| | `development` (default) | `release` |
+|---|---|---|
+| Unreviewed rule that fires | **Shown**, labelled unreviewed in the UI, with a prototype notice | **Withheld**, and the record is **BLOCKED** |
+| Startup | Warns, naming the blocking rules | **Refuses to start** if any urgent/emergency rule is unreviewed |
+| Intent | Make the gap visible while building | Make it impossible to serve a product that cannot show a safety signal it matched |
+
+The important part is that `release` does not simply return a shorter flag list.
+Silently dropping a matched rule would tell the user "we checked and you are fine". So
+a withheld urgent or emergency rule sets `blocked: true`, the banner says the record
+has **not** been safely assessed, and the plain-text export prints
+`*** SAFETY GATE BLOCKED ***`.
+
+CI enforces the metadata rather than trusting it:
+`scripts/check-safety-metadata.mjs` parses `/api/health`, requires every field to be
+present and correctly typed, requires `totalSafetyRules` to be a positive integer (a
+zero-rule engine reports "safe" for everything), and fails if the development profile
+claims `releaseReady: true` while rules are unreviewed. A renamed field or a server
+that never started now fails CI instead of passing.
+
+## The rules and their basis
+
+| Rule | Severity | Reads signal | Basis |
+|---|---|---|---|
+| `msk.cauda_equina` | emergency | bladder change, saddle numbness, leg weakness | Cauda equina red flags in standard MSK primary care assessment |
+| `msk.neck_trauma_neuro` | emergency | neck trauma + neuro, trauma + numbness | Trauma + neurological deficit pathway |
+| `msk.trauma_deformity_no_lift` | urgent | trauma with loss of movement, weight bearing lost | Acute joint injury with functional loss |
+| `msk.hot_joint_fever` | urgent | hot red swollen joint, fever/systemic unwell | Suspected septic arthritis — time-critical |
+| `msk.cold_pale_hand` | urgent | cold/pale/numb hand | Upper-limb vascular compromise |
+| `msk.systemic_symptoms` | urgent | fever/systemic unwell (yes **or** unknown) | Systemic features with MSK pain |
+| `msk.unable_to_bear_weight` | urgent | weight bearing lost | Complete loss of weight bearing |
+| `msk.joint_locking` | caution | joint locking or giving way | Mechanical locking or instability |
+| `msk.numbness_with_dysfunction` | caution | cold/pale/numb hand (exclusion) | Neurological deficit with MSK presentation |
+| `msk.chronic_persistent` | info | — (record only) | Six-week persistent symptom review threshold |
+
+**These bases are placeholders, not citations.** Every `review.basis` string says it
+must be verified against current national guidance. Before this ships to anyone, each
+rule needs: a named source, a named reviewer, a date, and a decision about what
+happens on a false negative and a false positive. That is a clinical safety case, not
+a code review.
+
+Every urgent and emergency rule is required by a test to read at least one interview
+signal, and every declared signal is required to be read by at least one rule. A
+time-critical rule that depends only on a record field cannot be tested end to end
+through the interview, and the test refuses to let one exist.
 
 ## The one architectural rule that matters
 
@@ -73,15 +122,30 @@ Honest list, because pretending otherwise is worse:
    missed presentation is the failure that matters most.
 2. **No paediatrics, pregnancy, or post-operative pathways.** Out of V1 scope, and
    therefore out of the safety envelope too.
-3. **No non-MSK red flags.** Chest pain, breathlessness, sudden severe headache — a user
-   describing those will be routed to a musculoskeletal app. The current rules do not
-   catch that. **This is the most serious known gap** and needs a "not the right app"
-   pathway.
+3. **Non-MSK complaints are routed away, but not triaged.** A chest-pain or
+   breathlessness description now exits the workflow instead of being fed into a
+   musculoskeletal questionnaire, and the user is told to contact a clinician or the
+   emergency service. That is a routing decision based on which body part was
+   mentioned — **it is not a medical assessment and must never grow into one.** The
+   router deliberately contains no condition vocabulary, and tests assert it names no
+   diagnosis and implies no severity. It cannot tell a chest complaint from a pulled
+   muscle any better than a region match can.
 4. **English and Chinese only.** Red-flag copy is not translated. A non-English speaker
-   gets a safety message in the wrong language, or none.
+   gets a safety message in the wrong language, or none. Worse, the *router* is also
+   EN/ZH, so a non-English description of a chest complaint is simply "ungrounded" and
+   the user is offered the four regions rather than being sent to a clinician.
 5. **No clinician in the loop.** Everything is self-report with no human check.
 6. **No accessibility review.** The safety banner must be legible and perceivable
    without colour discrimination, and must be announced correctly to a screen reader.
+7. **No false-negative analysis on the *questions* themselves.** Every rule depends on
+   the user answering a question, and users skip, guess, or misread. The safety
+   property is only as good as question comprehension, which is unmeasured.
+8. **Uncertainty is not escalated consistently.** `msk.systemic_symptoms` treats an
+   "I don't know" as worth acting on; most other rules treat it as neutral. That is a
+   judgement call, not a derived conclusion, and it should be reviewed with the rules.
+9. **The schema rebuild discards data.** A schema version change drops the local
+   database rather than migrating it. Acceptable for a development build, and
+   explicitly *not* acceptable once a real user has records.
    Not yet done.
 
 ## Getting to `clinically_reviewed`

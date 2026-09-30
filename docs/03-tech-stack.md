@@ -42,7 +42,7 @@ nothing above it changes.
 
 **Pipeline when you do adopt a model:**
 ```bash
-# 1. Fetch (BodyParts3D is ~1.5k structures, CC-BY-SA 2.1 JP)
+# 1. Fetch (BodyParts3D is ~1.5k structures, CC BY 4.0 International)
 # 2. Blender headless: merge per-layer meshes, drop to GLB, re-map node names
 #    to our asi:* ids via a generated mapping table
 blender -b -P scripts/build_anatomy.py

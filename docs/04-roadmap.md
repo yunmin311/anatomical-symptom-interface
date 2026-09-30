@@ -4,21 +4,25 @@ Status of each phase, and what is honestly blocking the next one.
 
 ---
 
-## Phase 0 — Interaction prototype · **substantially built**
+## Phase 0 — Interaction prototype · **built, correctness-hardened**
 
 **Goal:** can a user, in 2–3 minutes, turn "right shoulder inside hurts" into a
 located, structured, saveable record?
 
 **Built:**
-- Natural-language grounding, offline, EN + ZH (region / side / depth / sub-region)
+- Natural-language grounding with an explicit refusal path, offline, EN + ZH
 - Schematic 2D anatomy map with sub-region hit targets and droppable pin
-- Structure candidates proposed from the user's words, confirmable but never auto-confirmed
-- Region-specific dynamic interview (shoulder 8, neck 6, lower back 7, knee 6 questions)
-- Structured SymptomRecord with per-field provenance
-- Deterministic pre-visit summary, JSON and plain text
+- Structure candidates proposed from the user's words, selectable but never auto-selected
+- Region-specific dynamic interview (shoulder 8, neck 6, lower back 7, knee 6)
+- Four-state answer model; yes / no / unknown / not-asked stay distinct everywhere
+- Typed safety signals; no rule reads user text
+- Structured SymptomRecord with per-field provenance in the same row as the value
+- A single atomic write path; the value/provenance divergence hole is closed
+- Claim-class merge, so a device or lab result cannot overwrite a subjective symptom
+- Deterministic pre-visit summary with coverage-aware missingness
 - Personal health map keyed by body region
-- Rule-based red flags, all honestly marked unreviewed
-- 28 unit tests, 17 API smoke tests
+- Rule-based red flags, all honestly marked unreviewed, with a release gate
+- 139 unit tests, 29 API smoke checks, CI with a strict safety-metadata gate
 
 **The milestone test from the plan (§12):** partially demonstrated. A user can go from
 free text to a located record to a doctor-readable summary. **Not yet demonstrated:**
@@ -30,9 +34,13 @@ need real humans.
    claim. Put five people in front of it and measure the plan's success criteria (§5).
 2. **The schematic SVG body is rough.** It is a hit-target system, not a body. Usable,
    but it is the first thing a user will judge the product on.
-3. **`session.ts` interview mapping is untested.** Highest-risk untested code.
-4. **No non-MSK routing.** A chest-pain user is a user this app does not serve, and
-   currently does not turn away. See `research/safety-regulatory.md` gap 3.
+3. **The router is a body-part matcher, not an assessment.** It sends a chest complaint
+   to a clinician, correctly, but it cannot tell a chest complaint from a pulled muscle.
+   Do not let it grow into a triage engine — see the gaps list.
+4. **Clinical review of the 10 rules**, starting with the 7 urgent/emergency ones.
+   Until then `releaseReady` is false and the release profile will not start.
+5. **Accessibility review** of the safety banner, which is the one piece of UI that
+   must never be missed.
 
 ---
 
@@ -41,21 +49,23 @@ need real humans.
 **Goal:** four regions working properly, with 3D.
 
 - [ ] **Usability validation.** Does visual localisation beat typing? Measure it.
-- [ ] **3D anatomy layer.** `Three3dAnatomyAdapter` over BodyParts3D, decimated, with a
-      generated `asi:*` manifest. The `AnatomyAdapter` contract already exists.
+- [ ] **3D anatomy layer.** `Three3dAnatomyAdapter` over BodyParts3D under CC BY 4.0,
+      decimated, with a generated `asi:*` manifest. The `AnatomyAdapter` contract
+      already exists.
 - [ ] **Depth interaction.** The weakest part of the current UX. Users should be able to
       say "not the skin, not the muscle, deeper" and have the model respond. This is
-      question §12.3 and it is unsolved.
+      plan question §12.3 and it is unsolved.
 - [ ] **Write `layTerm` for every V1 structure.** Kenhub standard. Unglamorous,
       non-negotiable.
 - [ ] **Terminology binding.** SNOMED CT + FMA, verified, one region at a time.
 - [ ] **Clinical review of the red-flag rules.** Named reviewer, named source, both
       false-positive and false-negative reasoning written down.
-- [ ] **Non-MSK intake path.** Detect "this isn't a musculoskeletal problem" and route
-      appropriately. Safety, not scope creep.
-- [ ] **Obsidian exporter.** Half a day, and the cheapest retention strategy available.
+- [ ] **Translate the red-flag copy**, and the router's region lexicon. A non-English
+      safety message is arguably worse than none.
 - [ ] **Voice input.** People describe pain out loud. `faster-whisper` locally.
-- [ ] **Playwright tests** for the UI and `session.ts`.
+- [ ] **Playwright tests** for the rendered UI (the logic layer is tested; the DOM is not).
+- [ ] **Schema migrations** replacing the rebuild-on-version-change policy. Acceptable
+      now, unacceptable once a real user has records.
 
 ---
 

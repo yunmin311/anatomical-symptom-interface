@@ -45,36 +45,63 @@ specific, named failure.
 
 **1. The model may propose. Nothing else.**
 `ModelOrchestrator` is only allowed to return candidates. It has no write path to
-the store. Its output is tagged `ai_inference` with a mandatory confidence, and
+the store. Its output is `ai_inference` with a mandatory confidence, and
 `assertProvenance` throws if anyone tries to mark such a value `user_confirmed`.
-→ `packages/shared/src/provenance.ts`
+The field registry goes further: a field marked `requiresUserSource` rejects an
+`ai_inference` write outright.
+→ `packages/shared/src/provenance.ts`, `packages/shared/src/field-policy.ts`
 
-**2. Safety messaging is a rule engine, not generation.**
-A red flag means "get this assessed". A model deciding whether someone needs an
-emergency department is not a feature, it is a liability. Every rule is a pure
-predicate over the record, and every rule ships with review metadata that starts
-`unreviewed`. The server prints a startup warning while any rule is unreviewed, and
-`evaluateRedFlags(r, { requireReviewed: true })` can suppress them for release gating.
-→ `packages/shared/src/rules/redflags.ts`
+**2. There is one write path, and it is atomic.**
+`applyMutations` validates each value against the field registry, validates its
+provenance, runs the claim-class merge, writes the field row **containing the value
+and its provenance together**, records losing values as preserved parallel
+assertions, rebuilds the materialised record, and re-evaluates safety — in one
+transaction. A validation failure throws and rolls the whole batch back, so a client
+is never told a forbidden write succeeded. `PATCH /record` and `POST /confirm` were
+removed because they let value and provenance diverge.
+→ `packages/server/src/db/store.ts`
 
-**3. The anatomy model layer is an interface, not a component.**
-Viewer control, layer visibility, selection and marking are outside what a prompt
-can do. The orchestrator sends `ViewerCommand`s and receives `ViewerState`. Swapping
-SVG for Three.js touches one file.
-→ `apps/web/src/anatomy/types.ts`
+**3. Safety messaging is a rule engine, not generation.**
+Red flags are typed signals, not scraped text: every predicate takes a
+`SafetySignals` object with four-state values, and no rule contains a regex over user
+text. Rules read `yes`, never "a marker that exists whether the answer was yes or no".
+→ `packages/shared/src/safety-signals.ts`, `packages/shared/src/rules/redflags.ts`
 
-**4. The pre-visit summary is generated deterministically.**
+**4. There is no default region.**
+Localisation returns either a grounded result or an explicit refusal. A previous
+version defaulted to `shoulder`, so a chest complaint silently entered the shoulder
+questionnaire. The region interview also refuses to run for an episode whose
+grounding was not successful.
+→ `packages/shared/src/grounding.ts`, `packages/server/src/app.ts`
+
+**5. Missingness is never a negative claim.**
+The record schema is full of negative defaults. The summary renders against a coverage
+map from the field store, so an unasked field says "not asked" rather than "none
+reported", and the machine-readable block nulls it rather than serialising `"no"`.
+→ `packages/shared/src/summary.ts`
+
+**6. The pre-visit summary is generated deterministically.**
 The text a doctor reads never passes through a model. A hallucinated chat reply is
 annoying; a hallucinated sentence in a medical summary is a different class of harm.
 → `packages/shared/src/summary.ts`
 
-**5. Provenance is relational, not a blob.**
-`field_provenance` is a table keyed by `(episode_id, field_path)`. That means
-"show me everything the model inferred" is a `WHERE` clause, not a JSON scan — which
-is what makes the guarantee auditable rather than aspirational.
+**7. Provenance is relational, not a blob.**
+`episode_fields` is a table keyed by `(episode_id, field_path)`. "Show me everything
+the model inferred" is a `WHERE` clause, not a JSON scan.
 → `packages/server/src/db/client.ts`
 
-**6. The service runs with zero configuration.**
+**8. A visual selection is not a finding.**
+`userSelectedStructureIds` records where the patient pointed. It is never rendered as
+a confirmed structure, a diagnosis site, or a finding. See ADR 0004.
+
+**9. The release profile cannot hide a safety signal.**
+In `release`, a rule that fires but is not clinically reviewed is **withheld and the
+record is blocked** — not silently dropped. `ASI_RELEASE_PROFILE=release` refuses to
+start at all while any urgent/emergency rule is unreviewed. CI fails on missing or
+malformed safety metadata rather than treating an empty value as green.
+→ `packages/shared/src/rules/redflags.ts`, `packages/server/src/env.ts`, `scripts/check-safety-metadata.mjs`
+
+**10. The service runs with zero configuration.**
 No API key ⇒ deterministic orchestrator. The full product path — grounding, interview,
 red flags, summary, history — works fully offline. A health tool that stops working
 without a network call is a health tool some people cannot use.
@@ -87,37 +114,48 @@ user: "右肩里面这里疼，抬手就明显"
   │
   ├─ POST /api/localise
   │    └─ orchestrator.localise()
-  │         ├─ groundFromText()      region=shoulder side=right depth=deep
+  │         └─ groundOrRefuse()   region=shoulder side=right depth=deep
+  │                                 ...or status:'unsupported', and the client
+  │                                    must stop before the region interview
   │         └─ returns consideredStructures[] as CANDIDATES
   │
   ├─ client: anatomy.apply(focusRegion / focusSubRegion / highlight)
   │    └─ SVG map opens at the right shoulder, candidates highlighted
   │
   ├─ user clicks "long head of biceps tendon"
-  │    └─ anatomy.apply(highlight as:'confirmed')  → becomes a FACT
+  │    └─ visual selection — a location, NOT a finding (ADR 0004)
   │
-  ├─ POST /api/interview/shoulder/next
-  │    └─ nextQuestion({record, asked})  → "does it wake you from sleep?"
-  │    └─ user answers
-  │    └─ record mutated; evaluateRedFlags() re-runs on EVERY answer
+  ├─ POST /api/episodes   (grounding + field mutations + answers)
+  │    └─ ONE atomic path: registry validation → provenance validation →
+  │       claim-class merge → field row (value+provenance) → record projection →
+  │       safety re-evaluation. A rejection rolls the whole batch back.
   │
-  └─ POST /api/episodes  →  PATCH /record  →  /confirm
-       └─ store writes record_json + field_provenance rows
-       └─ GET /api/episodes/:id/summary
-            └─ buildPreVisitSummary(episode, {flags, priorEpisodes})
-            └─ deterministic text, "not a diagnosis" footer
+  ├─ POST /api/episodes/:id/mutations   (every subsequent answer)
+  │    └─ answers go to episode_answers with a four-state value
+  │    └─ evaluateSafety() re-runs on EVERY answer, from derived SIGNALS
+  │       so yes / no / unknown / not_asked can never be confused
+  │
+  └─ GET /api/episodes/:id/summary
+       └─ buildPreVisitSummary(episode, {flags, coverage, priorEpisodes, withheld})
+       └─ deterministic text, "not a diagnosis" footer, "not asked" for gaps
 ```
 
 ## Where the interesting failures live
 
 | Failure | Where it is caught |
 |---|---|
-| Model output stored as a confirmed fact | `assertProvenance` throws on write |
-| A red flag silently disappears | append-only `safety_flags`, `RAISE IF NOT EXISTS` dedup, startup warning |
-| Summary claims a diagnosis | test asserts banned phrasings never appear |
-| Region guessed from nothing | `groundFromText` returns `null`; test covers it |
+| Model output stored as a confirmed fact | `requiresUserSource` in the field registry; `assertProvenance` |
+| Value persisted without provenance | impossible: one row, one transaction |
+| A red flag silently disappears | release profile withholds **and blocks**; append-only `safety_flags` |
+| "No" answered where the rule needed "yes" | four-state answers + typed signals |
+| Region guessed from nothing | `groundOrRefuse` returns `unsupported`; no default region exists |
+| Interview run on an ungrounded episode | `/interview/next` returns 409 |
+| Summary claims "none reported" for an unasked field | coverage map; `render()` returns "not asked" |
+| Device reading overwrites a symptom | claim-class merge; out-of-class value preserved in parallel |
+| A structure rendered as a finding | separate fields + a test that "confirmed" never appears in a summary |
 | 3D swap breaks the UI | `AnatomyAdapter` contract; adapter is the only importer of geometry |
-| A rule predicate throws | `evaluateRedFlags` wraps every predicate in try/catch |
+| A rule predicate throws | `evaluateSafety` records it as **not evaluated**, never "not fired" |
+| CI reads an empty safety count as green | `scripts/check-safety-metadata.mjs` fails on missing or malformed metadata |
 
 ## Deliberate non-goals in V1
 

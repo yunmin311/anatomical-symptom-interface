@@ -13,7 +13,7 @@ and a document store.
 ## Decision
 
 **SQLite through Node's built-in `node:sqlite`.** No ORM yet. Provenance stored
-relationally in `field_provenance`; the symptom record itself stored as JSON.
+in the `episode_fields` table, one row per field holding the value AND its provenance; `episodes.record_json` is a materialised projection rebuilt from it.
 
 ## Rationale
 
@@ -21,7 +21,7 @@ relationally in `field_provenance`; the symptom record itself stored as JSON.
   and OS changes. `node:sqlite` is in the runtime.
 - **Portable single file.** The user can copy, back up, or open their health record in
   any tool. For this product that matters more than query ergonomics.
-- **Provenance needs to be relational.** `field_provenance` is a table keyed by
+- **Provenance needs to be relational.** `episode_fields` is a table keyed by
   `(episode_id, field_path)`, not a blob, so "everything the model inferred" is a
   `WHERE` clause. An ORM would obscure that rather than help it.
 - **The schema is still moving.** Adding an ORM before the schema stabilises is paying
