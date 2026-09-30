@@ -176,7 +176,9 @@ export function BodyMap() {
                 }}
               />
             </div>
-            <span className="small">{showThreeD ? '3D · fixture volumes' : 'Schematic / 2D'}</span>
+            <span className="small viewer-toolbar__label">
+              {showThreeD ? '3D · fixture volumes' : 'Schematic / 2D'}
+            </span>
           </div>
           <div className="viewer-canvas">
             {/* On the 3D surface the caption would sit on top of the canvas and

@@ -77,7 +77,11 @@ export function Body3d({
   const live3d = status?.mode === '3d' && !failed;
 
   return (
-    <div className="viewer3d" data-testid="viewer-3d">
+    <div
+      className={`viewer3d${active ? '' : ' viewer3d--idle'}`}
+      data-testid="viewer-3d"
+      hidden={!active}
+    >
       {/*
         The mode indicator lives in the panel toolbar, so this bar carries only
         what the canvas cannot say for itself: that these are placeholder
