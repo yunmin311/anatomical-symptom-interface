@@ -450,7 +450,16 @@ export function renderPlainText(summary: PreVisitSummary): string {
   } else if (summary.safetyNotes.length) {
     lines.push('');
     lines.push('SAFETY NOTES:');
-    for (const s of summary.safetyNotes) lines.push(`  [${s.severity.toUpperCase()}] ${s.title}: ${s.message}`);
+    for (const s of summary.safetyNotes) {
+      lines.push(`  [${s.severity.toUpperCase()}] ${s.title}: ${s.message}`);
+      // The action steps are the part a reader acts on, and the on-screen summary
+      // has always listed them. Omitting them here made the copied artefact -
+      // the one a clinician may actually keep - less complete than the screen, so
+      // the steps are indented under their own note. Without the indent a step
+      // is indistinguishable from the next note's message, and with more than
+      // one note the reader cannot tell whose guidance they are looking at.
+      for (const step of s.steps) lines.push(`    - ${step}`);
+    }
   }
   if (summary.outstandingFields.length) {
     lines.push('');
