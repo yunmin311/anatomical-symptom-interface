@@ -7,11 +7,27 @@
  *     text into grounded candidates.
  *
  * The hard boundary: the model may propose. It may not confirm, and it may not
- * write. Everything it returns is an `ai_inference` candidate that the user has
- * to accept on the anatomy model before it becomes part of the record.
+ * write. Everything it returns is an `ai_candidate` that the user has to accept
+ * on the anatomy model before it becomes part of the record.
+ *
+ * The other hard boundary: THERE IS NO DEFAULT REGION. A previous version fell
+ * back to `shoulder` whenever nothing matched, so a chest complaint silently
+ * entered the shoulder questionnaire. Localisation now returns either a grounded
+ * result or an explicit refusal, and callers must handle both.
  */
+import { z } from 'zod';
 import type { BodyRegion, ConsideredStructure, Depth, Side } from '@asi/shared';
-import { groundFromText, structureBelongsToRegion, getStructure } from '@asi/shared';
+import {
+  ALL_RULES,
+  getStructure,
+  groundFromText,
+  groundingRefusal,
+  detectOutOfScope,
+  structuresForRegion,
+  structureBelongsToRegion,
+  signalIsAskedInRegion,
+  SIGNAL_NAMES,
+} from '@asi/shared';
 import { hasModel, env } from '../env.ts';
 
 export interface LocaliseRequest {
@@ -20,33 +36,99 @@ export interface LocaliseRequest {
   pinnedRegion?: BodyRegion;
 }
 
-export interface LocaliseResult {
-  region: BodyRegion;
-  side: Side;
-  depth: Depth;
-  suggestedSubRegionId: string | null;
-  consideredStructures: ConsideredStructure[];
+interface GroundedBase {
+  status: 'grounded';
   userPhrase: string;
-  /** 'deterministic' | 'model' — surfaced in the UI so the user knows. */
+  consideredStructures: ConsideredStructure[];
   by: 'deterministic' | 'model';
   matchedTerms: string[];
   score: number;
+  /** A short question to ask before proceeding, if the input is ambiguous. */
+  clarificationQuestion: string | null;
 }
+
+export type LocaliseResult =
+  | (GroundedBase & {
+      region: BodyRegion;
+      side: Side;
+      depth: Depth;
+      suggestedSubRegionId: string | null;
+    })
+  | {
+      /** Explicitly NOT localised. Callers must not start an MSK interview. */
+      status: 'unsupported';
+      reason: 'ungrounded' | 'out_of_scope';
+      userPhrase: string;
+      message: string;
+      supportedRegions: BodyRegion[];
+      outOfScopeRegions: string[];
+    };
+
+/** Rule ids a model must never be able to influence. Used for prompt hygiene. */
+const SAFETY_RULE_IDS = ALL_RULES.map((r) => r.id);
 
 export interface Orchestrator {
   readonly kind: 'deterministic' | 'model';
   localise(req: LocaliseRequest): Promise<LocaliseResult>;
 }
 
-const toResult = (utterance: string, pinned?: BodyRegion): LocaliseResult | null => {
+/* ------------------------------------------------------------------ */
+/* Deterministic                                                      */
+/* ------------------------------------------------------------------ */
+
+function deterministicLocalise(utterance: string, pinned?: BodyRegion): LocaliseResult {
+  const outOfScope = detectOutOfScope(utterance);
+  if (outOfScope) {
+    const r = groundingRefusal(utterance, outOfScope);
+    return {
+      status: 'unsupported',
+      reason: r.reason,
+      userPhrase: r.userPhrase,
+      message: r.message,
+      supportedRegions: r.supportedRegions,
+      outOfScopeRegions: r.outOfScopeRegions,
+    };
+  }
+
   const g = groundFromText(utterance);
-  if (!g) return null;
-  // A region the user already pinned on the model outranks text matching.
+  // A user who has already pinned a region on the model has grounded it by
+  // pointing, which is stronger evidence than text matching. That is the only
+  // case where we proceed without a text match.
+  if (!g && !pinned) {
+    const r = groundingRefusal(utterance, null);
+    return {
+      status: 'unsupported',
+      reason: r.reason,
+      userPhrase: r.userPhrase,
+      message: r.message,
+      supportedRegions: r.supportedRegions,
+      outOfScopeRegions: r.outOfScopeRegions,
+    };
+  }
+
+  if (!g) {
+    return {
+      status: 'grounded',
+      region: pinned!,
+      side: 'unknown',
+      depth: 'unknown',
+      suggestedSubRegionId: null,
+      consideredStructures: [],
+      userPhrase: utterance,
+      by: 'deterministic',
+      matchedTerms: [],
+      score: 0,
+      clarificationQuestion: 'Which side, and is it on the surface or deeper in?',
+    };
+  }
+
   const region = pinned ?? g.region;
   const structures = pinned
     ? g.consideredStructures.filter((c) => structureBelongsToRegion(c.structureId, pinned))
     : g.consideredStructures;
+
   return {
+    status: 'grounded',
     region,
     side: g.side,
     depth: g.depth,
@@ -56,36 +138,67 @@ const toResult = (utterance: string, pinned?: BodyRegion): LocaliseResult | null
     by: 'deterministic',
     matchedTerms: g.matchedTerms,
     score: g.score,
+    // Ask rather than assume when the side is unresolved on a paired region.
+    clarificationQuestion:
+      region === 'lower_back' || region === 'neck'
+        ? g.side === 'unknown'
+          ? 'Is this in the middle of the area, or on one side?'
+          : null
+        : g.side === 'unknown'
+          ? 'Which side?'
+          : null,
   };
-};
+}
 
 export class DeterministicOrchestrator implements Orchestrator {
   readonly kind = 'deterministic' as const;
   async localise(req: LocaliseRequest): Promise<LocaliseResult> {
-    const result = toResult(req.utterance, req.pinnedRegion);
-    if (result) return result;
-    // Nothing matched. Rather than invent a region, defer to the user.
-    const region = req.pinnedRegion ?? 'shoulder';
-    return {
-      region,
-      side: 'unknown',
-      depth: 'unknown',
-      suggestedSubRegionId: null,
-      consideredStructures: [],
-      userPhrase: req.utterance,
-      by: 'deterministic',
-      matchedTerms: [],
-      score: 0,
-    };
+    return deterministicLocalise(req.utterance, req.pinnedRegion);
   }
 }
+
+/* ------------------------------------------------------------------ */
+/* Model                                                              */
+/* ------------------------------------------------------------------ */
+
+/** Runtime schema for the tool result. Never trust the model's output shape. */
+const ToolResultSchema = z.object({
+  region: z.enum(['shoulder', 'neck', 'lower_back', 'knee']),
+  side: z.enum(['left', 'right', 'midline', 'bilateral', 'unknown']),
+  depth: z.enum(['superficial', 'intermediate', 'deep', 'unknown']),
+  suggestedSubRegionId: z.string().nullish(),
+  structureIds: z.array(z.string().max(80)).max(8).default([]),
+  needsClarification: z.boolean().default(false),
+  clarificationQuestion: z.string().max(240).nullish(),
+});
+
+/**
+ * Bounded candidate structure list. This is what the previous implementation
+ * CLAIMED to send and did not — the model was asked to choose from "the
+ * candidate list" that was never present in the prompt, so it could only
+ * invent ids. Now the list is built, length-capped, and sent.
+ */
+const MAX_CANDIDATE_STRUCTURES = 40;
+
+function candidateCatalogue(): { id: string; label: string; layTerm: string | null; region: string }[] {
+  const out: { id: string; label: string; layTerm: string | null; region: string }[] = [];
+  for (const region of ['shoulder', 'neck', 'lower_back', 'knee'] as BodyRegion[]) {
+    for (const s of structuresForRegion(region)) {
+      out.push({ id: s.id, label: s.label, layTerm: s.layTerm ?? null, region });
+    }
+  }
+  return out.slice(0, MAX_CANDIDATE_STRUCTURES);
+}
+
+const CATALOGUE = candidateCatalogue();
 
 const LOCALISE_TOOL = {
   name: 'propose_anatomical_location',
   description:
-    'Propose where on the body the patient is describing a symptom. This is a CANDIDATE. ' +
-    'Never state a diagnosis, a condition name, or a disease. Only location, side, depth and ' +
-    'candidate anatomical structures.',
+    'Propose where on the body the patient is describing a symptom. This is a CANDIDATE, ' +
+    'not a finding. Never state a diagnosis, a condition name, a disease, or a probability. ' +
+    'Only location, side, depth, structure ids from the supplied catalogue, and optionally ' +
+    'one short clarification question.',
   input_schema: {
     type: 'object' as const,
     properties: {
@@ -96,35 +209,58 @@ const LOCALISE_TOOL = {
       structureIds: {
         type: 'array',
         items: { type: 'string' },
-        description: 'IDs from the candidate structure list only.',
+        description: 'IDs chosen ONLY from the supplied catalogue. Do not invent ids.',
       },
       needsClarification: { type: 'boolean' },
       clarificationQuestion: {
         type: 'string',
-        description: 'One short question, e.g. asking whether it is the top or the outside of the shoulder.',
+        description: 'One short question, only if needsClarification is true.',
       },
     },
     required: ['region', 'side', 'depth', 'structureIds'],
   },
 };
 
-/**
- * Model-backed orchestrator.
- *
- * Constructed only when a key is present. It calls Claude with the candidate
- * structure list in the system prompt and forces a tool call, so the response
- * is schema-shaped rather than prose we have to parse. The tool's output is
- * still only a proposal — see ADR 0003.
- */
+function systemPrompt(): string {
+  return `You localise symptoms on the human body. You do NOT diagnose.
+
+You will be given one patient sentence and a CATALOGUE of anatomical structures with their
+exact ids. Call the tool with:
+- the best-matching region from the catalogue's four regions
+- left / right / midline / bilateral / unknown
+- superficial / intermediate / deep / unknown
+- structure ids copied EXACTLY from the catalogue
+- needsClarification true and one short question ONLY if the sentence is genuinely ambiguous
+
+The catalogue is the complete set of ids you may use. If nothing in the catalogue fits, return
+an empty structureIds array rather than inventing an id.
+
+Never output a disease name, a diagnosis, a probability of disease, or a treatment.
+
+These rule ids exist in this system and are not yours to reason about: ${SAFETY_RULE_IDS.join(', ')}.
+Safety messaging is produced by a deterministic rule engine, not by you.`;
+}
+
 export class ModelOrchestrator implements Orchestrator {
   readonly kind = 'model' as const;
-  constructor(
-    private apiKey: string,
-    private model: string,
-    private fallback: Orchestrator = new DeterministicOrchestrator(),
-  ) {}
+  // Declared explicitly: TypeScript parameter properties are not supported by
+  // the strip-only type-stripping this project runs under.
+  private apiKey: string;
+  private model: string;
+  private fallback: Orchestrator;
+
+  constructor(apiKey: string, model: string, fallback?: Orchestrator) {
+    this.apiKey = apiKey;
+    this.model = model;
+    this.fallback = fallback ?? new DeterministicOrchestrator();
+  }
 
   async localise(req: LocaliseRequest): Promise<LocaliseResult> {
+    // The model may only be consulted for input the router considers in scope.
+    // Deciding scope is not the model's job.
+    const precheck = detectOutOfScope(req.utterance);
+    if (precheck) return deterministicLocalise(req.utterance, req.pinnedRegion);
+
     try {
       const res = await fetch('https://api.anthropic.com/v1/messages', {
         method: 'POST',
@@ -136,61 +272,69 @@ export class ModelOrchestrator implements Orchestrator {
         body: JSON.stringify({
           model: this.model,
           max_tokens: 1024,
-          system: SYSTEM_PROMPT,
+          system: systemPrompt(),
           messages: [{ role: 'user', content: req.utterance }],
           tools: [LOCALISE_TOOL],
           tool_choice: { type: 'tool', name: LOCALISE_TOOL.name },
         }),
       });
-      if (!res.ok) return (await this.fallback.localise(req)) as LocaliseResult;
+      if (!res.ok) return this.fallback.localise(req);
+
       const json = (await res.json()) as {
-        content?: { type: string; name?: string; input?: Record<string, unknown> }[];
+        content?: { type: string; name?: string; input?: unknown }[];
       };
       const call = json.content?.find((c) => c.type === 'tool_use');
-      const input = call?.input;
-      if (!input) return (await this.fallback.localise(req)) as LocaliseResult;
+      if (!call) return this.fallback.localise(req);
 
-      const region = (input.region as BodyRegion) ?? 'shoulder';
-      const ids = Array.isArray(input.structureIds) ? (input.structureIds as string[]) : [];
-      const consideredStructures: ConsideredStructure[] = ids
-        .filter((id) => typeof id === 'string' && id.startsWith('asi:') && structureBelongsToRegion(id, region))
-        .map((id) => ({
-          structureId: id,
-          rationale: getStructure(id)?.layTerm ? `You described something like “${getStructure(id)!.layTerm}”.` : null,
-          // The model self-reports; it is never treated as calibrated.
-          confidence: 0.5,
-          confirmedByUser: false,
-        }));
+      // Validate the COMPLETE tool result at runtime, not field by field.
+      const parsed = ToolResultSchema.safeParse(call.input);
+      if (!parsed.success) return this.fallback.localise(req);
+      const input = parsed.data;
+
+      const catalogueIds = new Set(CATALOGUE.map((c) => c.id));
+      const consideredStructures: ConsideredStructure[] = input.structureIds
+        .filter((id) => catalogueIds.has(id) && structureBelongsToRegion(id, input.region))
+        .map((id) => {
+          const s = getStructure(id);
+          return {
+            structureId: id,
+            rationale: s?.layTerm ? `You described something like “${s.layTerm}”.` : null,
+            // The model self-reports. It is never treated as calibrated, and a
+            // fixed value is used so a model cannot inflate its own confidence.
+            confidence: 0.5,
+            selectedByUser: false,
+          } satisfies ConsideredStructure;
+        });
+
+      // A sub-region must actually exist in the region, or we drop it.
+      const subRegionId =
+        input.suggestedSubRegionId && signalSafeSubRegion(input.region, input.suggestedSubRegionId)
+          ? input.suggestedSubRegionId
+          : null;
 
       return {
-        region,
-        side: (input.side as Side) ?? 'unknown',
-        depth: (input.depth as Depth) ?? 'unknown',
-        suggestedSubRegionId: (input.suggestedSubRegionId as string | null) ?? null,
+        status: 'grounded',
+        region: input.region,
+        side: input.side,
+        depth: input.depth,
+        suggestedSubRegionId: subRegionId,
         consideredStructures,
         userPhrase: req.utterance,
         by: 'model',
         matchedTerms: [],
         score: 0.7,
+        // The clarification output is USED, not declared and dropped.
+        clarificationQuestion: input.needsClarification ? (input.clarificationQuestion ?? null) : null,
       };
     } catch {
-      return (await this.fallback.localise(req)) as LocaliseResult;
+      return this.fallback.localise(req);
     }
   }
 }
 
-const SYSTEM_PROMPT = `You localise symptoms on the human body. You do NOT diagnose.
-
-You will be given one patient sentence, usually in the first person, and a list of
-candidate anatomical structures for each region. Call the tool with:
-- the best-matching region
-- left / right / midline / bilateral / unknown
-- superficial / intermediate / deep / unknown
-- structure ids chosen ONLY from the candidate list
-- one short clarification question if the sentence is genuinely ambiguous
-
-Never output a disease name, a diagnosis, a probability of disease, or a treatment.
-The patient will confirm the location themselves on an anatomy model.`;
+function signalSafeSubRegion(region: BodyRegion, subRegionId: string): boolean {
+  return structuresForRegion(region).length > 0 && subRegionId.startsWith(`${region}.`);
+}
 
 export function createOrchestrator(): Orchestrator {
   if (hasModel()) {
@@ -198,3 +342,5 @@ export function createOrchestrator(): Orchestrator {
   }
   return new DeterministicOrchestrator();
 }
+
+export { SIGNAL_NAMES, signalIsAskedInRegion };
