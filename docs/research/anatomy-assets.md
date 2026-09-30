@@ -19,24 +19,67 @@ the options so the Phase 1 decision is an informed one rather than a scramble.
 
 ## Option A — BodyParts3D (Database Center for Life Science, Japan)
 
-**What it is:** ~1,500 anatomical structures as OBJ/GLB, derived from the **Foundational
-Model of Anatomy (FMA)**, with a full region hierarchy and English + Japanese names.
-CC-BY-SA 2.1 JP.
+**Source of truth for the licence (pin this, do not trust a mirror):**
+<https://dbarchive.biosciencedbc.jp/en/bodyparts3d/lic.html>
+
+| | |
+|---|---|
+| **Current licence** | **Creative Commons Attribution 4.0 International (CC BY 4.0)** |
+| **Licence page last updated** | **2025-02-27** |
+| **Required attribution** | `BodyParts3D, © The Database Center for Life Science licensed under CC Attribution 4.0 International` |
+| **DOI** | 10.18908/lsdba.nbdc00837-000 |
+| **Current release** | 4.3i concept set (3,899 concepts) |
+| **Archived bulk mesh download** | `isa_BP3D_4.0_obj_99.zip` — release **4.0** (2013/05), 99% polygon-reduced |
+
+### Licence correction, and why it matters
+
+Earlier drafts of this document stated **CC-BY-SA 2.1 JP**. That was the licence
+under which BodyParts3D was released up to early 2025, and it is **still quoted
+on the project's own editor site** (`lifesciencedb.jp/bp3d/info_en/`) and in
+essentially every third-party mirror, including the two GitHub repos that
+redistribute the meshes. The LSDB archive licence page is the authoritative
+source and it now says **CC BY 4.0 International, last updated 2025-02-27**.
+
+The practical difference is significant for this project: **CC BY 4.0 has no
+ShareAlike obligation.** Under 2.1 JP, redistributing derivative meshes would have
+imposed share-alike on the distribution. Under CC BY 4.0, commercial
+redistribution is permitted with attribution alone. Two conditions still apply,
+quoted from the licence page:
+
+> You must attribute this database in the manner specified by the author or
+> licensor when distributing part or whole of this database or any adapted
+> material.
+>
+> You need to contact the Licensor shown below to request a license for use of
+> this database or any part thereof not licensed under the license.
+
+So: attribute, and ask before doing anything the licence does not cover.
+
+**Rule for this repo:** record the licence, the version of the page it came from,
+and the date. Do not copy a licence string from a third-party redistribution, and
+re-check the archive page before any release. A licence that quietly changed
+underneath a project that hard-coded the old one is exactly the kind of thing that
+is discovered during an acquisition, not before it.
 
 **Strengths**
 - **The FMA derivation is the killer feature.** We are already planning to bind our
   structures to FMA. BodyParts3D *is* that binding, already done, by an institution
   that maintains it. That removes an entire verification project.
-- Named, hierarchical, licence that permits commercial use with attribution and share-alike.
-- Freely redistributable. No per-user cost at any scale.
+- Named, hierarchical, freely redistributable, commercially usable with attribution.
+- No per-user cost at any scale, and no vendor whose roadmap we depend on.
 
 **Weaknesses**
 - Research dataset: geometry is dense and unoptimised. Expect a heavy decimation pass.
 - Naming is FMA-flavoured, not patient-friendly. Every structure still needs a
   `layTerm` written by a human.
 - Not designed for interactive use; you own the whole conversion pipeline.
+- **The bulk archive is stale relative to the current release.** The downloadable
+  mesh zip is release 4.0 from 2013; the maintained concept list is 4.3i. Plan for
+  the gap rather than discovering it mid-conversion.
 
-**Verdict: the strongest V1 3D candidate.** The FMA alignment outweighs the pipeline cost.
+**Verdict: the strongest V1 3D candidate.** The FMA alignment outweighs the
+pipeline cost, and CC BY 4.0 is materially friendlier than the ShareAlike licence
+previously assumed.
 
 ---
 
@@ -103,9 +146,21 @@ worthwhile, copying it is not.
 | Phase | Asset | Rationale |
 |---|---|---|
 | **Phase 0 (now)** | Schematic 2D SVG, authored in-repo | Validates "do users localise better visually?" in a day, with zero licensing and zero download. Already built. |
-| **Phase 1** | **BodyParts3D → GLB**, decimated, with a generated `asi:*` manifest | FMA alignment is worth the pipeline. Terms become a reference, not a guess. |
+| **Phase 1** | **BodyParts3D → GLB** under CC BY 4.0, decimated, with a generated `asi:*` manifest | FMA alignment is worth the pipeline, and the current licence carries no ShareAlike. Terms become a reference, not a guess. |
 | **Phase 1 (alt)** | Z-Anatomy for rendering + BodyParts3D for terminology, if its licence clears | Best visual quality, still licence-clean. |
 | **Phase 2+** | Own pipeline in Blender, seeded from the above | Full control, own asset, own ID space. The only durable answer long-term. |
+
+### Attribution text to ship with any adopted asset
+
+```
+BodyParts3D, © The Database Center for Life Science
+Licensed under Creative Commons Attribution 4.0 International.
+Licence page: https://dbarchive.biosciencedbc.jp/en/bodyparts3d/lic.html
+(licence page last updated 2025-02-27)
+```
+
+Keep this string, its URL, and the date together. If the licence changes, the
+date is what tells you the string is stale.
 
 ### The one artefact that matters
 

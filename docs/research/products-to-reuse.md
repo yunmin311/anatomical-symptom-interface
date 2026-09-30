@@ -22,7 +22,7 @@ If it does, that is a strong Phase 1 signal — and a decision to make deliberat
 ### BodyParts3D (DBCLS) — the asset source
 - https://lifesciencedb.jp/bp3d/
 
-**What to take:** the meshes and the FMA-derived structure hierarchy. CC-BY-SA 2.1 JP,
+**What to take:** the meshes and the FMA-derived structure hierarchy. **CC BY 4.0 International** (licence page last updated 2025-02-27),
 commercially usable with attribution. See `anatomy-assets.md`.
 
 ### Z-Anatomy — the rendering-quality alternative

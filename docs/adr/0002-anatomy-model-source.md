@@ -18,8 +18,12 @@ Terminology bindings are carried in a nullable `coding` field whose `status` def
 `unverified`. Nothing ships as verified until a human checks it.
 
 **2. The 3D asset decision is deferred.** V1 uses a schematic 2D SVG map authored in-repo.
-BodyParts3D is the recommended Phase 1 source. BioDigital is a reference, not a
-dependency.
+BodyParts3D is the recommended Phase 1 source, **under CC BY 4.0 International
+(licence page last updated 2025-02-27)** — note that the project previously
+published its data under CC-BY-SA 2.1 JP and that older licence string is still
+quoted on its own editor site and in most third-party mirrors. BioDigital is a
+reference, not a dependency. See `docs/research/anatomy-assets.md` for the pinned
+source URL, release numbers, and the attribution string to ship.
 
 ## Rationale for local IDs
 
@@ -69,4 +73,7 @@ Everything keys off `asiId`. The mesh format is a swappable detail.
   standard. A structure with only an anatomical name is not usable by a patient.
 - `coding.status` stays `unverified` until someone does the verification work. This is a
   real cost, accepted deliberately.
-- BodyParts3D's CC-BY-SA share-alike obligation must be respected in any distribution.
+- BodyParts3D's CC BY 4.0 terms require attribution but carry **no ShareAlike
+  obligation**, unlike the CC-BY-SA 2.1 JP terms that applied before 2025-02-27.
+  Re-check the archive licence page before any release and never take a licence
+  string from a third-party redistribution.
