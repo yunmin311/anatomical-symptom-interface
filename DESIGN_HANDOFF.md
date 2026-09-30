@@ -12,7 +12,7 @@ This is a development prototype, not a clinically reviewed product.
 | Edit/revisit answers without duplicate or stale semantics | `asked` is only an ID list; prior answer values are unavailable, and mutations are additive. | Readable answer map and replace-answer action. | Blocks accurate “Back/edit answer”; no fake back button implemented. |
 | Undo candidate selection safely | `rejectStructure` removes the candidate and clears viewer pin, but does not consistently clear viewer selection. | Deselect action that preserves candidate provenance and pin. | Blocks safe undo. Do not expose a misleading toggle. |
 | Correct/relocalise an existing saved episode | `describe` rebuilds record/asked but retains episodeId/summary; reset leaves some viewer/orchestrator state. | New-session and relocalisation semantics with stale-summary invalidation. | UI can require explicit new-episode reset; cannot silently repair store. |
-| Supported/unsupported/network/model states | `api()` discards response body and returns only path/status. A 422 cannot tell UI whether input is vague, unsupported or rejected for safety. | Typed localise result/error reason and safe user-facing message; separate service availability from no match. | UI can explain “could not locate”; cannot implement clinical routing or claim offline success during server outage. |
+| Supported/unsupported/network/model states | `api()` discards error response bodies; `describe` drops score/matchedTerms. Baseline deterministic localise returns HTTP 200 and shoulder with score 0 for ungrounded text. | Retain score/matchedTerms or a typed no-match state in session; typed error reason and safe message; distinguish transport failure, model fallback and unsupported input. | UI reuses groundFromText only to suppress the deterministic fallback shoulder, including after returning to edit. Remove that presentation guard once the session exposes no-match. Model no-match/routing remains blocked. |
 | Region correction preserving the user's words | No setRegion action; calling describe resets record. | Region correction action with proper provenance and reset rules. | UI offers edit description instead of inventing a record mutation. |
 | Pin orientation and selected side | Point is just x/y; no view/side coordinate metadata. Existing hit shapes are schematic and side placement differs by region. | Define pin coordinate/view semantics before mirrored/lateral geometry or 3D. | Blocks faithful side-specific geometry. Current viewer labels schematic and controls side separately. |
 | Summary grouping independent of English labels | `summary.history` is label/value pairs without stable section IDs. | Optional stable field/section IDs, preserving current labels/values. | Non-blocking: presentation adapter groups known labels; unknown labels remain visible in Other details. |
@@ -26,3 +26,16 @@ signatures; do not merge UI around a new contract without typecheck and browser 
 
 The visual selection pending in the location component is component-local; only explicit Continue
 calls the existing confirmSubRegion action. Side and depth use existing actions immediately.
+
+## Additional UI limits to carry into integration
+
+- A multi-question submission passes the complete array as value and optionValues. The UI tests
+  prove multiple selection/submission, not correctness of medical record mapping.
+- Review can show an incomplete record and retains the existing ability to save early. Required
+  questions remaining are explicitly counted. Any mandatory safety gate belongs to the main agent.
+- View changes and left/right correction do not remap existing pins. Geometry remains the original
+  schematic to avoid silently changing the meaning of persisted normalised coordinates.
+- Localisation draft selection is component-local and must be selected again after leaving that view.
+- Timeline/onset fields not collected by the current interview stay absent/unknown. No new questions.
+- Safety rationale, default values and deterministic summary wording are displayed verbatim; design
+  does not validate them. In particular, default 'no' must not be mistaken for an actual answer.
