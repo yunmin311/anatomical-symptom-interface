@@ -5,6 +5,16 @@ schema, safety rules, provenance policy, session.ts and state/logic.ts are uncha
 relative to that main commit. The merges import the main agent's changes; they are
 not design-authored domain changes. No push or merge into main.
 
+> **Phase 1A (this branch, `phase1/anatomy-workspace`) supersedes the V2 notes
+> below where they touch the anatomy viewer.** V2 is merged into `main` at
+> `1f2f26e`. Phase 1A is built on that and adds
+> [`docs/design/phase1a-anatomy-workspace.md`](docs/design/phase1a-anatomy-workspace.md):
+> a 3D adapter behind the same contract, a manifest seam for real assets, a rebuilt
+> 2D map, depth wired to the viewer, a fallback that cannot white-screen, and a
+> spatial history read model. `session.ts` and `state/logic.ts` were already
+> domain-facing and remain free of domain changes; Phase 1A adds no persisted
+> field. The V2 sections are kept for history.
+
 ## Resolved since V1
 
 The old fallback-region presentation workaround is removed. UI uses authoritative
@@ -65,6 +75,17 @@ No private write endpoint, new field, medical question or altered rule was added
   so a Vite dev server keeps serving a stale transform cache after an edit. Clear
   `apps/web/node_modules/.vite` and restart Vite, or CSS changes appear to do
   nothing. Helper scripts live in the ignored `data/run/`.
+
+## Phase 1A — interface points for the domain and asset owners
+
+| UI need | Where it lives now | What the owner has to do | Blocking? |
+|---|---|---|---|
+| Real anatomy meshes | `apps/web/src/anatomy/manifest.ts` — a manifest is the only thing that knows how an `asiId` relates to geometry | Supply a `source: 'bodyparts3d'` manifest with `geometry.type: 'url'`, per-part `asiId` bound to ontology `subRegionId`/`structureId`, plus `views`, `layer` and `bounds`. No renderer code changes. | Blocks a viewer that looks like a body. The renderer, picking, layers, camera and fallback are all done and tested. |
+| Patient-side mirroring | `CAMERA_PRESETS` in `three3d.ts` places the camera on the figure's left flank | Decide the figure-to-patient mapping and say so in the manifest or a domain constant; the adapter deliberately does not guess | Non-blocking. Presets are four distinct, tested stations. The 2D map already expresses side by mirroring the drawing. |
+| Spatial history read model | `apps/web/src/ui/spatial-history.ts` derives region → location marks → count → most recent from the episodes the API already returns | Serve that shape (or the episodes plus a location index) so the file becomes a fetch instead of a derivation | Non-blocking. The boundary exists and is tested; a fixture source is labelled as such. |
+| Rejected suggestions | `ViewerCommand.reject` / `clearReject`, presentation-only; the candidate is kept | Nothing. Deliberately **not** persisted: a dismissal is a view decision, and deleting the candidate would be lossy in the same way deleting a deselected candidate is | Not blocking. |
+| Depth from the user's own words | `syncViewer` projects `record.location.depth` into the viewer | Nothing. Fixed in this phase after localisation set depth without telling the viewer | Resolved. |
+| Per-episode clinical severity | Nowhere | Not modelled anywhere, deliberately. History counts are counts of records | Not a UI gap. A test asserts the spatial model carries no severity, score, risk or trend. |
 
 ## Integration guidance
 
