@@ -186,6 +186,56 @@ Four decisions in that diagram are load-bearing:
 - **`nodeName` is optional.** The Core pipeline emits one mesh per GLB, so
   requiring a node name would make the adapter refuse every real asset it exists
   to consume.
+- **One scene carries one attribution.** The panel can display one licence and one
+  citation, and "these assets" is what a user is being asked to trust. So every
+  entry must agree on the licence that governs it and on its dataset, release,
+  archive and DOI; a mixed manifest is **refused** rather than reported under its
+  first entry's provenance. Taking `entries[0]` is a licence misstatement, and
+  unioning the fields would fabricate a citation naming sources and terms that were
+  never issued together. The canonical schema still allows per-entry overrides, and
+  the **effective licence of an entry is the licence ON that entry** — reading the
+  manifest default is wrong exactly when it matters, which is the only case that
+  matters. A mixed dataset becomes multiple scenes, not a looser contract.
+- **Scene-level citation holds release-level facts only**: `dataset`, `release`,
+  `archive`, `doi` and the licence. `conceptId` is deliberately **not** among them
+  and is not on the scene at all — it identifies a concept *inside* a release, so a
+  scene of two structures has two of them, and reporting the first entry's would
+  present one structure's identity as a property of all of them. It lives on
+  `RendererSceneEntry.provenance`, the only place that can hold it honestly.
+- **`RendererSceneSource` names no supplier.** It is `fixture | external`, because
+  the earlier `bodyparts3d` value labelled every non-synthetic manifest with one
+  dataset's name — including a Z-Anatomy scene or our own. The real dataset name is
+  `attribution.source.dataset`, and it comes from the canonical manifest.
+
+## A 3D click, and what follows from it
+
+Clicking real geometry resolves to an `asiId` and the whole `subRegionIds` list.
+Two pure functions own what happens next, because the answer varies with what was
+hit and a wrong answer is a wrong record: `intentFromPick` turns a `PickResult` into
+an intent, and `reducePickToDraft` reduces that against the workbench draft.
+
+- The **structure is selected immediately**, because that is unambiguous. The
+  canonical authority is still `location.userSelectedStructureIds`; the session's own
+  `select` writes it.
+- The **area** is kept when the recorded area is one the structure is reachable from,
+  adopted when there is exactly one candidate, and reconciled against the candidates
+  when there are several.
+- An **area proxy** selects an area and never invents a structure. A sub-region is a
+  place on the body, not a structure.
+- The **surface point** is a location indication — it becomes the user's pin, carries
+  no tissue and no diagnostic meaning, and it carries nothing into the answer set.
+
+Reconciling the draft is **not** "leave it alone". A pending area is not persisted
+truth, but it *is* what "Use this location" will submit, and that button is gated
+only on the draft having an area. So a draft area the structure cannot be in is
+cleared rather than carried forward — otherwise the user submits "the back of the
+shoulder, plus the deltoid", a record of something they did not indicate. A draft
+area that *is* a candidate is kept, because it is the user's own pending intent for
+a place the structure genuinely can be in.
+
+A pin follows the same ownership rule: a pin from the current pick stays, and a pin
+left over in an area that was just invalidated goes, because a point from the back
+of the shoulder cannot describe a deltoid.
 
 The renderer has no other route to the canonical manifest, which is the point:
 a second authority for asset identity or licensing is how a scene ends up

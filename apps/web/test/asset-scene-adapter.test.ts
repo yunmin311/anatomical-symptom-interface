@@ -625,3 +625,56 @@ test('the renderer source category is dataset-agnostic', () => {
   assert.equal(bp3d.source, zAnatomy.source);
   assert.equal(bp3d.attribution?.source.dataset, SYNTHETIC_CANONICAL_MANIFEST.entries[0]!.source.dataset);
 });
+
+test('conceptId is per-structure provenance, never a scene-wide claim', () => {
+  // Two structures in one scene genuinely have two concept ids. The scene-level
+  // citation cannot honestly name either one, so it must not try: reporting
+  // entries[0]'s would present one structure's identity as a property of all of
+  // them, which is the same first-entry leak the homogeneity check exists to stop
+  // -- just for a field that is legitimately per-entry.
+  const a = SYNTHETIC_CANONICAL_MANIFEST.entries[0]!;
+  const b = SYNTHETIC_CANONICAL_MANIFEST.entries[1]!;
+  assert.notEqual(
+    a.source.conceptId,
+    b.source.conceptId,
+    'this test needs two different concept ids to be meaningful',
+  );
+
+  // Conversion succeeds: differing concept ids do not make a manifest incompatible.
+  const scene = toRendererScene(SYNTHETIC_CANONICAL_MANIFEST, {
+    assetRoot: SYNTHETIC_ASSET_ROOT,
+  });
+
+  // Each entry keeps its own.
+  const sceneA = scene.entries.find((e) => e.asiId === a.asiId)!;
+  const sceneB = scene.entries.find((e) => e.asiId === b.asiId)!;
+  assert.equal(sceneA.provenance?.conceptId, a.source.conceptId);
+  assert.equal(sceneB.provenance?.conceptId, b.source.conceptId);
+
+  // And the scene claims neither.
+  const source = scene.attribution!.source as Record<string, unknown>;
+  assert.equal(
+    'conceptId' in source,
+    false,
+    `scene-level attribution still carries a conceptId: ${JSON.stringify(source.conceptId)}`,
+  );
+  // The release-level facts it DOES carry are all still there.
+  assert.equal(source.dataset, a.source.dataset);
+  assert.equal(source.release, a.source.release);
+  assert.ok('doi' in source && 'archive' in source);
+  // A type that permits it would let it come back.
+  assert.doesNotMatch(JSON.stringify(scene.attribution!.source), /synthetic_deltoid|synthetic_acromion/);
+});
+
+test('RendererSceneAttribution has no conceptId field at all', () => {
+  // The runtime assertion above would also pass if the field existed but were
+  // undefined. This is the compile-time half, spelled as a source check because a
+  // type assertion cannot fail at runtime.
+  const source: Record<string, unknown> = {
+    dataset: 'd',
+    release: 'r',
+    archive: null,
+    doi: null,
+  };
+  assert.equal('conceptId' in source, false);
+});

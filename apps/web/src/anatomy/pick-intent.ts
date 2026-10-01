@@ -177,10 +177,13 @@ export function reducePickToDraft(
         announce: describePick(intent, label),
       };
     case 'unresolved':
-      // The area is left EXACTLY as it was, draft included. The structure selection
-      // still stands, because it is certain.
+      // The structure selection stands because it is certain. The AREA does not, so
+      // the draft is reconciled against the candidates: a draft area the structure
+      // cannot be in is cleared rather than carried forward, because the confirm
+      // button would otherwise submit a location that contradicts the click. See
+      // `draftAreaIsCompatible` for why that is not simply "leave it alone".
       return {
-        draft: { subRegionId: draft.subRegionId, point },
+        draft: reconcileDraft(draft, intent.subRegion.candidates, intent.point),
         selectStructureId: intent.structureId,
         announce: describePick(intent, label),
       };
@@ -188,13 +191,80 @@ export function reducePickToDraft(
 }
 
 /**
- * Whether an unresolved structure pick should tell the user to choose an area.
+ * Is a pending draft area still compatible with a structure the user just pointed at?
  *
- * `unresolved` with candidates is the case where the structure is genuinely
- * reachable from several places and nothing about the click narrows it down. The
- * structure selection still stands — it is certain — but the area does not, and
- * saying so is the difference between a user who understands what was recorded and
- * one who assumes the front of the shoulder was chosen for them.
+ * A draft is not persisted truth — nothing has confirmed it — but it IS the thing
+ * the "Use this location" button will submit, and that button is gated on the draft
+ * having an area at all. So a draft area that the structure cannot be in is not a
+ * harmless leftover: it is a submit-able location that contradicts the click the user
+ * just made.
+ *
+ * Concretely: a draft of `shoulder.posterior`, then a click on the deltoid (which is
+ * reachable from the anterior and the lateral only). The pick is correctly
+ * UNRESOLVED — we will not guess between its two candidates — but carrying
+ * `shoulder.posterior` forward would let the user submit "the back of the shoulder,
+ * plus the deltoid", which is a record of something they did not indicate.
+ *
+ * Three cases:
+ *
+ *   A. no draft area                      -> stays null
+ *   B. draft area IS one of the candidates -> kept, still a draft
+ *   C. draft area is NOT a candidate       -> cleared, so the user must choose
+ *
+ * B is safe precisely because the draft is not persisted: it is the user's own
+ * pending intent for a sub-region the structure genuinely can be in, and forcing
+ * them to re-pick it would be discarding something they already said.
+ */
+export function draftAreaIsCompatible(
+  draftSubRegionId: string | null,
+  candidates: string[],
+): boolean {
+  if (draftSubRegionId === null) return true;
+  // A structure with no declared sub-regions constrains nothing, so there is nothing
+  // for a draft to be incompatible with.
+  if (candidates.length === 0) return true;
+  return candidates.includes(draftSubRegionId);
+}
+
+/**
+ * Bring the draft into line with the structure the user just pointed at.
+ *
+ * AND THE PIN, DELIBERATELY. Clearing an area because it cannot hold the structure
+ * has to take the pin that was dropped in that area with it, or the confirm button
+ * becomes reachable again with a point from `shoulder.posterior` and no area —
+ * a location the user never indicated. The rule is about OWNERSHIP of the pin, not
+ * about clearing pins generally:
+ *
+ *   - a pin that came FROM THIS PICK stays, because it was placed by the click the
+ *     user just made;
+ *   - a pin that PREDATES the pick is dropped only when the area it belonged to is
+ *     the area being invalidated.
+ *
+ * So a compatible draft keeps both its area and its pin, an incompatible one loses
+ * both, and a pick that resolved its own point always keeps that point. Decided here
+ * and pinned by tests rather than left to whichever branch ran first.
+ */
+function reconcileDraft(
+  draft: PickDraft,
+  candidates: string[],
+  pickPoint: MapPoint | null,
+): PickDraft {
+  if (draftAreaIsCompatible(draft.subRegionId, candidates))
+    return { subRegionId: draft.subRegionId, point: pickPoint ?? draft.point };
+
+  // The draft area cannot hold this structure. Its pin goes with it; a point from
+  // this very pick survives, because it describes the structure, not the old area.
+  return { subRegionId: null, point: pickPoint };
+}
+
+/**
+ * Whether the PICK was unresolved — the structure is reachable from several
+ * sub-regions and nothing about the click narrowed it.
+ *
+ * That is not the same as "the user must choose an area": the pending draft may
+ * already hold a sub-region the structure genuinely can be in, which is case B of
+ * `draftAreaIsCompatible`. This reports the pick; `reducePickToDraft` decides what
+ * the draft ends up holding.
  */
 export function needsAreaChoice(intent: PickIntent): boolean {
   return intent.kind === 'structure' && intent.subRegion.kind === 'unresolved';

@@ -17,6 +17,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   describePick,
+  draftAreaIsCompatible,
   intentFromPick,
   needsAreaChoice,
   reducePickToDraft,
@@ -228,10 +229,13 @@ test('an unresolved pick leaves the draft area EXACTLY as it was', () => {
   assert.match(effect.announce, /Choose an area/);
 });
 
-test('an unresolved pick does not overwrite an area the user already drafted', () => {
-  const draft = { subRegionId: 'shoulder.posterior', point: { x: 0.4, y: 0.4 } };
+test('an unresolved pick does not overwrite a COMPATIBLE drafted area', () => {
+  // This used to assert that ANY draft area survived, which is the bug: the draft
+  // was posterior, a sub-region the deltoid cannot be in, so it was submittable
+  // alongside a structure the user had just pointed at somewhere else entirely.
+  const draft = { subRegionId: 'shoulder.lateral', point: { x: 0.4, y: 0.4 } };
   const effect = reducePickToDraft(intentFromPick(pick(), null), draft, null);
-  assert.equal(effect.draft.subRegionId, 'shoulder.posterior');
+  assert.equal(effect.draft.subRegionId, 'shoulder.lateral');
 });
 
 test('a keep resolves to the RECORD area, not the first candidate', () => {
@@ -244,10 +248,13 @@ test('a keep resolves to the RECORD area, not the first candidate', () => {
   assert.equal(effect.selectStructureId, 'asi:shoulder.deltoid');
 });
 
-test('a keep with no recorded area falls back to the draft rather than guessing', () => {
-  const draft = { subRegionId: 'shoulder.posterior', point: null };
-  const effect = reducePickToDraft(intentFromPick(pick(), null), draft, null);
-  assert.equal(effect.draft.subRegionId, 'shoulder.posterior');
+test('an unresolved pick with no recorded area falls back to a COMPATIBLE draft', () => {
+  // Not a "keep" — with no recorded area the intent is unresolved, and the draft is
+  // only consulted for compatibility, never used to pick a candidate.
+  const intent = intentFromPick(pick(), null);
+  assert.equal(intent.kind === 'structure' ? intent.subRegion.kind : null, 'unresolved');
+  const effect = reducePickToDraft(intent, { subRegionId: 'shoulder.lateral', point: null }, null);
+  assert.equal(effect.draft.subRegionId, 'shoulder.lateral');
 });
 
 test('a unique candidate is adopted', () => {
@@ -286,4 +293,133 @@ test('an unresolvable pick changes nothing at all', () => {
   const effect = reducePickToDraft(intentFromPick({ kind: 'none' }, null), draft, null);
   assert.deepEqual(effect.draft, draft);
   assert.equal(effect.selectStructureId, null);
+});
+
+/* ================================================================== */
+/* an incompatible draft may not stay submittable                      */
+/* ================================================================== */
+
+/*
+ * The rule: the structure selection is certain and always stands; the AREA is
+ * reconciled against the structure's candidates. A pending area the structure
+ * cannot be in is cleared, because the "Use this location" button is gated only on
+ * the draft having an area — carry it forward and the user submits "the back of the
+ * shoulder, plus the deltoid", a record of something they did not indicate.
+ */
+
+const DELTOID = () =>
+  intentFromPick(
+    pick({ subRegionIds: ['shoulder.anterior', 'shoulder.lateral'] }),
+    null,
+  );
+
+test('1. a draft area the structure cannot be in is CLEARED, so it cannot be confirmed', () => {
+  // The exact reported path: draft posterior, record null, then a deltoid click.
+  const draft = { subRegionId: 'shoulder.posterior', point: { x: 0.2, y: 0.3 } };
+  const effect = reducePickToDraft(DELTOID(), draft, null);
+
+  assert.equal(
+    effect.draft.subRegionId,
+    null,
+    'an incompatible area stayed in the draft and was still submittable',
+  );
+  // The structure is still selected: that part of the click is certain.
+  assert.equal(effect.selectStructureId, 'asi:shoulder.deltoid');
+  assert.match(effect.announce, /Choose an area/);
+});
+
+test('2. a draft area the structure CAN be in is kept, still uncommitted', () => {
+  const draft = { subRegionId: 'shoulder.lateral', point: { x: 0.4, y: 0.5 } };
+  const effect = reducePickToDraft(DELTOID(), draft, null);
+
+  // Kept: the user already said it, and the structure genuinely can be there.
+  // Still a DRAFT — this function does not write the record, and the test below
+  // asserts the record is untouched.
+  assert.equal(effect.draft.subRegionId, 'shoulder.lateral');
+  assert.equal(effect.selectStructureId, 'asi:shoulder.deltoid');
+});
+
+test('3. a recorded area the structure can be in is KEEPed unchanged', () => {
+  const intent = intentFromPick(
+    pick({ subRegionIds: ['shoulder.anterior', 'shoulder.lateral'] }),
+    'shoulder.lateral',
+  );
+  assert.deepEqual(intent.kind === 'structure' ? intent.subRegion : null, {
+    kind: 'keep',
+    subRegionId: 'shoulder.lateral',
+  });
+  const effect = reducePickToDraft(intent, { subRegionId: null, point: null }, 'shoulder.lateral');
+  assert.equal(effect.draft.subRegionId, 'shoulder.lateral');
+});
+
+test('4. a compatible draft is not committed: only an effect exists', () => {
+  // Guards the boundary the review asked about. "Kept" must never mean "saved" —
+  // committing is the confirm button's job, through selectSubRegion.
+  const draft = { subRegionId: 'shoulder.lateral', point: null };
+  const effect = reducePickToDraft(DELTOID(), draft, null);
+  assert.equal(effect.draft.subRegionId, 'shoulder.lateral');
+  assert.equal('subRegionId' in effect, false, 'the effect claims to carry a record area');
+  // The only write it reports is the structure id, which BodyMap passes to select().
+  assert.deepEqual(Object.keys(effect).sort(), ['announce', 'draft', 'selectStructureId']);
+});
+
+test('5. an absent draft area stays absent', () => {
+  const effect = reducePickToDraft(DELTOID(), { subRegionId: null, point: null }, null);
+  assert.equal(effect.draft.subRegionId, null);
+});
+
+test('draftAreaIsCompatible is the whole rule, stated once', () => {
+  assert.equal(draftAreaIsCompatible(null, ['a', 'b']), true, 'no area cannot be incompatible');
+  assert.equal(draftAreaIsCompatible('b', ['a', 'b']), true);
+  assert.equal(draftAreaIsCompatible('c', ['a', 'b']), false);
+  // A structure that declares no sub-regions constrains nothing.
+  assert.equal(draftAreaIsCompatible('c', []), true);
+});
+
+/* ------------------------------------------------------------------ *
+ * The pin, decided rather than left to whichever branch ran first.
+ * ------------------------------------------------------------------ */
+
+test('clearing an incompatible area drops the pin that was dropped IN that area', () => {
+  // A point from the back of the shoulder cannot survive the back of the shoulder
+  // being invalidated: the confirm button would become reachable with a point the
+  // user never indicated for this structure.
+  //
+  // The pick carries NO point of its own here, so the only point in play is the stale
+  // one — which is the case where dropping it is observable at all.
+  const draft = { subRegionId: 'shoulder.posterior', point: { x: 0.2, y: 0.3 } };
+  const intent = intentFromPick(pick({ point: undefined }), null);
+  const effect = reducePickToDraft(intent, draft, null);
+  assert.equal(effect.draft.subRegionId, null);
+  assert.equal(effect.draft.point, null, 'a pin from the invalidated area survived');
+});
+
+test('clearing an incompatible area KEEPS a point that came from this very pick', () => {
+  // The pick's own point describes the structure the user just clicked, not the old
+  // area, so it belongs to the new draft.
+  const draft = { subRegionId: 'shoulder.posterior', point: { x: 0.2, y: 0.3 } };
+  const intent = intentFromPick(
+    pick({ subRegionIds: ['shoulder.anterior', 'shoulder.lateral'], point: { x: 0.51, y: 0.48 } }),
+    null,
+  );
+  const effect = reducePickToDraft(intent, draft, null);
+  assert.equal(effect.draft.subRegionId, null);
+  assert.deepEqual(effect.draft.point, { x: 0.51, y: 0.48 });
+});
+
+test('a compatible draft keeps its own pin when the pick adds none', () => {
+  const draft = { subRegionId: 'shoulder.lateral', point: { x: 0.4, y: 0.5 } };
+  const effect = reducePickToDraft(
+    intentFromPick(pick({ point: undefined }), null),
+    draft,
+    null,
+  );
+  assert.equal(effect.draft.subRegionId, 'shoulder.lateral');
+  assert.deepEqual(effect.draft.point, { x: 0.4, y: 0.5 });
+});
+
+test("a pick's own point wins over the draft pin, area compatible or not", () => {
+  // Stated once so the two branches of reconcileDraft cannot disagree about it.
+  const draft = { subRegionId: 'shoulder.lateral', point: { x: 0.4, y: 0.5 } };
+  assert.deepEqual(reducePickToDraft(DELTOID(), draft, null).draft.point, { x: 0.51, y: 0.48 });
 });

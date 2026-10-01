@@ -223,8 +223,9 @@ export function deriveAttribution(
       dataset: source.dataset,
       release: source.release,
       doi: source.doi ?? null,
-      conceptId: source.conceptId ?? null,
       archive: source.archive ?? null,
+      // NO conceptId. It is a per-structure fact and this is a scene-level one; see
+      // RendererSceneAttribution. It travels on the entry's `provenance` instead.
     },
     notice: deriveAssetNotice(licence, source),
     synthetic: isSyntheticManifest(manifest),
