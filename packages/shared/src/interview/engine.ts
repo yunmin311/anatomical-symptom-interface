@@ -701,12 +701,21 @@ export function nextQuestion(ctx: InterviewContext): InterviewQuestion | undefin
   );
 }
 
-export function questionProgress(ctx: InterviewContext): {
+/**
+ * How far through an interview someone is.
+ *
+ * Named rather than inlined, because the reopen endpoint hands it to the browser
+ * as part of a transport contract. An anonymous object type there would mean the
+ * client declaring its own copy of a shape the server produced.
+ */
+export interface QuestionProgress {
   answered: number;
   total: number;
   requiredLeft: number;
   outstanding: string[];
-} {
+}
+
+export function questionProgress(ctx: InterviewContext): QuestionProgress {
   const list = INTERVIEW[ctx.record.location.region] ?? [];
   const asked = askedIds(ctx.answers);
   const applicable = list.filter((question) => !question.showIf || question.showIf(ctx.record, asked));

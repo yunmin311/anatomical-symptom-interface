@@ -3,8 +3,16 @@
 **Question:** where do labelled, layered, licence-clean 3D anatomy models come from,
 and what does it cost to make one usable?
 
-**Status:** decision deferred. V1 ships with a schematic 2D SVG map. This doc records
-the options so the Phase 1 decision is an informed one rather than a scramble.
+**Status:** decided, and the pipeline is built. **BodyParts3D → GLB under CC BY 4.0**
+(Option A below), for a **shoulder vertical slice** in Phase 1. The manifest
+contract, the source mapping and the conversion pipeline all exist and are tested;
+`scripts/build-anatomy.mjs` runs the whole thing. What is missing is one external
+input file — the `isa_BP3D_4.0_obj_99.zip` mesh archive — and the exact file, URL
+and command are in `assets/anatomy/README.md`. The mesh format is a swappable
+detail: everything above the viewer keys off `asiId`.
+
+The 2D schematic stays the Phase 0 control and the fallback. It is not being
+replaced by this work.
 
 ## What we actually need
 
@@ -146,7 +154,7 @@ worthwhile, copying it is not.
 | Phase | Asset | Rationale |
 |---|---|---|
 | **Phase 0 (now)** | Schematic 2D SVG, authored in-repo | Validates "do users localise better visually?" in a day, with zero licensing and zero download. Already built. |
-| **Phase 1** | **BodyParts3D → GLB** under CC BY 4.0, decimated, with a generated `asi:*` manifest | FMA alignment is worth the pipeline, and the current licence carries no ShareAlike. Terms become a reference, not a guess. |
+| **Phase 1** | **BodyParts3D → GLB** under CC BY 4.0, decimated, with a generated `asi:*` manifest | FMA alignment is worth the pipeline, and the current licence carries no ShareAlike. Terms become a reference, not a guess. **Built:** manifest contract + pipeline, shoulder vertical slice, awaiting the mesh archive. |
 | **Phase 1 (alt)** | Z-Anatomy for rendering + BodyParts3D for terminology, if its licence clears | Best visual quality, still licence-clean. |
 | **Phase 2+** | Own pipeline in Blender, seeded from the above | Full control, own asset, own ID space. The only durable answer long-term. |
 

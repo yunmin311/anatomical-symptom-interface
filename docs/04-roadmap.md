@@ -22,7 +22,8 @@ located, structured, saveable record?
 - Deterministic pre-visit summary with coverage-aware missingness
 - Personal health map keyed by body region
 - Rule-based red flags, all honestly marked unreviewed, with a release gate
-- 225 unit tests, 38 API smoke checks, CI with a strict safety-metadata gate
+- 500 unit tests, 38 API smoke checks, and 21 reproducible gates via
+  `scripts/final-gates.sh` — including a strict safety-metadata gate
 
 **The milestone test from the plan (§12):** partially demonstrated. A user can go from
 free text to a located record to a doctor-readable summary. **Not yet demonstrated:**
@@ -48,24 +49,165 @@ need real humans.
 
 **Goal:** four regions working properly, with 3D.
 
-- [ ] **Usability validation.** Does visual localisation beat typing? Measure it.
-- [ ] **3D anatomy layer.** `Three3dAnatomyAdapter` over BodyParts3D under CC BY 4.0,
-      decimated, with a generated `asi:*` manifest. The `AnatomyAdapter` contract
-      already exists.
-- [ ] **Depth interaction.** The weakest part of the current UX. Users should be able to
-      say "not the skin, not the muscle, deeper" and have the model respond. This is
-      plan question §12.3 and it is unsolved.
+### Phase 1A — Core foundation + anatomy workspace · **built, integrated**
+
+Two branches were built in parallel and integrated on `phase1/integration`:
+
+- `phase1/core-foundation` (9 commits) — the storage layer.
+- `phase1/anatomy-workspace` (18 commits) — the renderer and workspace.
+
+The integration was not a merge that happened to succeed. Four contracts had to be
+reconciled, and in each case the two sides had agreed on different answers:
+
+- [x] **Schema migrations** replacing the rebuild-on-version-change policy.
+      Ordered, one transaction per step, applied on top of existing data. A file
+      that cannot be recognised is refused at startup, never deleted. Applied
+      migrations are checksummed, and a **legacy file with no migration table
+      adopts by shape** — the schema is authoritative and `user_version` is only a
+      claim. Recorded rows carry each migration's real name and checksum, so a
+      legacy database can be opened twice without becoming unreadable.
+- [x] **Restart persistence proven against the real service.** A test boots the
+      server, writes through HTTP, `SIGKILL`s it, boots it again on the same file
+      and reads everything back. Deliberately not seed-based: a seed-based
+      persistence test passes even when persistence is broken.
+- [x] **Anatomy asset manifest** as a real validated contract: `asiId`,
+      provenance, licence, attribution, FMA status, bounds and geometry budget,
+      with runtime validation. Strict schema, so a generated file cannot quietly
+      carry a clinical claim.
+- [x] **BodyParts3D conversion pipeline** running end to end for a **shoulder
+      vertical slice**: select, bind to `asiId`, reduce geometry, emit GLB, emit
+      manifest, enforce the budget. Byte-reproducible. *Blocked on one external
+      file* — see `assets/anatomy/README.md` for exactly which.
+- [x] **One asset authority.** The canonical `AssetManifest` in `@asi/shared` is
+      the only production description of an asset. The renderer's own contract is
+      named `RendererSceneManifest` and there is exactly one adapter
+      (`apps/web/src/anatomy/asset-scene-adapter.ts`) between them, one-directional.
+      Attribution is **derived** from `licence` and `source` and re-verified
+      against them, so a hand-written notice cannot stand in for the manifest.
+- [x] **The full render pipeline proven without the real asset.** canonical manifest
+      → validate → adapter → scene → GLB URL → real `GLTFLoader` → three.js scene
+      graph → descendant mesh → canonical `asiId` → structure selection, using
+      clearly-labelled synthetic geometry. One mesh per GLB, which is what the Core
+      pipeline actually emits.
+- [x] **A multi-sub-region structure is not truncated to one.** A structure
+      reachable from several sub-regions carries the whole canonical list, and the
+      renderer reports candidates rather than picking one. Picking a mesh must
+      never silently choose which part of the body the user meant.
+- [x] **Timeout-then-late-resolve asset leak fixed.** A GLB that missed the mount
+      deadline used to be deleted from the URL cache and then arrive unowned,
+      holding GPU buffers for the life of the page. Ownership is now a set of loads
+      that a retry cannot overwrite.
+- [x] **Spatial history read model**, server-authoritative. A place is
+      `(person, region, side, sub-region, quantised point cell)`; membership is
+      derived from the episodes rather than counted. The transport contract lives
+      in `@asi/shared` and **the browser no longer regroups it** — it maps places
+      for display and may not merge, dedupe or recount them.
+- [x] **Episode reopen wired up**, end to end through a restart:
+      create → answer → save → `SIGKILL` → history → reopen → viewer restored →
+      next question correct → continue → save → **the same episode id**.
+- [x] **Reopenable gate runner.** `scripts/final-gates.sh` resolves its own repo
+      root, starts and seeds its own servers, runs 21 named gates including
+      `evidence`, and reports PASS / FAIL / SKIP per gate — exiting non-zero on a
+      skip, so a gate that did not run never looks like one that passed.
+- [x] **Renderer, fallbacks, picking and accessibility** at browser level, against
+      real geometry, with the 2D map as the floor for every failure path.
+
+**Bugs this work exposed and fixed.** `body_regions.point_x` / `point_y` and
+`sub_region_id` had been permanently NULL — `createEpisode` called `ensureRegion`
+with nulls before the mutations ran and nothing called it again, so a pin dropped
+on the body map never reached the table that exists to hold it. Then place
+identity turned out to have no usable key at all, which split one place into two
+rows, or merged two places and overwrote a pin. And the client was re-deriving
+places the server had already decided, so two places the server kept apart came
+back as one mark. All three were semantic, not cosmetic, and all three are now
+tested from both sides.
+
+### Phase 1B — real anatomy in the viewer
+
+**Goal:** the renderer shows a real body, and the four V1 regions all work.
+
+Phase 1A is infrastructure. Nothing it built is anatomy yet — the viewer still
+shows placeholder volumes, because the asset it needs has not been supplied. This
+phase is that asset, and the semantics around it.
+
+- [ ] **1. The real BodyParts3D shoulder asset.** Obtain
+      `isa_BP3D_4.0_obj_99.zip` and run the existing pipeline. *This is the
+      critical-path item; everything below depends on it.*
+- [ ] **2. Verify the shoulder source mappings against the actual archive.** The
+      mapping table is written against a *description* of BodyParts3D, not the file.
+      Every `meshName` must be checked against the archive before it is trusted.
+- [ ] **3. `left` / `right` / laterality handling.** `laterality` is a canonical
+      field today and means nothing in the renderer. A mesh that is one side must
+      be mirrored, labelled and stored as one side.
+- [ ] **4. Real shoulder anatomy in the viewer**, via the adapter that already
+      exists — no new asset path.
+- [ ] **5. `neck` mapping.**
+- [ ] **6. `lower_back` mapping.**
+- [ ] **7. `knee` mapping.**
+- [ ] **8. Four regions with real anatomy**, which is when Phase 1 is done.
+- [ ] **9. A real spatial health map.** The read model and the presentation mapper
+      exist and are wired; the map still has to become a picture rather than a list
+      of counts.
+- [ ] **10. Episode reopen usability.** The flow works end to end and is tested;
+      whether people can find and use it is unmeasured.
+- [ ] **11. Answer editing semantics.** What happens to derived fields and safety
+      when an earlier answer is changed is undefined. This is a correctness
+      question, not a feature.
+- [ ] **12. Usability testing.** Does visual localisation beat typing? Measure it.
+
+Carried forward from Phase 1A and still genuinely open:
+
+- [ ] **Depth interaction.** The weakest part of the current UX. Users should be
+      able to say "not the skin, not the muscle, deeper" and have the model
+      respond. Plan §12.3, unsolved.
+- [ ] **Per-field suggested-vs-chosen provenance.** Today a field's provenance
+      strategy is fixed by the registry rather than by what actually happened.
+- [ ] **An explicit selection marker on return to Locate.** The user has to be able
+      to see that their previous visual selection survived.
+- [ ] **Question progress semantics.** "How far through am I" is currently derived
+      from which questions were displayed; whether that is the right definition is
+      a product question.
 - [ ] **Write `layTerm` for every V1 structure.** Kenhub standard. Unglamorous,
       non-negotiable.
-- [ ] **Terminology binding.** SNOMED CT + FMA, verified, one region at a time.
+- [ ] **FMA verification.** Every generated FMA binding is `unverified` until a
+      human checks it against the issuing authority.
 - [ ] **Clinical review of the red-flag rules.** Named reviewer, named source, both
-      false-positive and false-negative reasoning written down.
-- [ ] **Translate the red-flag copy**, and the router's region lexicon. A non-English
-      safety message is arguably worse than none.
-- [ ] **Voice input.** People describe pain out loud. `faster-whisper` locally.
-- [ ] **Playwright tests** for the rendered UI (the logic layer is tested; the DOM is not).
-- [ ] **Schema migrations** replacing the rebuild-on-version-change policy. Acceptable
-      now, unacceptable once a real user has records.
+      false-positive and false-negative reasoning written down. Until then the
+      release profile correctly refuses to start.
+
+---
+
+## Where this is going
+
+The web app is **not** the product. It is one client, and the only one that
+exists, which makes it easy to mistake for the destination.
+
+```text
+ASI Core                the domain: records, provenance, safety rules, interviews
+  └─ ASI API            a stable, provider-agnostic HTTP surface
+       └─ Standalone Web Anatomy Workspace   what ships first, local-first
+            └─ MCP / Plugin                  the same capabilities as a tool
+                 └─ ChatGPT and other AI clients
+```
+
+Each layer is defined by what it may depend on, not by what it happens to contain
+today:
+
+- **ASI Core** has no I/O and no network, so the safety-critical parts are
+  verifiable without a model in the loop.
+- **ASI API** names ASI's capabilities — localise a symptom, analyse a
+  description, resume an episode — not the model behind them. Swapping Anthropic
+  for anything OpenAI-compatible must not touch a route.
+- **The web workspace** is a first-class client, not the host. Everything it does
+  goes through the API, which is what makes the next two layers possible rather
+  than hypothetical.
+- **MCP / plugin** is the same read and write surface exposed to an agent that
+  already has a user relationship. **Not implemented, and deliberately not
+  implemented now** — the write path, the provenance rules and the safety gate
+  have to be right before an autonomous caller can reach them.
+- **ChatGPT and other AI clients** consume that. The reason the model may propose
+  and nothing else may decide is that these clients will be proposing, and the
+  boundary has to hold against a caller we do not control.
 
 ---
 

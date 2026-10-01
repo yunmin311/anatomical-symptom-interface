@@ -426,6 +426,10 @@ details > p {
   cursor: crosshair;
   overflow: visible;
 }
+/* The [hidden] attribute loses to an author display rule, so restate it. */
+.viewer-caption[hidden] {
+  display: none;
+}
 .viewer-caption {
   position: absolute;
   top: 32px;
@@ -1498,4 +1502,294 @@ details > p {
   fill: #c5c3b9;
   stroke: #71766d;
   stroke-dasharray: none;
+}
+
+/* ---------------- Phase 1A: anatomy workspace ---------------- */
+
+/* The 3D surface sits in the same field as the 2D map, so switching between
+   them does not move anything on the page. */
+.viewer3d {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+}
+.viewer3d__canvas {
+  position: relative;
+  flex: 1;
+  min-height: 320px;
+  overflow: hidden;
+  background: #dad8d0;
+  cursor: crosshair;
+}
+/* The canvas must not participate in layout: a percentage-sized canvas inside a
+   flex box that is sized by its content feeds its own size back in and grows
+   without bound. */
+.viewer3d__canvas > canvas {
+  position: absolute;
+  inset: 0;
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+.viewer3d__canvas.is-hidden {
+  display: none;
+}
+.viewer3d__toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-bottom: 10px;
+}
+.viewer3d__modes {
+  display: flex;
+  gap: 2px;
+}
+.viewer3d__mode {
+  padding: 6px 12px;
+  min-height: 44px;
+  display: inline-flex;
+  align-items: center;
+  font-size: 13px;
+  color: var(--muted);
+  border: 1px solid var(--line);
+}
+.viewer3d__mode.is-current {
+  color: var(--surface);
+  background: var(--accent);
+  border-color: var(--accent);
+  font-weight: 600;
+}
+/* A fixture must never read as a finished anatomy product. */
+.viewer3d__disclaimer {
+  flex: 1 1 260px;
+  min-width: 0;
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--muted);
+  border-left: 2px solid var(--candidate);
+  padding-left: 10px;
+}
+.viewer3d__fallback {
+  margin: 10px 0 0;
+  padding: 12px 14px;
+  font-size: 14px;
+  line-height: 1.5;
+  background: #f1eadd;
+  border-left: 3px solid var(--candidate);
+}
+
+.viewer-toolbar__views {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+  flex-wrap: wrap;
+  min-width: 0;
+}
+
+/* Back-view and profile marks: present, but never loud enough to be mistaken
+   for tissue boundaries. */
+.bodymap__details path {
+  fill: none;
+  stroke: #a9a99f;
+  stroke-linecap: round;
+}
+
+/* A sub-region the record has already stored, distinct from the pending pick. */
+.bodymap__zone-shape.is-recorded {
+  fill: #69485f26;
+  stroke: var(--accent);
+  stroke-width: 1;
+  stroke-dasharray: none;
+  opacity: 0.85;
+}
+.legend-mark--recorded {
+  background: #69485f26;
+  border: 1px solid var(--accent);
+}
+
+.subregion-option__hint {
+  font-size: 12px;
+  color: var(--muted);
+  font-weight: 400;
+}
+
+/* Depth is wired to the viewer, so the layers it controls have to be visible. */
+.depth-layers {
+  margin-top: 24px;
+  padding-top: 16px;
+  border-top: 1px solid var(--line);
+}
+.depth-layers ul {
+  list-style: none;
+  padding: 0;
+  margin: 0 0 12px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 6px;
+}
+.depth-layers li {
+  font-size: 12px;
+  line-height: 1.4;
+  padding: 4px 8px;
+  background: #eeede7;
+  border-radius: 3px;
+  color: var(--ink);
+}
+
+.candidate-item--rejected {
+  opacity: 0.62;
+  border-bottom-style: dotted;
+}
+.candidate-item--rejected h4 {
+  text-decoration: line-through;
+  text-decoration-color: var(--muted);
+}
+.link--quiet {
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.bodymap__svg.is-hidden {
+  display: none;
+}
+
+@media (max-width: 700px) {
+  .viewer3d__canvas {
+    min-height: 240px;
+  }
+  .viewer3d__toolbar {
+    gap: 8px;
+  }
+  .viewer-toolbar__views {
+    gap: 12px;
+  }
+}
+
+/* Where the body has history: the places the user actually pointed at, so the
+   index is a map of their body rather than a count of records. */
+.location-marks {
+  margin-top: 20px;
+  padding-top: 16px;
+  border-top: 1px solid var(--line);
+}
+.location-marks ul {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+.location-mark {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  width: 100%;
+  min-height: 44px;
+  padding: 8px 0;
+  background: none;
+  border: 0;
+  border-bottom: 1px solid var(--line);
+  text-align: left;
+  font-size: 14px;
+}
+.location-mark:hover {
+  color: var(--accent);
+}
+.location-mark__label {
+  overflow-wrap: anywhere;
+}
+.location-mark__count {
+  font-variant-numeric: tabular-nums;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+/* An idle 3D host must not occupy the flex row: at 375px it was taking the full
+   width and pushing the 2D body off-centre. */
+.viewer3d--idle {
+  display: none;
+}
+
+@media (max-width: 700px) {
+  /* Redundant next to the surface radio, and it squeezes the view radios. */
+  .viewer-toolbar__label {
+    display: none;
+  }
+}
+
+/* ------------------------------------------------------------------ *
+ * Anatomy attribution
+ *
+ * Reference material, not instruction. A `<details>` disclosure because it must
+ * be genuinely reachable without competing with the map, and because a
+ * hand-rolled toggle would be one more thing an accessibility gate has to be
+ * told about. Low-contrast greys are avoided in favour of the existing muted
+ * token so it stays legible against the same background as the map.
+ * ------------------------------------------------------------------ */
+.anatomy-attribution {
+  margin-top: 6px;
+  font-size: 0.8125rem;
+  color: var(--muted, #5b6470);
+}
+.anatomy-attribution > summary {
+  cursor: pointer;
+  /* 44px is the comfortable touch target; the text is small, so the padding
+     carries the size rather than the label. */
+  padding: 8px 10px;
+  border-radius: 6px;
+  display: inline-block;
+}
+.anatomy-attribution > summary:hover {
+  background: rgb(0 0 0 / 4%);
+}
+.anatomy-attribution > summary:focus-visible {
+  outline: 2px solid currentColor;
+  outline-offset: 2px;
+}
+.anatomy-attribution__body {
+  padding: 4px 10px 10px;
+  max-width: 62ch;
+}
+.anatomy-attribution__body h3 {
+  margin: 6px 0 4px;
+  font-size: 0.875rem;
+}
+.anatomy-attribution__body dl {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 2px 12px;
+  margin: 0;
+}
+.anatomy-attribution__body dt {
+  font-weight: 600;
+}
+/* The value column must not be squeezed onto one line by the label column. */
+.anatomy-attribution__body dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+/*
+ * The synthetic case is the one that must not be skimmable, so it is the only
+ * thing here that gets a border and a heavier weight. It is never colour-only:
+ * the sentence says it in words as well.
+ */
+.anatomy-attribution__warning {
+  margin: 4px 0 8px;
+  padding: 8px 10px;
+  border-left: 3px solid #8a6d1f;
+  background: #fdf6e3;
+  color: #3b3115;
+  font-weight: 500;
+}
+@media (prefers-color-scheme: dark) {
+  .anatomy-attribution__warning {
+    border-left-color: #c9a94a;
+    background: #2c2718;
+    color: #f0e6c8;
+  }
 }

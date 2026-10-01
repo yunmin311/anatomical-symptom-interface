@@ -14,9 +14,16 @@ export default defineConfig({
     },
   },
   server: {
-    port: 5173,
+    port: Number(process.env.ASI_WEB_PORT ?? 5173),
     proxy: {
-      '/api': { target: 'http://localhost:8787', changeOrigin: true },
+      // Configurable because a gate run cannot use the default: it starts the API
+      // on its own port so two runs cannot collide, and a hardcoded target meant
+      // every browser gate silently 502'd rather than failing loudly. Overridable
+      // also means the dev server can be pointed at a second checkout's API.
+      '/api': {
+        target: process.env.ASI_API_ORIGIN ?? 'http://localhost:8787',
+        changeOrigin: true,
+      },
     },
   },
   build: {

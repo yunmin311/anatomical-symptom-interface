@@ -14,7 +14,7 @@
 | UI | React | 19 | Largest ecosystem; nothing here is exotic. |
 | Build | Vite | 6 | Instant HMR, proxy to the API in dev, one alias for workspace source. |
 | State | Zustand | 5 | One store, no provider tree, no boilerplate for a session this shape. |
-| Tests | `node:test` | built-in | No runner dependency. 225 unit tests + 38 API smoke tests. |
+| Tests | `node:test` | built-in | No runner dependency. 500 unit tests + 38 API smoke tests + 21 browser gates |
 | Model | Anthropic Claude via `fetch` | — | Tool-use to force schema-shaped output. Optional: product works without it. |
 
 ## Deliberately NOT used yet
@@ -123,8 +123,17 @@ Full analysis in `docs/research/products-to-reuse.md`. The short version:
 
 | Layer | Tool | Count | What it protects |
 |---|---|---|---|
-| Domain | `node:test` | 28 | Provenance invariants, grounding, red flags, summary output |
-| API | `node:test` + `scripts/smoke.mjs` | 17 | End-to-end episode → confirm → summary → health map |
+| Domain | `node:test` | 215 | Provenance invariants, grounding, red flags, summary output, anatomy manifest validation |
+| Web | `node:test` | 202 | Session logic, renderer scene contract, the canonical→renderer adapter, GLB loading, picking, asset lifecycle, spatial presentation |
+| Server | `node:test` | 83 | Migrations and adoption, the single write path, place identity, restart persistence, episode reopen |
+| API | `node:test` + `scripts/smoke.mjs` | 38 | End-to-end episode → confirm → summary → health map |
+
+Browser-level coverage is a separate tier, run by `scripts/final-gates.sh`:
+interaction, accessibility (axe), hit-zone reachability, 3D mounting, the 2D
+fallback, real URL-GLB geometry, the 3D structure-click path, and the
+evidence capture. These are not unit
+tests and are not in the counts above, because they need a browser and a running
+server.
 
 Tests that exist specifically because the failure is dangerous:
 
@@ -134,10 +143,16 @@ Tests that exist specifically because the failure is dangerous:
 - `the cauda equina question is mandatory` — a safety gate cannot be made optional
 - `structure terminology is not fabricated as verified codes`
 - `nothing is grounded for a vague complaint` — refuses to guess
+- `a timed-out asset that resolves late is released` — a leak that only shows up
+  as a page that gets slower
+- `two places the server kept apart are two marks in the browser` — the client
+  re-deriving place identity would quietly merge them
+- `an adopted asset is released exactly once` — and a successful load is not
+  released underneath itself
 
-**Not yet tested, and should be:** the browser UI (needs Playwright), the interview
-answer → record mapping in `session.ts` (currently untested logic, and it is the part
-most likely to rot), and rule accuracy against real clinical vignettes.
+**Not yet tested, and should be:** rule accuracy against real clinical vignettes,
+and per-field answer *editing* semantics — what happens to derived fields and
+safety when an earlier answer is replaced is still undefined.
 
 # Commands
 
@@ -145,7 +160,10 @@ most likely to rot), and rule accuracy against real clinical vignettes.
 pnpm install
 pnpm dev              # server :8787 + web :5173
 pnpm typecheck        # all packages
-pnpm test             # domain unit tests
+pnpm test             # 500 unit tests across three packages
 pnpm seed             # reset to a 3-episode demo history
 node scripts/smoke.mjs   # 38 API checks against a running server
+bash scripts/final-gates.sh   # every gate: unit, build, smoke, safety metadata,
+                               # release gate, browser, a11y, 3D, fallback, URL GLB,
+                               # evidence. Starts and seeds its own servers.
 ```
