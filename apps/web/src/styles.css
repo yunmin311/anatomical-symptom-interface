@@ -1721,3 +1721,75 @@ details > p {
     display: none;
   }
 }
+
+/* ------------------------------------------------------------------ *
+ * Anatomy attribution
+ *
+ * Reference material, not instruction. A `<details>` disclosure because it must
+ * be genuinely reachable without competing with the map, and because a
+ * hand-rolled toggle would be one more thing an accessibility gate has to be
+ * told about. Low-contrast greys are avoided in favour of the existing muted
+ * token so it stays legible against the same background as the map.
+ * ------------------------------------------------------------------ */
+.anatomy-attribution {
+  margin-top: 6px;
+  font-size: 0.8125rem;
+  color: var(--muted, #5b6470);
+}
+.anatomy-attribution > summary {
+  cursor: pointer;
+  /* 44px is the comfortable touch target; the text is small, so the padding
+     carries the size rather than the label. */
+  padding: 8px 10px;
+  border-radius: 6px;
+  display: inline-block;
+}
+.anatomy-attribution > summary:hover {
+  background: rgb(0 0 0 / 4%);
+}
+.anatomy-attribution > summary:focus-visible {
+  outline: 2px solid currentColor;
+  outline-offset: 2px;
+}
+.anatomy-attribution__body {
+  padding: 4px 10px 10px;
+  max-width: 62ch;
+}
+.anatomy-attribution__body h3 {
+  margin: 6px 0 4px;
+  font-size: 0.875rem;
+}
+.anatomy-attribution__body dl {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 2px 12px;
+  margin: 0;
+}
+.anatomy-attribution__body dt {
+  font-weight: 600;
+}
+/* The value column must not be squeezed onto one line by the label column. */
+.anatomy-attribution__body dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+/*
+ * The synthetic case is the one that must not be skimmable, so it is the only
+ * thing here that gets a border and a heavier weight. It is never colour-only:
+ * the sentence says it in words as well.
+ */
+.anatomy-attribution__warning {
+  margin: 4px 0 8px;
+  padding: 8px 10px;
+  border-left: 3px solid #8a6d1f;
+  background: #fdf6e3;
+  color: #3b3115;
+  font-weight: 500;
+}
+@media (prefers-color-scheme: dark) {
+  .anatomy-attribution__warning {
+    border-left-color: #c9a94a;
+    background: #2c2718;
+    color: #f0e6c8;
+  }
+}

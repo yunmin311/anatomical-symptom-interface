@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState } from 'react';
 import { AnatomyWorkspace } from './workspace.ts';
 import type { WorkspaceStatus } from './workspace.ts';
-import { FIXTURE_MANIFEST } from './fixture-manifest.ts';
+import { ACTIVE_SCENE } from './active-scene.ts';
+import { AnatomyAttribution } from '../ui/AnatomyAttribution.tsx';
 import { anatomy } from '../state/session.ts';
 
 /**
@@ -43,7 +44,7 @@ export function Body3d({
     const host = hostRef.current;
     if (!host || !active) return;
     let cancelled = false;
-    const workspace = new AnatomyWorkspace(anatomy, { manifest: FIXTURE_MANIFEST });
+    const workspace = new AnatomyWorkspace(anatomy, { manifest: ACTIVE_SCENE });
     workspaceRef.current = workspace;
     const unsubscribe = workspace.subscribe((next) => {
       if (cancelled) return;
@@ -93,6 +94,13 @@ export function Body3d({
             {status.disclaimer}
           </p>
         )}
+        {/*
+          Attribution lives here, next to the geometry it describes. It is a
+          disclosure rather than a banner so it is reachable without competing with
+          the map, and it reads the canonical provenance through the adapter, so
+          there is no path by which a licence gets typed in by hand.
+        */}
+        <AnatomyAttribution scene={ACTIVE_SCENE} />
       </div>
 
       {/* The host is always mounted so a fallback has somewhere to go. */}
