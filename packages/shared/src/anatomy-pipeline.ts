@@ -29,8 +29,19 @@
  */
 import { REGIONS, getStructure } from './anatomy.ts';
 import type { BodyRegion } from './anatomy.ts';
-import { BODYPARTS3D_LICENCE, BODYPARTS3D_SOURCE, mappingFor } from './anatomy-mapping.ts';
-import type { MappingEntry, SourceCandidate } from './anatomy-mapping.ts';
+import {
+  BODYPARTS3D_LICENCE,
+  BODYPARTS3D_SOURCE,
+  PIPELINE_SIDES,
+  UNMAPPABLE_SHOULDER,
+  mappingFor,
+} from './anatomy-mapping.ts';
+import type {
+  MappingEntry,
+  PipelineSide,
+  SourceCandidate,
+  SourceSide,
+} from './anatomy-mapping.ts';
 import type { AssetManifest, AssetManifestEntry } from './anatomy-manifest.ts';
 
 /* ------------------------------------------------------------------ */
@@ -253,6 +264,16 @@ export interface Binding {
   asiId: string;
   meshName: string;
   fmaConceptId: string | null;
+  /**
+   * The side of THIS mesh, read from the source concept name.
+   *
+   * On the binding rather than only on the manifest, because it is what tells a
+   * human which of the source's two files was chosen, and a binding whose side is
+   * unrecorded cannot be audited.
+   */
+  side: SourceSide;
+  /** The source's English concept name, for auditing a binding. */
+  sourceLabel: string | null;
 }
 
 export interface Unmapped {
@@ -275,10 +296,16 @@ export interface SelectionResult {
  * Candidate order is preference order, first match wins. Two structures never
  * bind the same mesh: a mesh already claimed is not reused, because binding one
  * source mesh to two `asiId`s would make a visual selection ambiguous.
+ *
+ * `side` selects which of the source's sides this build represents, because one
+ * `asiId` is one structure and BodyParts3D carries two files for it. Passing no side
+ * means \"any\", which is only safe when a caller genuinely does not care — the CLI
+ * always passes one.
  */
 export function selectStructures(
   region: BodyRegion,
   availableMeshNames: readonly string[],
+  side?: SourceSide,
 ): SelectionResult {
   const mapping: readonly MappingEntry[] = mappingFor(region);
   const present = new Set(availableMeshNames);
@@ -299,10 +326,19 @@ export function selectStructures(
       continue;
     }
 
-    const hit = entry.candidates.find((c) => present.has(c.meshName) && !claimed.has(c.meshName));
+    const usable = side
+      ? entry.candidates.filter((c) => c.side === side)
+      : entry.candidates;
+    const hit = usable.find((c) => present.has(c.meshName) && !claimed.has(c.meshName));
     if (hit) {
       claimed.add(hit.meshName);
-      bound.push({ asiId: entry.asiId, meshName: hit.meshName, fmaConceptId: hit.fmaConceptId });
+      bound.push({
+        asiId: entry.asiId,
+        meshName: hit.meshName,
+        fmaConceptId: hit.fmaConceptId,
+        side: hit.side,
+        sourceLabel: hit.sourceLabel,
+      });
     } else {
       unmapped.push({
         asiId: entry.asiId,
@@ -329,6 +365,17 @@ export function meshFileName(asiId: string, region: BodyRegion): string {
   return `${region}/asi-${slug}.glb`;
 }
 
+/**
+ * Why a structure has no mesh, when we know.
+ *
+ * A build log that says only \"no source mesh expected\" leaves a reader unable to
+ * tell a deliberate decision from an unfinished mapping. The reason comes from the
+ * mapping, so the two cannot drift.
+ */
+export function unmappableReason(asiId: string): string | null {
+  return UNMAPPABLE_SHOULDER.find((u) => u.asiId === asiId)?.reason ?? null;
+}
+
 /** Sub-regions of `region` that offer `asiId`. Read from the domain, not the source. */
 export function subRegionsContaining(region: BodyRegion, asiId: string): string[] {
   return REGIONS[region].subRegions
@@ -339,8 +386,16 @@ export function subRegionsContaining(region: BodyRegion, asiId: string): string[
 export interface PipelineOptions {
   /** Target vertex-grid resolution per mesh. Higher means smaller output. */
   gridDivisions: number;
-  /** Laterality the generated meshes represent. */
-  laterality?: 'left' | 'right';
+  /**
+   * Which side this build represents, from `PIPELINE_SIDES`.
+   *
+   * Required rather than defaulted. It used to default to `'left'`, which meant a
+   * build that bound a RIGHT mesh still wrote `laterality: 'left'` into the
+   * manifest — the record would then claim a side the geometry does not have, and
+   * nothing downstream would notice. Making it required means the CLI has to state
+   * what it built.
+   */
+  side: PipelineSide;
   /** ISO date the source archive was obtained. */
   retrievedAt?: string;
   /** Archive filename, when it differs from the default. */
@@ -370,12 +425,21 @@ export function runPipeline(
   options: PipelineOptions,
 ): PipelineResult {
   const notes: string[] = [];
-  const selection = selectStructures(region, [...meshes.keys()]);
+
+  if (!PIPELINE_SIDES.includes(options.side))
+    throw new Error(
+      `pipeline side must be one of ${PIPELINE_SIDES.join(', ')}, got ${String(options.side)}`,
+    );
+
+  // The side matters for BINDING and for the manifest's `laterality`, so it goes
+  // into selection rather than being applied afterwards -- filtering after the fact
+  // would already have let the wrong side's file be chosen.
+  const selection = selectStructures(region, [...meshes.keys()], options.side);
 
   for (const u of selection.unmapped) {
     notes.push(
       u.expectedAbsent
-        ? `${u.asiId}: no source mesh expected (a space rather than solid anatomy)`
+        ? `${u.asiId}: no source mesh expected -- ${unmappableReason(u.asiId) ?? 'no counterpart in the source dataset'}`
         : `${u.asiId}: no source mesh found; tried ${u.tried.join(', ')}`,
     );
   }
@@ -403,7 +467,9 @@ export function runPipeline(
       layer: structure.layer,
       anatomicalLabel: structure.label,
       layTerm: structure.layTerm ?? null,
-      laterality: options.laterality ?? 'left',
+      // The side of the mesh that was actually loaded, not an assumption about the
+      // build: this is read off the source concept the binding recorded.
+      laterality: b.side,
       fma: {
         conceptId: b.fmaConceptId,
         // Nothing here has been checked against FMA Explorer. It stays
