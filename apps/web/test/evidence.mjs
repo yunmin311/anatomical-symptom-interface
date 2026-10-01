@@ -83,6 +83,93 @@ for (const width of [1440, 768, 375]) {
   if (depthChecked === 'Deep inside' && !fromLocalisation.includes('bone'))
     problems.push(`[${width}] deep depth did not expose a deep layer: ${fromLocalisation.join(',')}`);
 
+  /*
+   * Renderer-side proof, in the browser, against the live 3D adapter.
+   *
+   * The layer list above is read from the UI, which is driven by the SOURCE
+   * adapter. That can be right while the canvas is wrong — the source and the UI
+   * agree with each other and the renderer is the thing that drifted. So this
+   * mounts a real Three3dAnatomyAdapter, projects the live source state into
+   * it, and asserts on the RENDERER's own state and object visibility.
+   */
+  const rendererProof = await page.evaluate(async () => {
+    const [{ Three3dAnatomyAdapter }, { FIXTURE_MANIFEST }, { Svg2dAnatomyAdapter }] =
+      await Promise.all([
+        import('/src/anatomy/three3d.ts'),
+        import('/src/anatomy/fixture-manifest.ts'),
+        import('/src/anatomy/svg2d.ts'),
+      ]);
+    const canvas = document.createElement('canvas');
+    const stub = {
+      domElement: canvas,
+      setPixelRatio: () => {},
+      setSize: () => {},
+      render: () => {},
+      dispose: () => {},
+    };
+    const host = {
+      appendChild: () => {},
+      isConnected: true,
+      getBoundingClientRect: () => ({ left: 0, top: 0, width: 640, height: 480 }),
+    };
+    const renderer = new Three3dAnatomyAdapter({
+      manifest: FIXTURE_MANIFEST,
+      rendererFactory: () => stub,
+    });
+    await renderer.mount(host);
+
+    // Drive the same transitions the UI just performed, through the source.
+    const source = new Svg2dAnatomyAdapter();
+    const read = () => ({
+      layers: [...renderer.getState().visibleLayers].sort(),
+    });
+
+    const all = read();
+    source.apply({ type: 'setDepth', depth: 'deep' });
+    renderer.projectState(source.getState());
+    const deep = read();
+    source.apply({ type: 'setDepth', depth: 'superficial' });
+    renderer.projectState(source.getState());
+    const superficial = read();
+    renderer.dispose();
+
+    const DEEP_ONLY = ['bone', 'joint', 'nerve', 'vessel', 'ligament'];
+    return {
+      allHasSkin: all.layers.includes('skin'),
+      deepHasSkin: deep.layers.includes('skin'),
+      deepHasBone: deep.layers.includes('bone'),
+      superficialHasDeep: superficial.layers.filter((l) => DEEP_ONLY.includes(l)),
+      deep: deep.layers,
+      superficial: superficial.layers,
+    };
+  });
+  if (!rendererProof.allHasSkin)
+    problems.push(`[${width}] renderer harness did not start from every layer`);
+  if (rendererProof.deepHasSkin)
+    problems.push(
+      `[${width}] renderer still showed skin at deep: ${rendererProof.deep.join(',')}`,
+    );
+  if (!rendererProof.deepHasBone)
+    problems.push(`[${width}] renderer showed no bone at deep: ${rendererProof.deep.join(',')}`);
+  if (rendererProof.superficialHasDeep.length)
+    problems.push(
+      `[${width}] renderer kept deep-only layers at superficial: ${rendererProof.superficialHasDeep.join(',')}`,
+    );
+  // The UI's own list and the renderer's list must agree, not merely both be
+  // "plausible".
+  if (depthChecked === 'Deep inside') {
+    const ui = [...fromLocalisation].sort();
+    const rendererDeep = [...rendererProof.deep].sort();
+    if (JSON.stringify(ui) !== JSON.stringify(rendererDeep))
+      problems.push(
+        `[${width}] UI and renderer disagree on layers: ui=[${ui}] renderer=[${rendererDeep}]`,
+      );
+    else
+      console.log(
+        `  [${width}] UI and renderer agree on layers: ${rendererDeep.join(',')}`,
+      );
+  }
+
   const deep = group.getByLabel('Deep inside');
   if (await deep.count()) {
     if (!(await deep.isChecked())) await deep.check();
