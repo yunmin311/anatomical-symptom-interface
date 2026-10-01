@@ -135,6 +135,19 @@ export interface PickResult {
   kind: 'subregion' | 'structure' | 'none';
   /** A manifest `asiId`. Absent when nothing was hit. */
   asiId?: string;
+  /**
+   * The hit's FULL canonical sub-region list, whole and in order.
+   *
+   * A structure reachable from several sub-regions cannot say which one the user
+   * meant by being clicked, so the pick reports the candidates rather than
+   * choosing one. A consumer that wants a single value must ask whether there is
+   * exactly one, using `resolveSubRegionForStructure`.
+   */
+  subRegionIds?: string[];
+  /**
+   * Present ONLY when there is exactly one sub-region, i.e. exactly one correct
+   * answer. Never the first of several.
+   */
   subRegionId?: string;
   structureId?: string;
   /** Normalised 0..1 surface point, so a pin means the same in 2D and 3D. */

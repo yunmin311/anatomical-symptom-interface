@@ -18,8 +18,8 @@ import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { Three3dAnatomyAdapter } from '../src/anatomy/three3d.ts';
 import { AnatomyWorkspace } from '../src/anatomy/workspace.ts';
 import { Svg2dAnatomyAdapter } from '../src/anatomy/svg2d.ts';
-import { ManifestError } from '../src/anatomy/manifest.ts';
-import type { AnatomyManifest, ManifestEntry } from '../src/anatomy/manifest.ts';
+import { SceneManifestError } from '../src/anatomy/scene-manifest.ts';
+import type { RendererSceneManifest, RendererSceneEntry } from '../src/anatomy/scene-manifest.ts';
 import type { GlbLoader } from '../src/anatomy/three3d.ts';
 import type { ViewerState } from '../src/anatomy/types.ts';
 import { buildFixtureGlb } from './fixtures/make-fixture-glb.mjs';
@@ -50,20 +50,23 @@ export const fileGlbLoader: GlbLoader = async (url) => {
 const NON_MEDICAL_NOTICE =
   'Test fixture geometry. Two quads in a Group. Not anatomy, not derived from a body.';
 
-function structureEntry(over: Partial<ManifestEntry> & { asiId: string }): ManifestEntry {
+function structureEntry(over: Partial<RendererSceneEntry> & { asiId: string }): RendererSceneEntry {
   return {
     kind: 'structure',
     region: 'shoulder',
-    subRegionId: 'shoulder.deltoid',
+    // A real sub-region, as a canonical list. The deltoid is reachable from both
+    // `shoulder.anterior` and `shoulder.lateral`, and the picker has to report
+    // the candidates rather than pick one.
+    subRegionIds: ['shoulder.anterior', 'shoulder.lateral'],
     structureId: over.asiId.replace('asi:', ''),
     layer: 'muscle',
     views: ['anterior', 'posterior', 'lateral_left', 'lateral_right'],
     ...over,
-  } as ManifestEntry;
+  } as RendererSceneEntry;
 }
 
 /** A manifest whose entries all come from one GLB. */
-function urlManifest(entries: ManifestEntry[], over: Partial<AnatomyManifest> = {}): AnatomyManifest {
+function urlManifest(entries: RendererSceneEntry[], over: Partial<RendererSceneManifest> = {}): RendererSceneManifest {
   return {
     version: 'url-test',
     source: 'fixture',
@@ -76,7 +79,7 @@ function urlManifest(entries: ManifestEntry[], over: Partial<AnatomyManifest> = 
 }
 
 /** The whole-asset case: the manifest binds the GLB's Group root. */
-function groupManifest(over: Partial<AnatomyManifest> = {}): AnatomyManifest {
+function groupManifest(over: Partial<RendererSceneManifest> = {}): RendererSceneManifest {
   return urlManifest(
     [
       structureEntry({
@@ -90,7 +93,7 @@ function groupManifest(over: Partial<AnatomyManifest> = {}): AnatomyManifest {
 }
 
 /** A single named node out of the same file. */
-function nodeManifest(nodeName: string, asiId = 'asi:shoulder.deltoid'): AnatomyManifest {
+function nodeManifest(nodeName: string, asiId = 'asi:shoulder.deltoid'): RendererSceneManifest {
   return urlManifest([
     structureEntry({ asiId, layer: 'muscle', geometry: { type: 'url', url: FIXTURE_URL, nodeName } }),
   ]);
@@ -164,7 +167,7 @@ function stubRenderer(host: FakeElement): THREE.WebGLRenderer {
   return renderer as unknown as THREE.WebGLRenderer;
 }
 
-function adapterFor(manifest: AnatomyManifest, over: Record<string, unknown> = {}) {
+function adapterFor(manifest: RendererSceneManifest, over: Record<string, unknown> = {}) {
   return new Three3dAnatomyAdapter({
     manifest,
     rendererFactory: () => stubRenderer({} as FakeElement),
@@ -297,7 +300,14 @@ test('B. a raycast on a descendant mesh resolves to the owning entry asiId', asy
       resolved += 1;
       // A leaf hit must still be a business id, never an engine handle.
       assert.equal(pick.structureId, 'shoulder.deltoid');
-      assert.equal(pick.subRegionId, 'shoulder.deltoid');
+      // Two candidate sub-regions, so there is NO singular answer and the pick
+      // must not invent one.
+      assert.deepEqual(pick.subRegionIds, ['shoulder.anterior', 'shoulder.lateral']);
+      assert.equal(
+        pick.subRegionId,
+        undefined,
+        'a pick with several candidate sub-regions must not report one as if it were the only one',
+      );
       assert.ok(pick.point, 'pick must carry a normalised point');
       assert.ok(pick.point!.x >= 0 && pick.point!.x <= 1);
       assert.ok(pick.point!.y >= 0 && pick.point!.y <= 1);
@@ -645,7 +655,7 @@ test('the fixture guard requires an external-asset notice when a url is present'
   delete (manifest as { externalAssetNotice?: string }).externalAssetNotice;
   assert.throws(
     () => new Three3dAnatomyAdapter({ manifest }),
-    (error: unknown) => error instanceof ManifestError && /externalAssetNotice/.test(String(error)),
+    (error: unknown) => error instanceof SceneManifestError && /externalAssetNotice/.test(String(error)),
   );
 });
 
@@ -658,7 +668,7 @@ test('a blank nodeName is rejected rather than meaning "the whole file"', () => 
   ]);
   assert.throws(
     () => new Three3dAnatomyAdapter({ manifest }),
-    (error: unknown) => error instanceof ManifestError && /nodeName/.test(String(error)),
+    (error: unknown) => error instanceof SceneManifestError && /nodeName/.test(String(error)),
   );
 });
 
@@ -668,7 +678,7 @@ test('an empty url is rejected', () => {
   ]);
   assert.throws(
     () => new Three3dAnatomyAdapter({ manifest }),
-    (error: unknown) => error instanceof ManifestError && /no url/.test(String(error)),
+    (error: unknown) => error instanceof SceneManifestError && /no url/.test(String(error)),
   );
 });
 

@@ -22,7 +22,7 @@
  */
 import { REGIONS, TISSUE_LAYER_ORDER } from '@asi/shared';
 import type { BodyRegion, Structure, SubRegion, TissueLayer } from '@asi/shared';
-import type { AnatomyManifest, ManifestEntry } from './manifest.ts';
+import type { RendererSceneManifest, RendererSceneEntry } from './scene-manifest.ts';
 import type { CameraPreset } from './types.ts';
 
 export const FIXTURE_DISCLAIMER =
@@ -380,8 +380,8 @@ const STRUCTURE_PROXIES: {
   },
 ];
 
-function subRegionEntries(): ManifestEntry[] {
-  const entries: ManifestEntry[] = [];
+function subRegionEntries(): RendererSceneEntry[] {
+  const entries: RendererSceneEntry[] = [];
   for (const [subRegionId, proxies] of Object.entries(SUBREGION_PROXIES)) {
     const region = subRegionId.split('.')[0] as BodyRegion;
     const domainSub = REGIONS[region]?.subRegions.find((s) => s.id === subRegionId);
@@ -390,7 +390,8 @@ function subRegionEntries(): ManifestEntry[] {
         asiId: `fixture:sub:${subRegionId}:${i}`,
         kind: 'subregion',
         region,
-        subRegionId,
+        subRegionIds: [subRegionId],
+        soleSubRegionId: subRegionId,
         // Sub-region volumes are proxies, not tissue, so they sit on the skin
         // layer: hiding "deep" tissue must not make a region unpickable.
         layer: 'skin',
@@ -404,12 +405,17 @@ function subRegionEntries(): ManifestEntry[] {
   return entries;
 }
 
-function structureEntries(): ManifestEntry[] {
+function structureEntries(): RendererSceneEntry[] {
   return STRUCTURE_PROXIES.map((proxy) => ({
     asiId: `fixture:struct:${proxy.structureId}`,
     kind: 'structure' as const,
     region: proxy.region,
-    subRegionId: proxy.subRegionId,
+    // The fixture declares exactly one sub-region per structure proxy, so the
+    // singular convenience is honest here. A structure reachable from several
+    // sub-regions gets the whole list and NO soleSubRegionId — see
+    // resolveSubRegionForStructure.
+    subRegionIds: [proxy.subRegionId],
+    soleSubRegionId: proxy.subRegionId,
     structureId: proxy.structureId,
     layer: proxy.layer,
     views: proxy.views,
@@ -418,7 +424,7 @@ function structureEntries(): ManifestEntry[] {
   }));
 }
 
-export function buildFixtureManifest(): AnatomyManifest {
+export function buildFixtureManifest(): RendererSceneManifest {
   return {
     version: 'phase1-fixture-1',
     source: 'fixture',
@@ -429,14 +435,14 @@ export function buildFixtureManifest(): AnatomyManifest {
 }
 
 /** The single instance the app uses while the real asset pipeline is pending. */
-export const FIXTURE_MANIFEST: AnatomyManifest = buildFixtureManifest();
+export const FIXTURE_MANIFEST: RendererSceneManifest = buildFixtureManifest();
 
 /** Convenience for tests: every sub-region in the ontology has fixture geometry. */
 export function fixtureCoversOntology(): { subRegions: string[]; structures: string[] } {
   const subRegions = new Set<string>();
   const structures = new Set<string>();
   for (const entry of FIXTURE_MANIFEST.entries) {
-    if (entry.subRegionId) subRegions.add(entry.subRegionId);
+    for (const sub of entry.subRegionIds) subRegions.add(sub);
     if (entry.structureId) structures.add(entry.structureId);
   }
   return { subRegions: [...subRegions], structures: [...structures] };

@@ -4,13 +4,13 @@ import { REGIONS, TISSUE_LAYER_ORDER } from '@asi/shared';
 import type { BodyRegion, Structure, SubRegion, TissueLayer } from '@asi/shared';
 import { FIXTURE_MANIFEST, buildFixtureManifest } from '../src/anatomy/fixture-manifest.ts';
 import {
-  ManifestError,
+  SceneManifestError,
   assertNonMedical,
   entriesFor,
-  indexManifest,
+  indexScene,
   verifyAgainstOntology,
-} from '../src/anatomy/manifest.ts';
-import type { AnatomyManifest } from '../src/anatomy/manifest.ts';
+} from '../src/anatomy/scene-manifest.ts';
+import type { RendererSceneManifest } from '../src/anatomy/scene-manifest.ts';
 import { CAMERA_PRESETS, Three3dAnatomyAdapter, layersForDepth, sortLayers } from '../src/anatomy/three3d.ts';
 import { Svg2dAnatomyAdapter, REGION_DEFAULT_VIEW } from '../src/anatomy/svg2d.ts';
 import {
@@ -45,7 +45,7 @@ test('the fixture manifest is self-declaring and non-medical', () => {
 });
 
 test('a fixture may not reference external assets', () => {
-  const smuggled: AnatomyManifest = {
+  const smuggled: RendererSceneManifest = {
     ...FIXTURE_MANIFEST,
     entries: [
       {
@@ -54,23 +54,23 @@ test('a fixture may not reference external assets', () => {
       },
     ],
   };
-  assert.throws(() => assertNonMedical(smuggled), ManifestError);
+  assert.throws(() => assertNonMedical(smuggled), SceneManifestError);
 });
 
 test('a fixture without a disclaimer is rejected', () => {
   const { disclaimer: _drop, ...rest } = FIXTURE_MANIFEST;
-  assert.throws(() => assertNonMedical(rest as AnatomyManifest), ManifestError);
+  assert.throws(() => assertNonMedical(rest as RendererSceneManifest), SceneManifestError);
 });
 
 test('the manifest indexes one entry per asiId and rejects duplicates', () => {
-  const index = indexManifest(FIXTURE_MANIFEST);
+  const index = indexScene(FIXTURE_MANIFEST);
   assert.equal(index.size, FIXTURE_MANIFEST.entries.length);
   for (const entry of FIXTURE_MANIFEST.entries) assert.ok(index.has(entry.asiId));
-  const duplicated: AnatomyManifest = {
+  const duplicated: RendererSceneManifest = {
     ...FIXTURE_MANIFEST,
     entries: [FIXTURE_MANIFEST.entries[0]!, FIXTURE_MANIFEST.entries[0]!],
   };
-  assert.throws(() => indexManifest(duplicated), ManifestError);
+  assert.throws(() => indexScene(duplicated), SceneManifestError);
 });
 
 test('every asiId is stable, namespaced and free of engine handles', () => {
@@ -94,7 +94,7 @@ test('structure entries bind to real domain structure ids', () => {
 });
 
 test('the manifest cannot claim anatomy the ontology does not define', () => {
-  const bogus: AnatomyManifest = {
+  const bogus: RendererSceneManifest = {
     ...FIXTURE_MANIFEST,
     entries: [
       {
@@ -105,13 +105,11 @@ test('the manifest cannot claim anatomy the ontology does not define', () => {
       },
     ],
   };
-  assert.throws(() => verifyAgainstOntology(bogus, allSubRegions(), allStructures()), ManifestError);
+  assert.throws(() => verifyAgainstOntology(bogus, allSubRegions(), allStructures()), SceneManifestError);
 });
 
 test('every sub-region in the ontology has geometry, in at least one view', () => {
-  const covered = new Set(
-    FIXTURE_MANIFEST.entries.map((e) => e.subRegionId).filter(Boolean),
-  );
+  const covered = new Set(FIXTURE_MANIFEST.entries.flatMap((e) => e.subRegionIds));
   for (const sub of allSubRegions())
     assert.ok(covered.has(sub.id), `no fixture geometry for ${sub.id}`);
   for (const sub of allSubRegions())
@@ -166,8 +164,8 @@ test('layers are ordered superficial to deep', () => {
 test('the adapter refuses a fixture that cannot declare itself', () => {
   const { disclaimer: _drop, ...rest } = FIXTURE_MANIFEST;
   assert.throws(
-    () => new Three3dAnatomyAdapter({ manifest: rest as AnatomyManifest }),
-    ManifestError,
+    () => new Three3dAnatomyAdapter({ manifest: rest as RendererSceneManifest }),
+    SceneManifestError,
   );
 });
 

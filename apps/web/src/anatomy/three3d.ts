@@ -27,9 +27,9 @@ import type { BodyRegion, Depth, Structure, SubRegion, TissueLayer } from '@asi/
 import {
   assertNonMedical,
   entriesFor,
-  indexManifest,
-} from './manifest.ts';
-import type { AnatomyManifest, ManifestEntry } from './manifest.ts';
+  indexScene,
+} from './scene-manifest.ts';
+import type { RendererSceneManifest, RendererSceneEntry } from './scene-manifest.ts';
 import type {
   CameraPreset,
   MapPoint,
@@ -128,7 +128,7 @@ function readPalette(host: HTMLElement): Palette {
 }
 
 export interface Three3dOptions {
-  manifest: AnatomyManifest;
+  manifest: RendererSceneManifest;
   /**
    * Force failure of mount(). Exists so the fallback path is testable without
    * having to actually break a GPU context.
@@ -165,6 +165,53 @@ export interface Three3dOptions {
  */
 export type GlbLoader = (url: string) => Promise<{ scene: THREE.Object3D }>;
 
+/**
+ * One asset load, and who is responsible for the geometry it produces.
+ *
+ * The three flags exist because the interesting cases are all about a load that
+ * outlives the attempt that started it:
+ *
+ *  - a load that resolved but was never adopted (the mount timed out, or the
+ *    viewer was disposed mid-load) has geometry nobody will ever draw and must be
+ *    released the moment it arrives;
+ *  - a load that WAS adopted is in use, so it stays alive until dispose;
+ *  - `abandoned` marks a load that can no longer be adopted, which is what lets a
+ *    late resolve know it must release itself.
+ */
+interface AssetLoad {
+  promise: Promise<{ scene: THREE.Object3D }>;
+  /** The loaded scene, set as soon as the promise fulfils. */
+  loaded: { scene: THREE.Object3D } | null;
+  /** True once a clone of this load was added to a live scene. */
+  adopted: boolean;
+  /** True when this attempt can no longer be adopted, however it ends. */
+  abandoned: boolean;
+}
+
+/**
+ * Renderer resource accounting, for tests and gates.
+ *
+ * Exposed rather than reached into, because the question these numbers answer —
+ * "after a timeout and a late resolve, is anything left?" — is only meaningful
+ * if it can be asked of a disposed viewer, and private fields disappear in a
+ * production build. A leak gate that has to guess at field names is a leak gate
+ * that quietly stops working.
+ */
+export interface RendererResources {
+  /** Loads this viewer owns and has not finished accounting for. */
+  outstandingAssets: number;
+  /** URL cache entries, which is the sharing optimisation and nothing more. */
+  cacheEntries: number;
+  /** Entries adopted into the scene, keyed by asiId. */
+  sceneObjects: number;
+  /** Nodes in the scene graph, at every depth. */
+  sceneNodes: number;
+  /** Whether a canvas is attached to the renderer. */
+  canvasAttached: boolean;
+  /** A pending animation frame handle, or 0 when none is scheduled. */
+  frameHandle: number;
+}
+
 const DEFAULT_ASSET_TIMEOUT_MS = 15_000;
 
 /**
@@ -186,8 +233,8 @@ export class Three3dAnatomyAdapter implements RenderedViewer {
     requiresGpu: true,
   };
 
-  private manifest: AnatomyManifest;
-  private index: Map<string, ManifestEntry>;
+  private manifest: RendererSceneManifest;
+  private index: Map<string, RendererSceneEntry>;
   private state: ViewerState;
   private view: CameraPreset;
   private listeners = new Set<(state: ViewerState) => void>();
@@ -212,6 +259,22 @@ export class Three3dAnatomyAdapter implements RenderedViewer {
    * manifest says which part it wants.
    */
   private glbCache = new Map<string, Promise<{ scene: THREE.Object3D }>>();
+  /**
+   * OWNERSHIP of every load this viewer started, held SEPARATELY from the cache.
+   *
+   * The cache is a sharing optimisation, so it is allowed to forget: a rejected
+   * or timed-out entry is deleted from it so the next mount retries. That delete
+   * used to also destroy the only reference to the in-flight loader promise — and
+   * a loader promise that resolves AFTER the timeout allocates real GPU buffers
+   * that nothing would then release. The geometry stayed alive for the life of
+   * the page.
+   *
+   * So ownership does not live in the cache. Every promise ever started is held
+   * here until it has settled AND been either adopted or released, and `dispose`
+   * releases anything still outstanding. Nothing allocated by this viewer is
+   * reachable only through a cache entry that may be evicted.
+   */
+  private assetOwnership = new Map<string, AssetLoad>();
   private pickables: THREE.Object3D[] = [];
   private renderer: THREE.WebGLRenderer | null = null;
   private scene: THREE.Scene | null = null;
@@ -239,7 +302,7 @@ export class Three3dAnatomyAdapter implements RenderedViewer {
     this.manifest = opts.manifest;
     // A fixture must be self-declaring, or it could be shown as anatomy.
     assertNonMedical(this.manifest);
-    this.index = indexManifest(this.manifest);
+    this.index = indexScene(this.manifest);
     this.state = {
       region: 'shoulder',
       visibleSubRegionIds: [],
@@ -263,7 +326,7 @@ export class Three3dAnatomyAdapter implements RenderedViewer {
     return this.view;
   }
 
-  getManifest(): AnatomyManifest {
+  getManifest(): RendererSceneManifest {
     return this.manifest;
   }
 
@@ -540,7 +603,11 @@ export class Three3dAnatomyAdapter implements RenderedViewer {
       return {
         kind: entry.kind === 'structure' ? 'structure' : 'subregion',
         asiId,
-        subRegionId: entry.subRegionId,
+        // The whole canonical list, and a singular field ONLY when there is
+        // exactly one answer. `soleSubRegionId` is verified against the list by
+        // indexScene, so it can never be "the first of several".
+        subRegionIds: [...entry.subRegionIds],
+        ...(entry.soleSubRegionId ? { subRegionId: entry.soleSubRegionId } : {}),
         structureId: entry.structureId,
         point: {
           x: clamp01(
@@ -608,6 +675,29 @@ export class Three3dAnatomyAdapter implements RenderedViewer {
     return this.contextLost;
   }
 
+  /**
+   * What this viewer still holds.
+   *
+   * The leak question that matters is asked AFTER dispose, when the answer should
+   * be zero for everything: a timeout that falls back to 2D and then has its
+   * loader resolve anyway is the case that used to leave real geometry behind
+   * with no reachable owner.
+   */
+  resources(): RendererResources {
+    let sceneNodes = 0;
+    this.scene?.traverse(() => {
+      sceneNodes += 1;
+    });
+    return {
+      outstandingAssets: this.assetOwnership.size,
+      cacheEntries: this.glbCache.size,
+      sceneObjects: this.objects.size,
+      sceneNodes,
+      canvasAttached: Boolean(this.renderer?.domElement?.parentNode),
+      frameHandle: this.frame,
+    };
+  }
+
   dispose(): void {
     this.disposed = true;
     if (this.frame) cancelFrame(this.frame);
@@ -625,17 +715,18 @@ export class Three3dAnatomyAdapter implements RenderedViewer {
       });
       this.scene.clear();
     }
-    // Assets already loaded but possibly not yet adopted are released here, so a
-    // dispose between "fetch resolved" and "scene.add" cannot leave geometry
-    // alive with nothing left to reach it.
-    for (const pending of this.glbCache.values()) {
-      pending.then(
-        (loaded) => releaseObject(loaded.scene),
-        () => {
-          /* already rejected; nothing was allocated */
-        },
-      );
+    // Release every asset this viewer owns, using OWNERSHIP rather than the URL
+    // cache. The cache can legitimately forget a url (a timeout deletes it so a
+    // retry is possible), and reaching only through the cache is exactly how a
+    // timed-out load that resolves later ended up with nothing left to release it.
+    for (const load of this.assetOwnership.values()) {
+      load.abandoned = true;
+      // Already resolved and adopted: release here, since the release rule in
+      // armAssetRelease deliberately left it alone.
+      if (load.loaded) releaseObject(load.loaded.scene);
+      // Still pending: `abandoned` makes its own late resolve release it.
     }
+    this.assetOwnership.clear();
     this.glbCache.clear();
     this.objects.clear();
     this.ownerOf.clear();
@@ -696,7 +787,7 @@ export class Three3dAnatomyAdapter implements RenderedViewer {
       urlEntries.map(async (entry) => ({ entry, root: await this.buildUrlRoot(entry) })),
     );
 
-    const adopted: Array<{ entry: ManifestEntry; root: THREE.Object3D }> = [];
+    const adopted: Array<{ entry: RendererSceneEntry; root: THREE.Object3D }> = [];
     const failures: string[] = [];
     for (const outcome of settled) {
       if (outcome.status === 'fulfilled') adopted.push(outcome.value);
@@ -729,6 +820,32 @@ export class Three3dAnatomyAdapter implements RenderedViewer {
   }
 
   /**
+   * Arm the release rule for a load, ONCE, at the moment it is created.
+   *
+   * Armed here rather than at adoption on purpose. The failure this exists for is
+   * one where the viewer has already stopped caring: mount timed out, so nobody
+   * is awaiting the promise any more, so whatever arming it at adoption would
+   * mean never runs. The rule has to be in place before the outcome is known.
+   *
+   * `adopted` is read at fulfilment time, which is exactly the information the
+   * decision needs: a clone that went into a live scene shares this geometry, so
+   * releasing it here would blank a structure that is on screen.
+   */
+  private armAssetRelease(load: AssetLoad): void {
+    load.promise.then(
+      (loaded) => {
+        load.loaded = loaded;
+        // Nothing adopted it and nothing ever will, so the geometry it just
+        // allocated has to go back now. This is the late-resolve case.
+        if (!load.adopted) releaseObject(loaded.scene);
+      },
+      () => {
+        /* rejected: the loader never produced a scene, so nothing was allocated */
+      },
+    );
+  }
+
+  /**
    * Resolve one url entry to a root Object3D, or throw.
    *
    * A clone is taken rather than the loaded node itself: one file may back
@@ -736,25 +853,30 @@ export class Three3dAnatomyAdapter implements RenderedViewer {
    * parent or a transform. Geometry is shared by the clone, which is what three
    * expects and what makes this cheap.
    */
-  private async buildUrlRoot(entry: ManifestEntry): Promise<THREE.Object3D> {
+  private async buildUrlRoot(entry: RendererSceneEntry): Promise<THREE.Object3D> {
     if (entry.geometry.type !== 'url') throw new Error('buildUrlRoot called on a primitive entry');
     const url = entry.geometry.url;
     const loader = this.opts.loadGlb ?? defaultGlbLoader;
     const timeoutMs = this.opts.assetTimeoutMs ?? DEFAULT_ASSET_TIMEOUT_MS;
 
-    let cached = this.glbCache.get(url);
-    if (!cached) {
-      // Cached by URL, and the cache entry is created before the await so two
-      // entries pointing at one file share a single load.
-      cached = loader(url);
-      this.glbCache.set(url, cached);
+    let load = this.assetOwnership.get(url);
+    if (!load) {
+      load = { promise: loader(url), loaded: null, adopted: false, abandoned: false };
+      this.assetOwnership.set(url, load);
+      this.armAssetRelease(load);
+      this.glbCache.set(url, load.promise);
     }
     let loaded: { scene: THREE.Object3D };
     try {
-      loaded = await withTimeout(cached, timeoutMs, url);
+      loaded = await withTimeout(load.promise, timeoutMs, url);
     } catch (cause) {
-      // A rejected cache entry must not poison the next mount of this viewer.
+      // This attempt is over. It will never be adopted, so its geometry is on its
+      // own the moment it arrives.
+      load.abandoned = true;
+      // The cache entry goes so the next mount retries a timed-out URL instead of
+      // being handed the same promise that already failed the deadline.
       this.glbCache.delete(url);
+      this.assetOwnership.delete(url);
       throw new Error(`asset ${url} failed to load (${describe(cause)})`);
     }
 
@@ -772,10 +894,14 @@ export class Three3dAnatomyAdapter implements RenderedViewer {
     if (!hasMesh(node))
       throw new Error(`node "${node?.name || url}" contains no mesh for ${entry.asiId}`);
 
+    // Keep the load alive past the node lookup: the clone below shares this
+    // geometry, and `loadUrlGeometry` marks it adopted once the root is in a live
+    // scene. A load that gets that far is in use.
+    load.adopted = true;
     return node.clone(true);
   }
 
-  private materialFor(entry: ManifestEntry): THREE.MeshStandardMaterial {
+  private materialFor(entry: RendererSceneEntry): THREE.MeshStandardMaterial {
     const s = this.state;
     const material = new THREE.MeshStandardMaterial({
       roughness: 0.72,
@@ -783,7 +909,8 @@ export class Three3dAnatomyAdapter implements RenderedViewer {
       transparent: true,
     });
     if (entry.kind === 'subregion') {
-      const active = s.visibleSubRegionIds.includes(entry.subRegionId ?? '');
+      // A sub-region proxy is active when its own one sub-region is visible.
+      const active = s.visibleSubRegionIds.includes(entry.soleSubRegionId ?? '');
       material.color.setHex(active ? this.palette.active : this.palette.idle);
       material.opacity = active ? 0.95 : 0.8;
       return material;

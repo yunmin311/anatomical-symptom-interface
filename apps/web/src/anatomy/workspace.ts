@@ -13,7 +13,7 @@
  * says so in words. A Locate screen must never be a blank canvas.
  */
 import { Three3dAnatomyAdapter } from './three3d.ts';
-import type { AnatomyManifest } from './manifest.ts';
+import type { RendererSceneManifest } from './scene-manifest.ts';
 import { FIXTURE_MANIFEST } from './fixture-manifest.ts';
 import type {
   AnatomyAdapter,
@@ -58,7 +58,7 @@ const MESSAGES: Record<Exclude<FallbackReason, null>, string> = {
 };
 
 export interface WorkspaceOptions {
-  manifest?: AnatomyManifest;
+  manifest?: RendererSceneManifest;
   /** Force the next start() to fail, for fallback tests. */
   failMount?: boolean;
   /**
@@ -71,7 +71,7 @@ export interface WorkspaceOptions {
 
 export class AnatomyWorkspace {
   private source: AnatomyAdapter;
-  private manifest: AnatomyManifest;
+  private manifest: RendererSceneManifest;
   private viewer: Three3dAnatomyAdapter | null = null;
   private status: WorkspaceStatus;
   private listeners = new Set<(status: WorkspaceStatus) => void>();
@@ -231,7 +231,7 @@ export class AnatomyWorkspace {
     return this.viewer?.isLive() ? this.viewer : null;
   }
 
-  get manifestRef(): AnatomyManifest {
+  get manifestRef(): RendererSceneManifest {
     return this.manifest;
   }
 
