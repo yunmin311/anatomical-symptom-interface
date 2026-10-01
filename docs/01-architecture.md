@@ -120,17 +120,76 @@ makes a pin and the map that shows it impossible to disagree.
 ## Read models
 
 Two Phase 1A additions, both server-side on purpose. A client that re-derives
-something the server already knows will eventually disagree with it.
+something the server already knows will eventually disagree with it — and did.
 
 - **`/api/healthmap/:personId/spatial`** — every place with its normalised point
   and the episodes behind it, so the browser never scans episodes to draw a body.
   A **location history, not a risk map**: episode count is how *often* a place was
   described, and nothing weighs it against anything.
+  The transport contract is `SpatialHistoryNode` in `@asi/shared`, not in the
+  server. The browser used to group episodes itself on region + sub-region + side
+  and therefore merged two places this endpoint had deliberately kept apart,
+  because a place is five fields wide and the client knew three of them. Sharing
+  the type is what makes that class of bug a compile error.
 - **`/api/episodes/:id/reopen`** — record, answers, next question, progress and
   outstanding fields, so a resuming session does not re-derive the interview
   position in the browser. The summary is deliberately excluded: rebuilding it
   evaluates the safety rules, and a resume must not re-present a blocked gate as
-  if it were new.
+  if it were new. Shared contract: `EpisodeReopen` in `@asi/shared`. Reopening
+  sets the **same** episode id, so continuing updates one record rather than
+  creating a second.
+
+Both are wired to the UI. Neither is a client-side schema, and the presentation
+layer above them may sort, label and filter but may not merge, dedupe or recount.
+
+
+## Anatomy assets: one authority, one adapter
+
+There is exactly one production description of an anatomy asset, and it is not in
+the viewer's layer.
+
+```text
+AssetManifest (@asi/shared)      asiId, meshName, region, subRegionIds, layer,
+   │   parseManifest /            anatomicalLabel, layTerm, laterality, FMA,
+   │   validateManifest           source, licence, geometry, bounds, file
+   │                              ← the production asset authority
+   ▼
+toRendererScene()                 ONE adapter, ONE direction. Converts file→URL
+   │                              and bounds→framing; carries asiId, layer and the
+   │                              whole subRegionIds list through untouched;
+   │                              derives the attribution notice.
+   ▼
+RendererSceneManifest (apps/web)  which mesh, which views, which layer, where to
+                                  aim the camera. Carries NO licence authority.
+   ▼
+renderer                         mounts, picks, falls back to 2D
+```
+
+Four decisions in that diagram are load-bearing:
+
+- **`asiId` is the only identity.** The source mesh name is provenance: third-party
+  terminologies get re-numbered and renamed, and an upstream rename must not
+  repoint a user's saved visual selection at a different structure.
+- **`subRegionIds` is a list and stays one.** One structure can legitimately be
+  reachable from several sub-regions — the deltoid is selectable from both
+  `shoulder.anterior` and `shoulder.lateral`, and one mesh serves both. The scene
+  carries the whole list; a `soleSubRegionId` exists only when there is exactly one
+  member; picking reports candidates rather than choosing. `subRegionIds[0]` is
+  the silent truncation this shape exists to prevent.
+- **Attribution is derived, not authored.** `externalAssetNotice` is computed from
+  `licence.attribution`, `source.dataset` and `source.release`, and
+  `assertSceneAttribution` recomputes it and refuses a scene whose string
+  disagrees. That is what makes "no hand-written notice" enforceable rather than
+  aspirational. A fixture may carry a licence — this project generated the
+  geometry — but may not claim a non-synthetic one, and no UI is given licence
+  evidence for one at all.
+- **`nodeName` is optional.** The Core pipeline emits one mesh per GLB, so
+  requiring a node name would make the adapter refuse every real asset it exists
+  to consume.
+
+The renderer has no other route to the canonical manifest, which is the point:
+a second authority for asset identity or licensing is how a scene ends up
+describing geometry the pipeline never produced.
 
 
 ## The rules the architecture enforces

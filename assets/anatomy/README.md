@@ -73,6 +73,37 @@ and will not fabricate a stand-in for it.
 The output is byte-reproducible: the same input produces the same manifest and the
 same GLBs, which is what makes a generated manifest reviewable.
 
+## How the manifest reaches the viewer
+
+There is exactly one path, and it is one-directional:
+
+```text
+manifest.json → parseManifest()      validate against the domain and the budget
+                → toRendererScene()   apps/web/src/anatomy/asset-scene-adapter.ts
+                → RendererSceneManifest → the renderer mounts it
+```
+
+Things worth knowing before you add a field or change one:
+
+- **The generated `manifest.json` is the asset authority.** The web app has a
+  renderer contract (`apps/web/src/anatomy/scene-manifest.ts`) and no licence
+  authority of its own. Do not extend one into the other.
+- **`subRegionIds` is a list and stays one.** The deltoid is reachable from both
+  `shoulder.anterior` and `shoulder.lateral`, and one mesh serves both. Neither
+  the adapter nor the renderer may reduce that to its first element; a
+  `soleSubRegionId` appears only when there is exactly one member.
+- **One mesh per file**, which is why the adapter deliberately does not set
+  `nodeName`. A future multi-part file sets it on the scene entry.
+- **Attribution is derived.** `externalAssetNotice` is computed from
+  `licence.attribution`, `source.dataset` and `source.release`, and
+  `assertSceneAttribution` refuses a scene whose string disagrees — so it cannot
+  be written by hand and cannot drift from the licence above.
+- **The pipeline is proven without the real archive**, using clearly-labelled
+  synthetic geometry in `apps/web/test/`: canonical manifest → validate → adapter
+  → scene → real GLB bytes → `GLTFLoader` → three.js scene graph → descendant
+  mesh → canonical `asiId` → structure selection. So the integration is tested
+  even though the asset is not here yet.
+
 ## Why the source ids are not our ids
 
 Every layer above the viewer keys off `asiId`, and the source `meshName` is
@@ -84,7 +115,8 @@ repoint a user's saved visual selection at a different structure. See
 ## Phase 1 scope
 
 Shoulder only, as a vertical slice. `neck`, `lower_back` and `knee` have no
-mapping yet and the build says so rather than guessing.
+mapping yet and the build says so rather than guessing. Carrying all four through
+the pipeline is Phase 1B.
 
 The `FMA` bindings in a generated manifest are `unverified`. Nothing has been
 checked against FMA Explorer, and a code is only marked `verified` after a human

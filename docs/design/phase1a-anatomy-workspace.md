@@ -48,7 +48,7 @@ asserts no `asiId` matches a UUID or an `ObjectN` pattern.
 
 ### The manifest seam
 
-`apps/web/src/anatomy/manifest.ts` is the **renderer scene contract** — how a
+`apps/web/src/anatomy/scene-manifest.ts` is the **renderer scene contract** — how a
 piece of geometry is handed to the viewer: which mesh, which views, which tissue
 layer, roughly where to point the camera. It is what lets the renderer contract
 be built and tested before any real asset exists, and it is the only thing that
@@ -58,7 +58,7 @@ It is **not** the production asset manifest, and must not be cited as one:
 
 - Asset **identity, provenance and licensing** are domain concerns. They belong
   to the canonical shared manifest,
-  `packages/shared/src/anatomy-manifest.ts`, landing with `phase1/core-foundation`.
+  `packages/shared/src/anatomy-manifest.ts`, landing with `phase1/core-foundation` and now **converted by** `apps/web/src/anatomy/asset-scene-adapter.ts`.
 - The web manifest deliberately carries **no licence, no source attestation and
   no asset provenance**. It cannot answer "may we ship this?" and is not meant to.
 - On integration, an **adapter converts the canonical manifest into this scene
@@ -192,28 +192,25 @@ canvas flex row, pushing the 2D body off-centre at 375px.
 
 ## Spatial history
 
-`apps/web/src/ui/spatial-history.ts` is the consumption boundary for the read
-model the main agent is building: region → location marks → episode count →
-most recent episode → inspect.
+`apps/web/src/ui/spatial-history.ts` used to derive places client-side, on
+region + sub-region + side. **It no longer does.**
 
-It is derived client-side from episodes the API already returns, adds no
-persisted field, and is explicitly **not** a second domain schema. A labelled
-fixture source stands in until the server read model lands; when it does, this
-becomes a fetch and the components do not change.
+Integration found that this was not a presentation detail but a semantic
+contradiction: the server groups by (person, region, side, sub-region, quantised
+point cell), so two episodes in one sub-region but different cells are two places
+— and the client merged them back into one mark, undoing a decision the storage
+layer had made deliberately and tested.
 
-A mark is region + sub-region + side, never a bare region — "shoulder" cannot
-place anything, and the same sub-region on opposite sides is two places. A mark
-carries a point only if an episode actually had a pin, so the index never places
-something the user did not indicate. "Most recent" means latest by date, not last
-fetched. Nothing models severity, score, risk or trend; a test asserts none of
-those words appear in the serialised model.
-
+The file is now a **presentation mapper** over `SpatialHistoryNode` from
+`GET /api/healthmap/:personId/spatial`. The contract lives in `@asi/shared`. It may
+sort, label and group by region; it may not merge, dedupe or recount, and its
+tests are mostly about not doing those things.
 ## Tests
 
 | Suite | What it covers |
 |---|---|
 | `anatomy.test.ts` (32) | manifest guards, `asiId` stability, depth→layer, camera distinctness, keyboard path, 2D geometry invariants including overlap and nearest-zone |
-| `spatial-history.test.ts` (11) | grouping, mark identity, recency, no-severity invariant |
+| `spatial-history.test.ts` (14) | one server node becomes one place; no merge, no dedupe, no recount; recency; no-severity invariant |
 | `hit-zones.mjs` | clicks every zone at 1440 and 375; asserts the matching sub-region and that no foreign region is drawn |
 | `three3d.mjs` | real WebGL mount, live context, fixture disclaimer, no leaked canvas |
 | `fallback.mjs` | no-WebGL, lost context, explicit 2D; map visible and Locate completable in each |
@@ -224,7 +221,7 @@ Every failure above was found by one of these, not by inspection.
 
 ## Evidence
 
-`data/design-phase1-evidence/index.html` (gitignored, local). 20 Phase 1A shots at
+`$ASI_SCREENSHOTS` (a temp dir; gitignored). Phase 1A shots at
 1440 / 768 / 375: both surfaces, all four views, depth with the layer list, the
 no-WebGL fallback, and the health map with location marks.
 

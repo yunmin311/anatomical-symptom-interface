@@ -1,22 +1,33 @@
-# Design / frontend handoff — V2
+# Design / frontend handoff
 
-2026-09-30. UI branch incorporates hardened main through `a0d64fe`. Shared/server,
-schema, safety rules, provenance policy, session.ts and state/logic.ts are unchanged
-relative to that main commit. The merges import the main agent's changes; they are
-not design-authored domain changes. No push or merge into main.
-
-> **Phase 1A (this branch, `phase1/anatomy-workspace`) supersedes the V2 notes
-> below where they touch the anatomy viewer.** V2 is merged into `main` at
-> `1f2f26e`. Phase 1A is built on that and adds
-> [`docs/design/phase1a-anatomy-workspace.md`](docs/design/phase1a-anatomy-workspace.md):
-> a 3D adapter behind the same contract, a manifest seam for real assets, a rebuilt
-> 2D map, depth wired to the viewer, a fallback that cannot white-screen, and a
-> spatial history read model. `session.ts` and `state/logic.ts` were already
-> domain-facing and remain free of domain changes; Phase 1A adds no persisted
-> field. The V2 sections are kept for history.
+> **Superseded in the anatomy-viewer sections by Phase 1A, which is now
+> INTEGRATED on `phase1/integration`.** The V2 notes below are kept for history;
+> where they disagree with the current code, the code is right and the note is
+> marked. Phase 1A added:
+> [`docs/design/phase1a-anatomy-workspace.md`](docs/design/phase1a-anatomy-workspace.md)
+> — a 3D adapter behind the unchanged `AnatomyAdapter` contract, a real
+> `RendererSceneManifest` fed by an adapter from the canonical asset manifest, a
+> rebuilt 2D map, depth wired to the viewer, a fallback that cannot white-screen,
+> server-authoritative spatial history, and working episode reopen.
+>
+> **What integration changed, for anyone who remembers the branch state:**
+>
+> - The near→ear lexical bug is **resolved** — boundary matching no longer treats
+>   a substring inside a word as a token.
+> - The viewer is no longer "not implemented": it loads real GLB bytes through
+>   the real `GLTFLoader`, resolves descendant meshes to canonical `asiId`s and
+>   selects structures.
+> - **Depth projection is resolved** — the record's depth reaches the viewer on
+>   every write.
+> - **Spatial history is server-authoritative.** It used to be derived in the
+>   browser, which silently merged two places the server had deliberately kept
+>   apart. The client now maps places for display and may not regroup them.
+> - `apps/web/src/anatomy/manifest.ts` is now
+>   `apps/web/src/anatomy/scene-manifest.ts`, and its types are named
+>   `RendererSceneManifest` / `RendererSceneEntry`. Two files called "the
+>   manifest" was a correctness hazard, not a style choice.
 
 ## Resolved since V1
-
 The old fallback-region presentation workaround is removed. UI uses authoritative
 `unsupported`, `refusal`, `clarification`, `answers`, `safety` and localisation `by`.
 Yes/no/unknown remain distinct. Candidate deselection calls main's `deselect` and
@@ -29,7 +40,7 @@ No private write endpoint, new field, medical question or altered rule was added
 
 | UI need | Current limitation / evidence | Minimal support | Blocking? |
 |---|---|---|---|
-| Natural English descriptions should reach supported regions | `My right shoulder hurts deep inside near the rotator cuff` returns unsupported. `detectOutOfScope` matches compact text substrings; `ear` matches `near`. Reproduced against the real deterministic service. | Fix lexical boundary matching in the router, keeping unsupported safety routing authoritative. Regression test for near/ear and other embedded tokens. | Blocks those descriptions; no frontend bypass. |
+| Natural English descriptions should reach supported regions | ~~`detectOutOfScope` matches compact text substrings; `ear` matches `near`.~~ **RESOLVED** — the router now matches on token boundaries, so `near` no longer triggers `ear`. Covered by a regression test in `packages/shared/test/grounding.test.ts`. Unsupported safety routing stays authoritative. | — none outstanding — | Closed. |
 | Truthful per-field “suggested” versus “chosen” labels after navigation | Session location contains proposed side/depth/subregion alongside user edits; no readable origin/interaction status per field in the frontend session. | Expose existing provenance/interaction status as read-only presentation metadata; do not invent another persisted authority. | Blocks precise per-field origin badges, not the workspace. UI says starting suggestion / current description, never medically confirmed. |
 | Restore approximate selection when returning to Locate | No reliable user-selected subregion marker separate from suggested subregion. Local pending choice is intentionally reset on remount. | Read-only marker distinguishing explicit user area choice from proposed subregion. | User must reselect area when returning; avoids silently accepting proposal. |
 | Faithful side/view/pin geometry | Point is x/y without a view or side coordinate frame. Existing 2D hit targets have schematic proportions and fixed side placement. | Specify coordinate/view semantics before geometry replacement, side mirroring, or 3D. | Blocks faithful mirrored/view-specific pins. UI explicitly says schematic; side/depth separate. |
@@ -41,13 +52,17 @@ No private write endpoint, new field, medical question or altered rule was added
 
 ## Deliberate scope limits
 
-- No anatomy asset replacement or 3D; the schematic geometry was reproportioned
-  (head, shoulders, waist, arm roots) but is still a silhouette, not an atlas.
-  Replacing it with a real asset remains the largest visual weakness.
+- **No real anatomy asset yet.** The viewer renders procedurally generated
+  placeholder volumes, clearly labelled as not anatomy. This is the single
+  largest remaining visual weakness and it is Phase 1B item 1.
+- The 2D schematic was reproportioned (head, shoulders, waist, arm roots) but is
+  still a silhouette, not an atlas.
 - Front and back share one silhouette and it does not mirror. The UI states this
   where a user could otherwise assume otherwise.
+- Patient-side mirroring in 3D is **undecided on purpose** — the adapter will not
+  guess which side of the figure a patient's left is.
 - No new body region or medical question; missing timeline/intensity data is not invented.
-- "Tissue filter" filters suggestions only. It does not pretend the 2D silhouette renders layers.
+- "Tissue filter" filters suggestions only. It does not pretend the silhouette renders layers.
 - History counts are records, not severity or risk. No scores, trends or diagnostic claims.
 - Empty/loading/error are separate. Offline deterministic mode still needs its local API service.
 - Incomplete records can be reviewed/saved as main permits. No new safety gate or safety clearance.
@@ -71,24 +86,42 @@ No private write endpoint, new field, medical question or altered rule was added
 - The `Skip to content` link visible in the earlier V2 screenshots was a stale
   stylesheet artefact, not a defect; the current CSS keeps it hidden until focus.
   Do not "fix" it.
-- Tooling note for whoever runs this next: `/mnt/e` does not emit inotify events,
-  so a Vite dev server keeps serving a stale transform cache after an edit. Clear
+- Tooling note: `/mnt/e` does not emit inotify events, so a Vite dev server keeps
+  serving a stale transform cache after an edit. Clear
   `apps/web/node_modules/.vite` and restart Vite, or CSS changes appear to do
-  nothing. Helper scripts live in the ignored `data/run/`.
+  nothing.
+- Helper scripts no longer live in the ignored `data/run/` — anything meant to be
+  reproducible belongs in `scripts/`. `scripts/final-gates.sh` is the entry point.
+- Browser gates need `playwright-core` and a chromium build that are deliberately
+  NOT repo dependencies. Install them into `~/.cache/asi-gate-tools`; when they
+  are absent the runner reports those gates as **SKIP** and exits non-zero, rather
+  than pretending they passed.
 
 ## Phase 1A — interface points for the domain and asset owners
 
 | UI need | Where it lives now | What the owner has to do | Blocking? |
 |---|---|---|---|
-| Real anatomy meshes | `apps/web/src/anatomy/manifest.ts` — a **renderer scene contract**: which mesh, which views, which layer, where to aim the camera | Do **not** extend the web manifest into an asset manifest. Asset identity, provenance and licence belong to the canonical `packages/shared/src/anatomy-manifest.ts` from `phase1/core-foundation`; add an adapter that converts it into the scene shape. No renderer code changes. | Blocks a viewer that looks like a body. The renderer, picking, layers, camera and fallback are done and tested. |
-| Patient-side mirroring | `CAMERA_PRESETS` in `three3d.ts` places the camera on the figure's left flank | Decide the figure-to-patient mapping and say so in the manifest or a domain constant; the adapter deliberately does not guess | Non-blocking. Presets are four distinct, tested stations. The 2D map already expresses side by mirroring the drawing. |
-| Spatial history read model | `apps/web/src/ui/spatial-history.ts` derives region → location marks → count → most recent from the episodes the API already returns | Serve that shape (or the episodes plus a location index) so the file becomes a fetch instead of a derivation | Non-blocking. The boundary exists and is tested; a fixture source is labelled as such. |
+| Real anatomy meshes | `packages/shared/src/anatomy-manifest.ts` is the **only** asset authority. `apps/web/src/anatomy/scene-manifest.ts` is a renderer contract, converted by `asset-scene-adapter.ts` | Put the real manifest through `parseManifest` and `toRendererScene`. Do **not** hand-build a scene, and do not write `externalAssetNotice` by hand — it is derived and `assertSceneAttribution` rejects one that disagrees | Phase 1B items 1–4. The renderer, picking, layers, camera and fallback are done and tested. |
+| One mesh per GLB | The adapter deliberately does not set `nodeName`, because the Core pipeline emits one mesh per file and requiring a name would refuse every real asset | None. A future multi-part file sets `nodeName` on the scene entry explicitly | Not blocking. Both shapes are tested. |
+| Sub-region ambiguity | A structure reachable from several sub-regions carries the whole canonical `subRegionIds`; `soleSubRegionId` exists only when there is exactly one. `resolveSubRegionForStructure` keeps / adopts / asks | None. **Do not** collapse the list to its first element — that is the bug this shape exists to prevent | Resolved, and enforced by a test that fails if a singular field appears for a multi-sub-region structure. |
+| Patient-side mirroring | `CAMERA_PRESETS` in `three3d.ts` places the camera on the figure's left flank | Decide the figure-to-patient mapping and say so in the manifest or a domain constant; the adapter deliberately does not guess | Phase 1B item 3. Presets are four distinct, tested stations. The 2D map already expresses side by mirroring the drawing. |
+| Spatial history | `apps/web/src/ui/spatial-history.ts` is a **presentation mapper** over `SpatialHistoryNode` from `/api/healthmap/:personId/spatial`. The contract is in `@asi/shared` | Nothing. It may sort, label and group by region; it may not merge, dedupe or recount | Resolved. |
+| Asset attribution | `apps/web/src/ui/AnatomyAttribution.tsx`, derived through `sceneLicenceEvidence` | Nothing. A production scene must carry derived attribution or the panel says so as a packaging error | Resolved. A synthetic asset cannot print a licence, by construction. |
 | Rejected suggestions | `ViewerCommand.reject` / `clearReject`, presentation-only; the candidate is kept | Nothing. Deliberately **not** persisted: a dismissal is a view decision, and deleting the candidate would be lossy in the same way deleting a deselected candidate is | Not blocking. |
-| Depth from the user's own words | `syncViewer` projects `record.location.depth` into the viewer | Nothing. Fixed in this phase after localisation set depth without telling the viewer | Resolved. |
+| Depth from the user's own words | `syncViewer` projects `record.location.depth` into the viewer | Nothing | Resolved. |
+| Episode reopen | `reopenEpisode(id)` in `session.ts`, over `GET /api/episodes/:id/reopen` and the shared `EpisodeReopen` contract | Nothing. It hydrates the same episode id, so a continue updates in place | Resolved, and proven through a restart. |
 | Per-episode clinical severity | Nowhere | Not modelled anywhere, deliberately. History counts are counts of records | Not a UI gap. A test asserts the spatial model carries no severity, score, risk or trend. |
 
 ## Integration guidance
 
-Main is the source of domain truth. Resolve later integration around current session signatures,
-then rerun typecheck, all tests, smoke and browser checks. The design branch owns component-local
-inspector stage, draft pin/subregion selection, history region filtering and copy feedback only.
+Main is the source of domain truth. Run `bash scripts/final-gates.sh` before
+believing anything: it typechecks, unit-tests across all three packages, builds,
+smokes, checks the release gate and safety metadata, runs the migration,
+place-identity, reopen, adapter and URL-GLB suites, and finishes with the
+browser, accessibility, hit-zone, 3D, fallback, URL-GLB and evidence gates. It
+reports each gate separately and fails the run on a skip.
+
+The web app is not the final product; see the product-shape section of
+[`docs/04-roadmap.md`](docs/04-roadmap.md). Anything the workspace needs that is
+not in `@asi/shared` is a candidate to be an API capability instead, because the
+plugin and MCP layers will need the same thing without a browser.
