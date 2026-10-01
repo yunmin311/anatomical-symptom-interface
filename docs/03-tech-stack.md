@@ -14,7 +14,7 @@
 | UI | React | 19 | Largest ecosystem; nothing here is exotic. |
 | Build | Vite | 6 | Instant HMR, proxy to the API in dev, one alias for workspace source. |
 | State | Zustand | 5 | One store, no provider tree, no boilerplate for a session this shape. |
-| Tests | `node:test` | built-in | No runner dependency. 455 unit tests + 38 API smoke tests + 20 browser gates |
+| Tests | `node:test` | built-in | No runner dependency. 488 unit tests + 38 API smoke tests + 21 browser gates |
 | Model | Anthropic Claude via `fetch` | — | Tool-use to force schema-shaped output. Optional: product works without it. |
 
 ## Deliberately NOT used yet
@@ -124,13 +124,14 @@ Full analysis in `docs/research/products-to-reuse.md`. The short version:
 | Layer | Tool | Count | What it protects |
 |---|---|---|---|
 | Domain | `node:test` | 215 | Provenance invariants, grounding, red flags, summary output, anatomy manifest validation |
-| Web | `node:test` | 157 | Session logic, renderer scene contract, the canonical→renderer adapter, GLB loading, picking, asset lifecycle, spatial presentation |
+| Web | `node:test` | 190 | Session logic, renderer scene contract, the canonical→renderer adapter, GLB loading, picking, asset lifecycle, spatial presentation |
 | Server | `node:test` | 83 | Migrations and adoption, the single write path, place identity, restart persistence, episode reopen |
 | API | `node:test` + `scripts/smoke.mjs` | 38 | End-to-end episode → confirm → summary → health map |
 
 Browser-level coverage is a separate tier, run by `scripts/final-gates.sh`:
 interaction, accessibility (axe), hit-zone reachability, 3D mounting, the 2D
-fallback, real URL-GLB geometry, and the evidence capture. These are not unit
+fallback, real URL-GLB geometry, the 3D structure-click path, and the
+evidence capture. These are not unit
 tests and are not in the counts above, because they need a browser and a running
 server.
 
@@ -159,7 +160,7 @@ safety when an earlier answer is replaced is still undefined.
 pnpm install
 pnpm dev              # server :8787 + web :5173
 pnpm typecheck        # all packages
-pnpm test             # 455 unit tests across three packages
+pnpm test             # 488 unit tests across three packages
 pnpm seed             # reset to a 3-episode demo history
 node scripts/smoke.mjs   # 38 API checks against a running server
 bash scripts/final-gates.sh   # every gate: unit, build, smoke, safety metadata,

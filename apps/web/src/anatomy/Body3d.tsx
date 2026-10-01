@@ -3,6 +3,7 @@ import { AnatomyWorkspace } from './workspace.ts';
 import type { WorkspaceStatus } from './workspace.ts';
 import { ACTIVE_SCENE } from './active-scene.ts';
 import { AnatomyAttribution } from '../ui/AnatomyAttribution.tsx';
+import type { PickResult } from './types.ts';
 import { anatomy } from '../state/session.ts';
 
 /**
@@ -18,12 +19,16 @@ import { anatomy } from '../state/session.ts';
  * sub-region is also reachable from the inspector's keyboard-reachable buttons.
  */
 export function Body3d({
-  onSubRegion,
+  onPick,
   onStatus,
   active,
 }: {
-  /** Called with the sub-region the user pointed at. */
-  onSubRegion: (subRegionId: string) => void;
+  /**
+   * A raycast result, reported whole. Deliberately not narrowed to a sub-region:
+   * what a click means depends on whether the user hit an area or a structure, and
+   * that decision belongs to the session's caller, not to the renderer host.
+   */
+  onPick: (hit: PickResult) => void;
   /**
    * Full workspace status. The caller needs the fallback REASON, not just a
    * boolean, to tell "still starting" apart from "gave up": switching surfaces
@@ -110,9 +115,21 @@ export function Body3d({
         data-testid="viewer-3d-canvas"
         onClick={(event) => {
           if (!live3d || !workspaceRef.current) return;
-          const hit = workspaceRef.current.pick(event.clientX, event.clientY);
-          if (hit.kind === 'none' || !hit.subRegionId) return;
-          onSubRegion(hit.subRegionId);
+          /*
+            The WHOLE pick, not a sub-region id.
+            
+            The previous handler destructured `hit.subRegionId`, which is present only
+            when a pick has exactly one sub-region — so a click on a structure
+            reachable from several places did nothing at all, and a click on one with
+            a single sub-region recorded an AREA and lost the structure the user had
+            actually pointed at. It also dropped `hit.point`, so a click on real mesh
+            never became a location indication.
+            
+            Deciding what a pick MEANS is `intentFromPick`'s job, and it is pure. This
+            component stays a renderer host: it reports a raycast result and does not
+            decide anything about the record.
+          */
+          onPick(workspaceRef.current.pick(event.clientX, event.clientY));
         }}
       />
 

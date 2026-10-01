@@ -265,6 +265,10 @@ run hitzones    node apps/web/test/hit-zones.mjs
 run three3d     node apps/web/test/three3d.mjs
 run fallback    node apps/web/test/fallback.mjs
 run urlglb      node apps/web/test/url-geometry-browser.mjs
+# The click path: canonical manifest -> real GLB -> real raycast on a descendant
+# mesh -> canonical asiId -> the session store. A pick that resolves to nothing, or
+# that invents a sub-region, is invisible to every other gate.
+run pickpath    node apps/web/test/structure-pick-browser.mjs
 # The gate the old runner omitted from its own report.
 run evidence    node apps/web/test/evidence.mjs
 

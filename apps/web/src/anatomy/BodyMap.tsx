@@ -2,6 +2,8 @@ import { useMemo, useState } from 'react';
 import { getStructure, REGIONS, TISSUE_LAYER_ORDER } from '@asi/shared';
 import type { TissueLayer } from '@asi/shared';
 import { anatomy, useSession } from '../state/session.ts';
+import { intentFromPick, reducePickToDraft } from './pick-intent.ts';
+import type { MapPoint, PickResult } from './types.ts';
 import {
   VIEW_H,
   VIEW_W,
@@ -58,7 +60,7 @@ export function BodyMap() {
   const region = REGIONS[location.region];
   const [view, setView] = useState<ViewName>(REGION_DEFAULT_VIEW[location.region]);
   const [pendingSub, setPendingSub] = useState<string | null>(null);
-  const [pendingPoint, setPendingPoint] = useState(location.point);
+  const [pendingPoint, setPendingPoint] = useState<MapPoint | null>(location.point ?? null);
   const [inspector, setInspector] = useState<Inspector>('area');
   const [layer, setLayer] = useState('all');
   const [surface, setSurface] = useState<Surface>(defaultSurface);
@@ -129,6 +131,62 @@ export function BodyMap() {
     else setAnnounced('No area matched that point. Use the area buttons to choose.');
   }
 
+  /**
+   * Apply a 3D pick. This is the AUTHORITATIVE write path for a click on real
+   * geometry, and it lives here rather than in the viewer host because the viewer
+   * host knows nothing about the record.
+   *
+   * A click on a structure is a visual LOCATION action, so two things follow and
+   * they are deliberately different in kind:
+   *
+   *   - the structure is selected immediately, through `select`, which writes the
+   *     canonical `location.userSelectedStructureIds`. That is the same immediate
+   *     behaviour as the inspector's "Indicate this structure" button, because it is
+   *     the same act and it is unambiguous.
+   *
+   *   - the AREA and the surface POINT are staged as a draft, exactly as a 2D map
+   *     click stages them, and are committed by "Use this location" through
+   *     `selectSubRegion` and `pinAt`. Staging rather than writing them is what lets
+   *     an unresolved sub-region leave the user with a choice to make instead of a
+   *     value the tool picked for them — and the confirm button stays disabled until
+   *     an area exists.
+   *
+   * The point IS treated as a user pin, not discarded: clicking real geometry is a
+   * user indicating a place on their body. It carries no tissue and no diagnostic
+   * meaning — it is `location.point` and nothing else, and the receipt keeps saying
+   * "location indication, not a clinical finding".
+   */
+  function handlePick(hit: PickResult) {
+    // The RECORD's sub-region, not the draft: the "keep" rule is about what the user
+    // has already told us, and a draft they have not committed is not that.
+    const intent = intentFromPick(hit, location.subRegionId ?? null);
+    const effect = reducePickToDraft(
+      intent,
+      { subRegionId: pendingSub, point: pendingPoint },
+      location.subRegionId ?? null,
+    );
+
+    if (effect.draft.subRegionId !== pendingSub && effect.draft.subRegionId) {
+      // Goes through chooseSub so the view follows, exactly as every other area
+      // choice does. Deliberately NOT taken when nothing was resolved, which is what
+      // keeps an unresolved pick from acquiring the first of its candidates.
+      chooseSub(effect.draft.subRegionId);
+    } else if (effect.draft.subRegionId !== pendingSub) {
+      setPendingSub(effect.draft.subRegionId);
+    }
+    if (effect.draft.point) setPendingPoint(effect.draft.point);
+
+    if (effect.selectStructureId) {
+      // Immediate, because it is unambiguous and it is the whole point of the 3D
+      // viewer. The canonical authority stays location.userSelectedStructureIds;
+      // `select` writes exactly that and mirrors it to the viewer.
+      select(effect.selectStructureId);
+    }
+    // Always announce, including for an unresolved pick: the structure selection
+    // stands and the user has to be told the area is still theirs to choose.
+    setAnnounced(effect.announce);
+  }
+
   return (
     <section className="location-workbench" aria-label="Anatomical workspace">
       <div className="location-context">
@@ -190,7 +248,7 @@ export function BodyMap() {
             </div>
             <Body3d
               active={surface === '3d'}
-              onSubRegion={chooseSub}
+              onPick={handlePick}
               onStatus={(next) => {
                 setThreeDReady(next.mode === '3d');
                 // Only a real failure moves the toolbar. The workspace emits a

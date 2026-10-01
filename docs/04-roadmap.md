@@ -22,7 +22,7 @@ located, structured, saveable record?
 - Deterministic pre-visit summary with coverage-aware missingness
 - Personal health map keyed by body region
 - Rule-based red flags, all honestly marked unreviewed, with a release gate
-- 455 unit tests, 38 API smoke checks, and 20 reproducible gates via
+- 488 unit tests, 38 API smoke checks, and 21 reproducible gates via
   `scripts/final-gates.sh` — including a strict safety-metadata gate
 
 **The milestone test from the plan (§12):** partially demonstrated. A user can go from
@@ -106,7 +106,7 @@ reconciled, and in each case the two sides had agreed on different answers:
       create → answer → save → `SIGKILL` → history → reopen → viewer restored →
       next question correct → continue → save → **the same episode id**.
 - [x] **Reopenable gate runner.** `scripts/final-gates.sh` resolves its own repo
-      root, starts and seeds its own servers, runs 20 named gates including
+      root, starts and seeds its own servers, runs 21 named gates including
       `evidence`, and reports PASS / FAIL / SKIP per gate — exiting non-zero on a
       skip, so a gate that did not run never looks like one that passed.
 - [x] **Renderer, fallbacks, picking and accessibility** at browser level, against
