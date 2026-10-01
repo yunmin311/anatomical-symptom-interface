@@ -35,6 +35,7 @@
 import { createHash } from 'node:crypto';
 import { BASELINE_SQL } from './001-baseline.ts';
 import { EPISODE_GROUNDING_SQL } from './002-episode-grounding.ts';
+import { REGION_CELL_SQL } from './003-region-spatial-cell.ts';
 
 export interface Migration {
   version: number;
@@ -57,6 +58,9 @@ const BASELINE_TABLES = [
 const GROUNDING_COLUMNS = [
   'grounding_status', 'grounding_reason', 'grounding_by', 'grounding_clarification',
 ] as const;
+
+/** Columns added to `body_regions` by migration 003, which give a place an identity. */
+const REGION_CELL_COLUMNS = ['point_cell_x', 'point_cell_y'] as const;
 
 function tableNames(db: Database): Set<string> {
   return new Set(
@@ -89,6 +93,16 @@ export const MIGRATIONS: readonly Migration[] = [
       if (!tableNames(db).has('episodes')) return false;
       const cols = columnNames(db, 'episodes');
       return GROUNDING_COLUMNS.every((c) => cols.has(c));
+    },
+  },
+  {
+    version: 3,
+    name: 'region-spatial-cell',
+    sql: REGION_CELL_SQL,
+    alreadyApplied(db) {
+      if (!tableNames(db).has('body_regions')) return false;
+      const cols = columnNames(db, 'body_regions');
+      return REGION_CELL_COLUMNS.every((c) => cols.has(c));
     },
   },
 ];

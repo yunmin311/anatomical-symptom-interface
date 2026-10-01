@@ -29,6 +29,16 @@ export interface SpatialEpisodeRef {
   status: string;
   /** The episode's own title, already a short human phrase. */
   title: string;
+  /**
+   * THIS EPISODE's pin, straight from its record.
+   *
+   * Deliberately present alongside the place's aggregate point, because they are
+   * different facts: the episode is where this occurrence was described, the
+   * place point is the mean of every pin that lands in the same cell. A client
+   * that only had the aggregate could not tell where one episode actually was,
+   * and would silently attribute every episode in a place to the same spot.
+   */
+  point: { x: number; y: number } | null;
   /** Safety flags raised on this episode, so a marker can show it without a fetch. */
   safetyFlagCount: number;
   /** Structures the user pointed at, as labels. Location, not findings. */
@@ -94,11 +104,17 @@ export function spatialHistory(personId: string, limitPerPlace = 20): SpatialHis
 
     const refs: SpatialEpisodeRef[] = episodes.map((e) => {
       let selections: string[] = [];
+      let point: { x: number; y: number } | null = null;
       try {
         const record = JSON.parse(e.record_json) as {
-          location?: { userSelectedStructureIds?: string[] };
+          location?: {
+            userSelectedStructureIds?: string[];
+            point?: { x: number; y: number } | null;
+          };
         };
         selections = record.location?.userSelectedStructureIds ?? [];
+        const p = record.location?.point;
+        point = p && typeof p.x === 'number' && typeof p.y === 'number' ? { x: p.x, y: p.y } : null;
       } catch {
         // A record projection that will not parse is a bug, but it must not take
         // the whole health map down with it. The episode still appears.
@@ -110,6 +126,7 @@ export function spatialHistory(personId: string, limitPerPlace = 20): SpatialHis
         endedAt: e.ended_at,
         status: e.status,
         title: e.title,
+        point,
         safetyFlagCount: Number(
           (get<{ c: number }>(`SELECT COUNT(*) AS c FROM safety_flags WHERE episode_id = ?`, e.id)?.c ?? 0),
         ),

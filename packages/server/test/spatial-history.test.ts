@@ -45,6 +45,7 @@ interface SpatialNode {
     startedAt: string;
     status: string;
     title: string;
+    point: { x: number; y: number } | null;
     safetyFlagCount: number;
     visualSelections: string[];
   }[];
@@ -118,10 +119,18 @@ async function makeEpisode(
   phrase: string,
   point: { x: number; y: number } | null,
   selections: string[] = [],
+  subRegionId?: string,
 ): Promise<string> {
   const mutations: Record<string, unknown>[] = [
     { fieldPath: 'location.userPhrase', value: phrase, provenance: PROV },
   ];
+  if (subRegionId) {
+    mutations.push({
+      fieldPath: 'location.subRegionId',
+      value: subRegionId,
+      provenance: { sourceType: 'user_selection', verificationStatus: 'user_confirmed', createdBy: 'user' },
+    });
+  }
   if (point) {
     // A pin dropped on the body map is a user selection, not a statement. The
     // field registry says so, and getting this wrong is a 422 rather than a
@@ -237,6 +246,230 @@ test('people do not see each other history', async () => {
   await makeEpisode('personA', 'knee', 'left', 'person A knee', null);
   const other = await get<SpatialNode[]>('/api/healthmap/personB/spatial');
   assert.equal(other.body.filter((n) => n.episodeCount > 0).length, 0, 'one person saw another history');
+});
+
+/* ================================================================== */
+/* Place identity                                                      */
+/* ================================================================== */
+
+/**
+ * A place is (person, region, side, sub-region, cell), where the cell is the
+ * normalised pin quantised onto a 0.05 grid. Region/side/sub-region alone are not
+ * enough: the same shoulder sore in two clearly different places is two entries
+ * in a body history.
+ *
+ * Each test below is one of the two failure modes the earlier design allowed, or
+ * a consequence of fixing them.
+ */
+
+test('the same region/side/sub-region twice aggregates into ONE place', async () => {
+  await makeEpisode('agg', 'knee', 'left', 'first knee episode', null, [], 'knee.anterior');
+  await makeEpisode('agg', 'knee', 'left', 'second knee episode', null, [], 'knee.anterior');
+
+  const res = await get<SpatialNode[]>('/api/healthmap/agg/spatial');
+  const rows = res.body.filter((n) => n.region === 'knee' && n.episodeCount > 0);
+  assert.equal(rows.length, 1, 'one place was split into two rows');
+  assert.equal(rows[0]!.episodeCount, 2, 'the two episodes were not aggregated');
+  // The count must equal the episodes actually listed, or the client cannot trust it.
+  assert.equal(rows[0]!.episodes.length, 2);
+  assert.equal(new Set(rows[0]!.episodes.map((e) => e.id)).size, 2, 'the same episode was listed twice');
+  assert.equal(rows[0]!.subRegionId, 'knee.anterior');
+});
+
+test('two different pins in the same sub-region are TWO places and cannot overwrite', async () => {
+  await makeEpisode('pins', 'shoulder', 'left', 'front of shoulder', { x: 0.10, y: 0.20 }, [], 'shoulder.anterior');
+  await makeEpisode('pins', 'shoulder', 'left', 'back of shoulder', { x: 0.85, y: 0.55 }, [], 'shoulder.anterior');
+
+  const res = await get<SpatialNode[]>('/api/healthmap/pins/spatial');
+  const rows = res.body.filter((n) => n.region === 'shoulder' && n.episodeCount > 0);
+  assert.equal(rows.length, 2, 'two clearly different pins were merged into one place');
+  for (const r of rows) assert.equal(r.episodeCount, 1);
+  // Neither pin may be the other's.
+  const points = rows.map((r) => r.point).sort((a, b) => a!.x - b!.x);
+  assert.ok(Math.abs(points[0]!.x - 0.10) < 0.02, `first pin lost: ${JSON.stringify(points[0])}`);
+  assert.ok(Math.abs(points[1]!.x - 0.85) < 0.02, `second pin lost: ${JSON.stringify(points[1])}`);
+});
+
+test('pins within the same cell aggregate, and the rule is the documented one', async () => {
+  // 0.05 grid: these two are 0.01 apart, so they are the same cell.
+  await makeEpisode('near', 'knee', 'right', 'pin a', { x: 0.500, y: 0.500 }, [], 'knee.anterior');
+  await makeEpisode('near', 'knee', 'right', 'pin b', { x: 0.510, y: 0.505 }, [], 'knee.anterior');
+
+  const res = await get<SpatialNode[]>('/api/healthmap/near/spatial');
+  const rows = res.body.filter((n) => n.region === 'knee' && n.episodeCount > 0);
+  assert.equal(rows.length, 1, 'two pins in the same cell should aggregate');
+  assert.equal(rows[0]!.episodeCount, 2);
+
+  // Straddling a cell boundary must NOT aggregate. That is the same rule seen
+  // from the other side: 0.499 and 0.501 are 0.002 apart and still two places.
+  await makeEpisode('straddle', 'knee', 'right', 'below', { x: 0.499, y: 0.500 }, [], 'knee.anterior');
+  await makeEpisode('straddle', 'knee', 'right', 'above', { x: 0.501, y: 0.500 }, [], 'knee.anterior');
+  const s = await get<SpatialNode[]>('/api/healthmap/straddle/spatial');
+  assert.equal(
+    s.body.filter((n) => n.region === 'knee' && n.episodeCount > 0).length,
+    2,
+    'pins either side of a cell boundary were merged',
+  );
+});
+
+test('an identical pin in two episodes aggregates to a count of two', async () => {
+  await makeEpisode('same', 'knee', 'left', 'one', { x: 0.42, y: 0.77 }, [], 'knee.anterior');
+  await makeEpisode('same', 'knee', 'left', 'two', { x: 0.42, y: 0.77 }, [], 'knee.anterior');
+
+  const res = await get<SpatialNode[]>('/api/healthmap/same/spatial');
+  const rows = res.body.filter((n) => n.region === 'knee' && n.episodeCount > 0);
+  assert.equal(rows.length, 1);
+  assert.equal(rows[0]!.episodeCount, 2);
+  assert.equal(rows[0]!.episodes.length, 2);
+});
+
+test('moving an episode re-homes it: the old place stops counting it', async () => {
+  const id = await makeEpisode('move', 'shoulder', 'left', 'starts at the front', { x: 0.10, y: 0.20 }, [], 'shoulder.anterior');
+
+  const before = await get<SpatialNode[]>('/api/healthmap/move/spatial');
+  assert.equal(before.body.filter((n) => n.region === 'shoulder' && n.episodeCount > 0).length, 1);
+
+  // The user moves the pin to the back of the same shoulder.
+  const moved = await post(`/api/episodes/${id}/mutations`, {
+    mutations: [{
+      fieldPath: 'location.point',
+      value: { x: 0.85, y: 0.55 },
+      provenance: { sourceType: 'user_selection', verificationStatus: 'user_confirmed', createdBy: 'user' },
+    }],
+  });
+  assert.equal(moved.status, 200, JSON.stringify(moved.body));
+
+  const after = await get<SpatialNode[]>('/api/healthmap/move/spatial');
+  const rows = after.body.filter((n) => n.region === 'shoulder' && n.episodeCount > 0);
+  // One place, because the only episode moved rather than being duplicated.
+  assert.equal(rows.length, 1, 'moving an episode left a stale place behind');
+  assert.equal(rows[0]!.episodeCount, 1, 'the old place still counts a location that is no longer there');
+  assert.ok(Math.abs(rows[0]!.point!.x - 0.85) < 0.02, `the place did not follow the episode: ${JSON.stringify(rows[0]!.point)}`);
+  // And it is the same episode, not a new one.
+  assert.equal(rows[0]!.episodes[0]!.id, id);
+});
+
+test('moving an episode to a different sub-region also re-homes it', async () => {
+  const id = await makeEpisode('submove', 'shoulder', 'left', 'starts anterior', { x: 0.50, y: 0.50 }, [], 'shoulder.anterior');
+  const before = await get<SpatialNode[]>('/api/healthmap/submove/spatial');
+  assert.equal(before.body.filter((n) => n.episodeCount > 0).length, 1);
+  assert.equal(before.body.find((n) => n.episodeCount > 0)!.subRegionId, 'shoulder.anterior');
+
+  const moved = await post(`/api/episodes/${id}/mutations`, {
+    mutations: [{
+      fieldPath: 'location.subRegionId',
+      value: 'shoulder.posterior',
+      provenance: { sourceType: 'user_selection', verificationStatus: 'user_confirmed', createdBy: 'user' },
+    }],
+  });
+  assert.equal(moved.status, 200, JSON.stringify(moved.body));
+
+  const after = await get<SpatialNode[]>('/api/healthmap/submove/spatial');
+  const rows = after.body.filter((n) => n.episodeCount > 0);
+  assert.equal(rows.length, 1, 'the place did not follow the sub-region');
+  assert.equal(rows[0]!.subRegionId, 'shoulder.posterior');
+  assert.equal(rows[0]!.episodeCount, 1);
+});
+
+test('one episode\'s pin never changes because another episode was added', async () => {
+  await makeEpisode('stable', 'knee', 'left', 'first', { x: 0.20, y: 0.20 }, [], 'knee.anterior');
+  const first = await get<SpatialNode[]>('/api/healthmap/stable/spatial');
+  const beforePlace = first.body.find((n) => n.region === 'knee' && n.episodeCount > 0)!;
+
+  // A second episode, somewhere else entirely.
+  await makeEpisode('stable', 'knee', 'left', 'second', { x: 0.80, y: 0.80 }, [], 'knee.anterior');
+
+  const after = await get<SpatialNode[]>('/api/healthmap/stable/spatial');
+  const places = after.body.filter((n) => n.region === 'knee' && n.episodeCount > 0);
+  assert.equal(places.length, 2);
+
+  // The first place must still be exactly where it was, with the same pin.
+  const original = places.find((p) => p.point && Math.abs(p.point.x - 0.20) < 0.02)!;
+  assert.ok(original, 'the original place moved or was absorbed');
+  assert.equal(original.episodeCount, 1, 'the second episode was aggregated into the first place');
+  assert.ok(Math.abs(original.point!.x - beforePlace.point!.x) < 1e-9, 'the first place pin changed');
+  assert.ok(Math.abs(original.point!.y - beforePlace.point!.y) < 1e-9, 'the first place pin changed');
+});
+
+test('aggregation survives a restart unchanged', async () => {
+  await makeEpisode('restart', 'shoulder', 'left', 'front', { x: 0.10, y: 0.20 }, [], 'shoulder.anterior');
+  await makeEpisode('restart', 'shoulder', 'left', 'front again', { x: 0.10, y: 0.20 }, [], 'shoulder.anterior');
+  await makeEpisode('restart', 'shoulder', 'left', 'back', { x: 0.85, y: 0.55 }, [], 'shoulder.anterior');
+
+  const before = await get<SpatialNode[]>('/api/healthmap/restart/spatial');
+  const beforeRows = before.body.filter((n) => n.region === 'shoulder' && n.episodeCount > 0);
+  assert.equal(beforeRows.length, 2);
+  assert.deepEqual(beforeRows.map((r) => r.episodeCount).sort(), [1, 2]);
+
+  await stopServer();
+  await startServer();
+
+  const after = await get<SpatialNode[]>('/api/healthmap/restart/spatial');
+  const afterRows = after.body.filter((n) => n.region === 'shoulder' && n.episodeCount > 0);
+  assert.equal(afterRows.length, 2, 'the number of places changed across a restart');
+  assert.deepEqual(afterRows.map((r) => r.episodeCount).sort(), [1, 2], 'counts drifted across a restart');
+  // Every count must equal the episodes listed under it.
+  for (const r of afterRows) {
+    assert.equal(r.episodeCount, r.episodes.length, 'a count did not match its episode list');
+    assert.equal(new Set(r.episodes.map((e) => e.id)).size, r.episodes.length, 'duplicate episode in a place');
+  }
+  assert.deepEqual(
+    afterRows.map((r) => r.episodes.map((e) => e.id).sort()).sort(),
+    beforeRows.map((r) => r.episodes.map((e) => e.id).sort()).sort(),
+    'the membership of a place changed across a restart',
+  );
+});
+
+test('a place with no episodes does not exist', async () => {
+  const id = await makeEpisode('gc', 'neck', 'left', 'neck thing', { x: 0.40, y: 0.30 }, [], 'neck.lateral');
+  const moved = await post(`/api/episodes/${id}/mutations`, {
+    mutations: [{
+      fieldPath: 'location.point',
+      value: { x: 0.60, y: 0.30 },
+      provenance: { sourceType: 'user_selection', verificationStatus: 'user_confirmed', createdBy: 'user' },
+    }],
+  });
+  assert.equal(moved.status, 200);
+
+  const res = await get<SpatialNode[]>('/api/healthmap/gc/spatial');
+  const rows = res.body.filter((n) => n.episodeCount > 0);
+  assert.equal(rows.length, 1, 'an emptied place was left behind');
+  assert.equal(rows[0]!.episodes.length, 1);
+});
+
+test('the episode list and the count agree in every place, always', async () => {
+  await makeEpisode('agree', 'knee', 'left', 'a', { x: 0.30, y: 0.30 }, [], 'knee.anterior');
+  await makeEpisode('agree', 'knee', 'left', 'b', { x: 0.30, y: 0.30 }, [], 'knee.anterior');
+  await makeEpisode('agree', 'knee', 'right', 'c', { x: 0.70, y: 0.30 }, [], 'knee.anterior');
+
+  const res = await get<SpatialNode[]>('/api/healthmap/agree/spatial');
+  const allIds = new Set<string>();
+  let summed = 0;
+  for (const n of res.body) {
+    assert.equal(n.episodeCount, n.episodes.length, `count ${n.episodeCount} != listed ${n.episodes.length} at ${n.region}/${n.side}`);
+    summed += n.episodeCount;
+    for (const e of n.episodes) {
+      assert.equal(allIds.has(e.id), false, `episode ${e.id} appears in two places`);
+      allIds.add(e.id);
+    }
+  }
+  assert.equal(summed, 3, 'the places do not account for every episode');
+});
+
+test('each episode reports its OWN pin, distinct from the place aggregate', async () => {
+  // Two episodes in one cell, a little apart. The place point is their mean; each
+  // episode must still report where it was actually described, or a client would
+  // attribute both to the same spot.
+  await makeEpisode('own', 'knee', 'left', 'lower pin', { x: 0.50, y: 0.50 }, [], 'knee.anterior');
+  await makeEpisode('own', 'knee', 'left', 'upper pin', { x: 0.54, y: 0.54 }, [], 'knee.anterior');
+
+  const res = await get<SpatialNode[]>('/api/healthmap/own/spatial');
+  const place = res.body.find((n) => n.region === 'knee' && n.episodeCount > 0)!;
+  assert.equal(place.episodes.length, 2);
+  const xs = place.episodes.map((e) => e.point!.x).sort();
+  assert.deepEqual(xs, [0.5, 0.54], 'episodes did not each report their own pin');
+  // The aggregate is between them, not equal to either.
+  assert.ok(place.point!.x > 0.5 && place.point!.x < 0.54, `aggregate should be a mean: ${place.point!.x}`);
 });
 
 /* ================================================================== */

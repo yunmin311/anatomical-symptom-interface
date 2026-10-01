@@ -66,7 +66,7 @@ test('a fresh database reaches the latest version', () => {
   const report = migrate(db);
   assert.equal(report.from, 0);
   assert.equal(report.to, LATEST_VERSION);
-  assert.deepEqual(report.applied.map((a) => a.version), [1, 2]);
+  assert.deepEqual(report.applied.map((a) => a.version), MIGRATIONS.map((m) => m.version));
   assert.equal(userVersion(db), LATEST_VERSION);
   assertSchemaReady(db);
   db.close();
@@ -111,6 +111,16 @@ function legacyV1(db: DatabaseSync): void {
   db.exec('PRAGMA user_version = 1');
 }
 
+/**
+ * A file written before the spatial-cell migration: the v2 shape, no
+ * `point_cell_*`, and no `schema_migrations` table. This is what a real
+ * development database from the previous commit actually looks like.
+ */
+function legacyPre003(db: DatabaseSync): void {
+  db.exec(BASELINE_SQL);
+  db.exec(EPISODE_GROUNDING_SQL);
+}
+
 function seedEpisode(db: DatabaseSync, marker: string): void {
   db.prepare('INSERT INTO persons (id, display_name, created_at) VALUES (?,?,?)')
     .run('p1', 'Tester', '2026-01-01T00:00:00.000Z');
@@ -130,7 +140,7 @@ test('a v1 database is migrated forward additively, keeping its rows', () => {
   const report = migrate(db);
   assert.equal(report.from, 1);
   assert.equal(report.to, LATEST_VERSION);
-  assert.deepEqual(report.applied.map((a) => a.name), ['episode-grounding-columns']);
+  assert.deepEqual(report.applied.map((a) => a.name), ['episode-grounding-columns', 'region-spatial-cell']);
   assert.equal(userVersion(db), LATEST_VERSION);
 
   // The episode is still here, and the added column backfilled rather than
@@ -144,11 +154,10 @@ test('a v1 database is migrated forward additively, keeping its rows', () => {
 });
 
 test('a legacy v2 file with no migration table is adopted, not rebuilt', () => {
-  // This is the shape the previous build wrote: version 2, full schema, and no
+  // This is the shape the previous build wrote: version 2, the v2 schema, and no
   // schema_migrations because the table did not exist yet.
   const db = freshDb();
-  db.exec(BASELINE_SQL);
-  db.exec(EPISODE_GROUNDING_SQL);
+  legacyPre003(db);
   db.exec('PRAGMA user_version = 2');
   seedEpisode(db, 'adopted');
   db.prepare('UPDATE episodes SET grounding_status = ?, grounding_by = ? WHERE id = ?')
@@ -156,8 +165,7 @@ test('a legacy v2 file with no migration table is adopted, not rebuilt', () => {
 
   const report = migrate(db);
   assert.equal(report.adopted, true, 'should have been adopted from its real shape');
-  assert.equal(report.applied.length, 0, 'a current legacy file needs no migrations');
-  assert.equal(count(db, 'episodes'), 1);
+  assert.equal(count(db, 'episodes'), 1, 'the episode must survive adoption');
 
   // The refusal audit trail is exactly what the old policy would have destroyed.
   const ep = db.prepare('SELECT grounding_status, grounding_by FROM episodes WHERE id = ?').get('e1') as
@@ -171,14 +179,14 @@ test('an unversioned file that is already current is adopted by shape, not by nu
   // user_version is 0 but the schema is complete. Believing the number would run
   // 001 and 002 again; believing the shape adopts it.
   const db = freshDb();
-  db.exec(BASELINE_SQL);
-  db.exec(EPISODE_GROUNDING_SQL);
+  migrate(db);
+  // Strip the migration table to put it back in the legacy position.
+  db.exec('DROP TABLE schema_migrations');
   db.exec('PRAGMA user_version = 0');
   seedEpisode(db, 'no version stamp');
 
   const report = migrate(db);
   assert.equal(report.adopted, true);
-  assert.equal(report.applied.length, 0);
   assert.equal(count(db, 'episodes'), 1);
   db.close();
 });
@@ -190,7 +198,7 @@ test('an unversioned v1 file still gets the v2 columns', () => {
   seedEpisode(db, 'v1 no stamp');
 
   const report = migrate(db);
-  assert.equal(report.applied.length, 1);
+  assert.deepEqual(report.applied.map((a) => a.name), ['episode-grounding-columns', 'region-spatial-cell']);
   assert.ok(cols(db, 'episodes').includes('grounding_by'));
   assert.equal(count(db, 'episodes'), 1);
   db.close();
@@ -359,12 +367,19 @@ test('a failed migration leaves the connection usable', () => {
  */
 test('A: a legacy current file adopts, then opens again twice', () => {
   const db = freshDb();
-  db.exec(BASELINE_SQL);
-  db.exec(EPISODE_GROUNDING_SQL);
+  legacyPre003(db);
   db.exec('PRAGMA user_version = 2');
   seedEpisode(db, 'legacy v2');
 
-  for (const attempt of [1, 2, 3]) {
+  // First start adopts the shape it finds and applies whatever it is missing.
+  const first = migrate(db);
+  assert.equal(first.adopted, true);
+  assert.equal(userVersion(db), LATEST_VERSION);
+  assert.equal(count(db, 'episodes'), 1);
+
+  // Second and third must be pure no-ops. This is where the sentinel checksum
+  // used to kill the file.
+  for (const attempt of [2, 3]) {
     const report = migrate(db);
     assert.equal(report.applied.length, 0, `start ${attempt} applied something it should not have`);
     assert.equal(userVersion(db), LATEST_VERSION);
@@ -374,8 +389,7 @@ test('A: a legacy current file adopts, then opens again twice', () => {
 
 test('B: a legacy current file with no version stamp adopts and reopens', () => {
   const db = freshDb();
-  db.exec(BASELINE_SQL);
-  db.exec(EPISODE_GROUNDING_SQL);
+  legacyPre003(db);
   db.exec('PRAGMA user_version = 0');
   seedEpisode(db, 'legacy no stamp');
 
@@ -396,7 +410,7 @@ test('C: a stale version number must not skip a migration the shape still needs'
   seedEpisode(db, 'lying version');
 
   const report = migrate(db);
-  assert.equal(report.applied.length, 1, 'migration 002 was skipped because of a stale version number');
+  assert.deepEqual(report.applied.map((a) => a.name), ['episode-grounding-columns', 'region-spatial-cell']);
   assert.ok(cols(db, 'episodes').includes('grounding_by'), 'the needed column is still missing');
   assertSchemaReady(db);
   assert.equal(count(db, 'episodes'), 1);
@@ -411,7 +425,7 @@ test('D: a legacy v1 file with no version stamp migrates and reopens', () => {
   seedEpisode(db, 'v1 no stamp');
 
   const report = migrate(db);
-  assert.equal(report.applied.length, 1);
+  assert.equal(report.applied.length, 2);
   assertSchemaReady(db);
   assert.equal(migrate(db).applied.length, 0);
   assert.equal(count(db, 'episodes'), 1);
@@ -446,16 +460,14 @@ test('an adopted file records REAL checksums, not a sentinel', () => {
   // checksum, so it is a landmine on the next start. An adopted migration is
   // recorded as itself.
   const db = freshDb();
-  db.exec(BASELINE_SQL);
-  db.exec(EPISODE_GROUNDING_SQL);
+  legacyPre003(db);
   db.exec('PRAGMA user_version = 2');
   migrate(db);
 
   const rows = db.prepare('SELECT version, name, checksum FROM schema_migrations ORDER BY version').all() as
     { version: number; name: string; checksum: string }[];
-  assert.equal(rows.length, 2, 'both satisfied migrations should be recorded');
-  assert.deepEqual(rows.map((r) => r.version), [1, 2]);
-  assert.deepEqual(rows.map((r) => r.name), ['baseline-schema', 'episode-grounding-columns']);
+  assert.equal(rows.length, MIGRATIONS.length, 'every satisfied migration should be recorded');
+  assert.deepEqual(rows.map((r) => r.name), MIGRATIONS.map((m) => m.name));
   for (const r of rows) {
     assert.notEqual(r.checksum, 'adopted', 'a sentinel checksum would break the next start');
     assert.match(r.checksum, /^[0-9a-f]{64}$/, 'not a real checksum');
@@ -463,26 +475,33 @@ test('an adopted file records REAL checksums, not a sentinel', () => {
 });
 
 test('the shape is authoritative: a migration the shape needs runs even if recorded', () => {
-  // A file that genuinely ran migration 002, and then lost the columns: the
-  // recorded row and the checksum are both self-consistent and true, the file was
-  // only damaged afterwards. The shape is what says the work is needed.
+  // A file that genuinely ran every migration, and then lost the columns: the
+  // recorded rows and their checksums are all self-consistent and true, the file
+  // was only damaged afterwards. The shape is what says the work is needed.
   const db = freshDb();
   migrate(db);
-  const hadRecord = db.prepare('SELECT COUNT(*) AS c FROM schema_migrations WHERE version = 2').get() as { c: number };
-  assert.equal(hadRecord.c, 1, 'precondition: migration 2 was recorded');
+  const recorded = db.prepare('SELECT COUNT(*) AS c FROM schema_migrations').get() as { c: number };
+  assert.equal(recorded.c, MIGRATIONS.length, 'precondition: everything was recorded');
 
-  // Rebuild `episodes` at the v1 shape. Dropping columns cannot be done in place,
-  // so the table is recreated without them.
-  db.exec('PRAGMA foreign_keys = OFF');
-  db.exec('ALTER TABLE episodes RENAME TO episodes_damaged');
-  db.exec(BASELINE_SQL);
-  db.exec('DROP TABLE episodes_damaged');
-  db.exec('PRAGMA foreign_keys = ON');
-  assert.equal(cols(db, 'episodes').includes('grounding_by'), false, 'precondition: columns are gone');
+  // Rebuild `body_regions` without the spatial cell columns.
+  db.exec('ALTER TABLE body_regions RENAME TO body_regions_damaged');
+  db.exec(`CREATE TABLE body_regions (
+    id            TEXT PRIMARY KEY,
+    person_id     TEXT NOT NULL REFERENCES persons(id) ON DELETE CASCADE,
+    region        TEXT NOT NULL,
+    side          TEXT NOT NULL,
+    sub_region_id TEXT,
+    point_x       REAL,
+    point_y       REAL,
+    created_at    TEXT NOT NULL,
+    updated_at    TEXT NOT NULL
+  )`);
+  db.exec('DROP TABLE body_regions_damaged');
+  assert.equal(cols(db, 'body_regions').includes('point_cell_x'), false, 'precondition: columns are gone');
 
   const report = migrate(db);
-  assert.equal(report.applied.length, 1, 'the shape said migration 002 was needed and it was skipped');
-  assert.ok(cols(db, 'episodes').includes('grounding_by'), 'the column was not restored');
+  assert.deepEqual(report.applied.map((a) => a.name), ['region-spatial-cell']);
+  assert.ok(cols(db, 'body_regions').includes('point_cell_x'), 'the column was not restored');
   assertSchemaReady(db);
   // Still self-consistent afterwards.
   assert.equal(migrate(db).applied.length, 0);
