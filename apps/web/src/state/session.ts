@@ -14,9 +14,11 @@ import type {
   ConsideredStructure,
   Depth,
   Episode,
+  EpisodeReopen,
   PreVisitSummary,
   SafetyEvaluation,
   Side,
+  SpatialHistoryNode,
   SymptomRecord,
 } from '@asi/shared';
 import { emptyRecord, EMPTY_ANSWERS } from '@asi/shared';
@@ -111,6 +113,15 @@ interface SessionState {
   episodeId: string | null;
   summary: PreVisitSummary | null;
   history: Episode[];
+  /**
+   * Places, AS THE SERVER GROUPS THEM.
+   *
+   * Fetched rather than derived, on purpose. The client used to group episodes
+   * itself and would merge two places the server had deliberately kept apart,
+   * because a place is (person, region, side, sub-region, point cell) and the
+   * client only knew three of those five. Nothing here may regroup it.
+   */
+  spatial: SpatialHistoryNode[];
   orchestratorKind: 'deterministic' | 'model' | null;
   clarification: string | null;
 
@@ -137,6 +148,13 @@ interface SessionState {
   save: () => Promise<void>;
   loadSummary: () => Promise<void>;
   loadHistory: (personId?: string) => Promise<void>;
+  /** Load places from the server read model. Never derived from `history`. */
+  loadSpatialHistory: (personId?: string) => Promise<void>;
+  /**
+   * Resume a saved episode: hydrate the record, the answers and the viewer from
+   * the server, and carry on the SAME episode rather than starting a new one.
+   */
+  reopenEpisode: (id: string) => Promise<void>;
   reset: () => void;
 }
 
@@ -177,6 +195,7 @@ export const useSession = create<SessionState>((set, get) => {
     episodeId: null,
     summary: null,
     history: [],
+    spatial: [],
     orchestratorKind: null,
     clarification: null,
 
@@ -431,6 +450,73 @@ export const useSession = create<SessionState>((set, get) => {
       set({ history });
     },
 
+    loadSpatialHistory: async (personId = 'local') => {
+      const spatial = await api<SpatialHistoryNode[]>(
+        `/healthmap/${encodeURIComponent(personId)}/spatial`,
+      );
+      set({ spatial });
+    },
+
+    /**
+     * Resume a saved episode.
+     *
+     * The server assembles everything a resuming session needs — record,
+     * answers, next question, progress, outstanding fields, safety — because
+     * re-deriving "what is the next question" in the browser is how a client ends
+     * up disagreeing with the server about an interview in progress.
+     *
+     * TWO THINGS THIS MUST NOT DO, and the reason they are called out:
+     *
+     * It must not create a new episode. `episodeId` is set to the one that was
+     * opened, so the next `save()` takes the `pushMutations` branch and updates it
+     * in place. Creating a second record for the same complaint would make the
+     * history lie about how many times something happened.
+     *
+     * And it must not leave the viewer showing the previous episode's state, which
+     * `projectRecordToViewer` handles by replacement — the same reason `describe`
+     * uses it. Reopening is exactly as able to inherit a stale selection as
+     * starting a new episode is.
+     *
+     * Rejections are presentation-only and are not stored on an episode, so they
+     * are cleared rather than restored; pin HISTORY survives because it is
+     * evidence of past episodes, but the active marker is this episode's.
+     */
+    reopenEpisode: async (id) => {
+      set({ busy: true, error: null });
+      try {
+        const reopened = await api<EpisodeReopen>(`/episodes/${encodeURIComponent(id)}/reopen`);
+        const record = reopened.episode.record;
+
+        // `consideredStructures` is the CANDIDATE projection, not the selection:
+        // the viewer needs both restored, and `projectRecordToViewer` applies them
+        // as replacing commands so nothing from the previous episode survives.
+        projectRecordToViewer(record, record.consideredStructures ?? []);
+        reevaluate(record, reopened.answers);
+
+        set({
+          episodeId: reopened.episode.id,
+          record,
+          answers: reopened.answers,
+          safety: reopened.safety ?? evaluateSession(record, reopened.answers),
+          summary: null,
+          refusal: null,
+          clarification: null,
+          busy: false,
+          viewer: anatomy.getState(),
+          viewerTick: get().viewerTick + 1,
+          // Back to the interview. Not 'review': there is nothing new to review,
+          // and an episode with questions outstanding should go back to asking
+          // them. A finished episode still lands here and simply has no next
+          // question, which the interview panel already handles.
+          stage: 'interview',
+        });
+        void get().loadHistory();
+        void get().loadSpatialHistory();
+      } catch (e) {
+        set({ error: e instanceof Error ? e.message : String(e), busy: false });
+      }
+    },
+
     reset: () => {
       const record = emptyRecord('shoulder');
       // Reset the VIEWER too, not just the store. It used to only move the
@@ -449,6 +535,7 @@ export const useSession = create<SessionState>((set, get) => {
         clarification: null,
         episodeId: null,
         summary: null,
+        spatial: [],
         error: null,
         viewer: anatomy.getState(),
         viewerTick: get().viewerTick + 1,

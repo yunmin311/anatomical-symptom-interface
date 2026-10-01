@@ -20,45 +20,16 @@
  */
 import { get, all } from '../db/client.ts';
 import { REGIONS, getStructure } from '@asi/shared';
-import type { BodyRegion } from '@asi/shared';
+import type { BodyRegion, SpatialEpisodeRef, SpatialHistoryNode, SpatialPoint } from '@asi/shared';
 
-export interface SpatialEpisodeRef {
-  id: string;
-  startedAt: string;
-  endedAt: string | null;
-  status: string;
-  /** The episode's own title, already a short human phrase. */
-  title: string;
-  /**
-   * THIS EPISODE's pin, straight from its record.
-   *
-   * Deliberately present alongside the place's aggregate point, because they are
-   * different facts: the episode is where this occurrence was described, the
-   * place point is the mean of every pin that lands in the same cell. A client
-   * that only had the aggregate could not tell where one episode actually was,
-   * and would silently attribute every episode in a place to the same spot.
-   */
-  point: { x: number; y: number } | null;
-  /** Safety flags raised on this episode, so a marker can show it without a fetch. */
-  safetyFlagCount: number;
-  /** Structures the user pointed at, as labels. Location, not findings. */
-  visualSelections: string[];
-}
-
-export interface SpatialHistoryNode {
-  /** Stable per-place identity, for keying and for "go to this place". */
-  regionRowId: string;
-  region: string;
-  side: string;
-  subRegionId: string | null;
-  /** Normalised 0..1 on the body map. Null when the user never placed a pin. */
-  point: { x: number; y: number } | null;
-  episodeCount: number;
-  lastEpisodeAt: string | null;
-  lastTitle: string | null;
-  /** Newest first. The episodes behind the count, so the client need not scan. */
-  episodes: SpatialEpisodeRef[];
-}
+/**
+ * `SpatialHistoryNode` and `SpatialEpisodeRef` are declared in `@asi/shared`, not
+ * here, because they are a transport CONTRACT and the browser is the other end of
+ * it. They used to live in this file, which meant the web app had to redeclare
+ * the shape it was being sent — and it redeclared it wrongly, grouping episodes
+ * client-side on region + sub-region + side and so merging two places the server
+ * had deliberately kept apart. Importing the type makes that a compile error.
+ */
 
 interface EpisodeRow {
   id: string;
@@ -104,7 +75,7 @@ export function spatialHistory(personId: string, limitPerPlace = 20): SpatialHis
 
     const refs: SpatialEpisodeRef[] = episodes.map((e) => {
       let selections: string[] = [];
-      let point: { x: number; y: number } | null = null;
+      let point: SpatialPoint | null = null;
       try {
         const record = JSON.parse(e.record_json) as {
           location?: {

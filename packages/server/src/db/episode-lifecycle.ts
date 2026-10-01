@@ -17,26 +17,16 @@
  */
 import { answersFor, coverageFor, getEpisode, getGrounding, safetyFor } from './store.ts';
 import { nextQuestion, questionProgress } from '@asi/shared';
-import type { Episode, SafetyEvaluation } from '@asi/shared';
-import type { ReleaseProfile } from '@asi/shared';
+import type { EpisodeReopen, ReleaseProfile } from '@asi/shared';
 
-export interface EpisodeReopen {
-  episode: Episode;
-  grounding: ReturnType<typeof getGrounding>;
-  answers: ReturnType<typeof answersFor>;
-  safety: SafetyEvaluation | null;
-  /** The next unanswered question for this episode's region, or null when done. */
-  nextQuestion: ReturnType<typeof nextQuestion> | null;
-  progress: ReturnType<typeof questionProgress>;
-  /**
-   * Fields with no stored value, i.e. what a clinician would still need to ask.
-   * Derived from the field store, so it is the truth rather than a guess from
-   * which questions happen to have been displayed.
-   */
-  outstandingFields: string[];
-  /** True when the episode's region is not one this build has an interview for. */
-  interviewable: boolean;
-}
+/**
+ * `EpisodeReopen` is declared in `@asi/shared`, not here.
+ *
+ * The browser is the other end of this payload, and it used to have to declare
+ * its own copy of the shape — which is how a resume ends up disagreeing with the
+ * server about which question comes next. Returning the shared type means the
+ * route and the client that hydrates from it cannot drift.
+ */
 
 /**
  * Everything needed to resume an episode.
@@ -58,7 +48,7 @@ export function episodeForReopen(episodeId: string, profile: ReleaseProfile): Ep
     grounding: getGrounding(episodeId),
     answers,
     safety: safetyFor(episodeId, profile),
-    nextQuestion: interviewable ? nextQuestion({ record: episode.record, answers }) : null,
+    nextQuestion: interviewable ? nextQuestion({ record: episode.record, answers }) ?? null : null,
     progress: questionProgress({ record: episode.record, answers }),
     outstandingFields: Object.entries(coverageFor(episodeId))
       .filter(([, recorded]) => !recorded)

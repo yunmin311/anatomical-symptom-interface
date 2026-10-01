@@ -14,6 +14,7 @@ export * from './anatomy-manifest.ts';
 export * from './anatomy-mapping.ts';
 export * from './anatomy-pipeline.ts';
 export * from './symptom.ts';
+export * from './spatial-contract.ts';
 export * from './grounding.ts';
 export * from './summary.ts';
 export * from './field-policy.ts';

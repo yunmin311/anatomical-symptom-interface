@@ -6,19 +6,26 @@ import { EmptyState, StatusTag } from "./primitives.tsx";
 import { BodyIndex } from "../anatomy/BodyIndex.tsx";
 import { RecordDetails } from "./RecordDetails.tsx";
 import { formatDate } from "./presentation.ts";
-import { DERIVED_SPATIAL_HISTORY } from "./spatial-history.ts";
+import { presentSpatialHistory } from "./spatial-history.ts";
 
 export function HistoryPanel() {
-  const { history, loadHistory } = useSession();
+  const { history, spatial, loadHistory, loadSpatialHistory, reopenEpisode } =
+    useSession();
   const [filter, setFilter] = useState<BodyRegion | "all">("all");
   const [request, setRequest] = useState<"loading" | "ready" | "error">(
     "loading",
   );
   const [revision, setRevision] = useState(0);
+  const [resuming, setResuming] = useState<string | null>(null);
   useEffect(() => {
     let active = true;
     setRequest("loading");
-    void loadHistory()
+    // Both the episodes and the places come from the server. The places are NOT
+    // derived from the episodes: a place is (person, region, side, sub-region,
+    // quantised point cell) and the client only knows three of those five, so
+    // grouping them here would merge two places the storage layer deliberately
+    // kept apart.
+    void Promise.all([loadHistory(), loadSpatialHistory()])
       .then(() => {
         if (active) setRequest("ready");
       })
@@ -28,16 +35,15 @@ export function HistoryPanel() {
     return () => {
       active = false;
     };
-  }, [loadHistory, revision]);
+  }, [loadHistory, loadSpatialHistory, revision]);
 
-  // Derived client-side from the episodes already loaded. This is a consumption
-  // boundary for the spatial read model the main agent is building, not a second
-  // domain schema: it adds no persisted field and invents no history.
+  // Presentation only: labels, ordering and grouping BY REGION over places the
+  // server already identified. It does not create, merge or recount a place.
   //
   // Declared ABOVE the early returns on purpose. A hook placed after them runs a
   // different number of times on the loading render than on the ready one, which
   // React rejects outright.
-  const spatial = useMemo(() => DERIVED_SPATIAL_HISTORY.load(history), [history]);
+  const places = useMemo(() => presentSpatialHistory(spatial), [spatial]);
 
   if (request === "loading")
     return (
@@ -111,11 +117,11 @@ export function HistoryPanel() {
           Where the body has history, not just how many episodes exist: the
           places the user actually pointed at, most-visited first.
         */}
-        {spatial.regions.length > 0 && (
+        {places.regions.length > 0 && (
           <div className="location-marks" data-testid="location-marks">
             <span className="eyebrow">Where you have pointed</span>
             <ul>
-              {spatial.regions
+              {places.regions
                 .filter((r) => filter === 'all' || r.region === filter)
                 .flatMap((r) =>
                   r.marks.slice(0, 3).map((mark) => (
@@ -189,6 +195,29 @@ export function HistoryPanel() {
                             record={episode.record}
                             episode={episode}
                           />
+                          {/*
+                            Continue, not "edit". The endpoint hydrates the record,
+                            the answers and the next question from the SAME episode
+                            id, so the next save updates it in place. Creating a
+                            second record for the same complaint would make the
+                            history lie about how many times something happened.
+                          */}
+                          <p>
+                            <button
+                              className="btn"
+                              disabled={resuming === episode.id}
+                              onClick={() => {
+                                setResuming(episode.id);
+                                void reopenEpisode(episode.id).finally(() =>
+                                  setResuming(null),
+                                );
+                              }}
+                            >
+                              {resuming === episode.id
+                                ? "Opening…"
+                                : "Continue this episode"}
+                            </button>
+                          </p>
                           {episode.safetyFlags.length > 0 && (
                             <section className="record-section">
                               <h3>Recorded safety flags</h3>
