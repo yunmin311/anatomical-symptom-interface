@@ -145,7 +145,28 @@ export const useSession = create<SessionState>((set, get) => {
     setStage: (stage) => set({ stage }),
     setUtterance: (utterance) => set({ utterance }),
     setError: (error) => set({ error }),
-    syncViewer: () => set((s) => ({ viewer: anatomy.getState(), viewerTick: s.viewerTick + 1 })),
+    /**
+     * Refresh the viewer's React state, and project the record's depth into the
+     * viewer on the way through.
+     *
+     * Depth is something the user told us — often via localisation rather than
+     * the depth control — and it decides which tissue layers the anatomy viewer
+     * shows. Projecting it here rather than at each call site means a record can
+     * never say "deep inside" while the viewer still displays every layer.
+     */
+    /**
+     * Refresh the viewer's React state, and project the record's depth into the
+     * viewer on the way through.
+     *
+     * Depth is something the user told us — often via localisation rather than
+     * the depth control — and it decides which tissue layers the anatomy viewer
+     * shows. Projecting it here rather than at each call site means a record can
+     * never say "deep inside" while the viewer still displays every layer.
+     */
+    syncViewer: () => {
+      anatomy.apply({ type: 'setDepth', depth: get().record.location.depth });
+      set((s) => ({ viewer: anatomy.getState(), viewerTick: s.viewerTick + 1 }));
+    },
 
     describe: async () => {
       const { utterance } = get();
