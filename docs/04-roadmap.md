@@ -22,7 +22,7 @@ located, structured, saveable record?
 - Deterministic pre-visit summary with coverage-aware missingness
 - Personal health map keyed by body region
 - Rule-based red flags, all honestly marked unreviewed, with a release gate
-- 225 unit tests, 38 API smoke checks, CI with a strict safety-metadata gate
+- 334 unit tests, 38 API smoke checks, CI with a strict safety-metadata gate
 
 **The milestone test from the plan (§12):** partially demonstrated. A user can go from
 free text to a located record to a doctor-readable summary. **Not yet demonstrated:**
@@ -48,24 +48,63 @@ need real humans.
 
 **Goal:** four regions working properly, with 3D.
 
+### Phase 1A — Core foundation · **built**
+
+The part that has to be true before any of the rest is worth doing: the record
+store has to behave like something a person can rely on having tomorrow.
+
+- [x] **Schema migrations** replacing the rebuild-on-version-change policy.
+      Ordered, one transaction per step, applied on top of existing data. A file
+      that cannot be recognised is refused at startup, never deleted. Applied
+      migrations are checksummed. 20 tests.
+- [x] **Restart persistence proven against the real service.** A test boots the
+      server, writes through HTTP, `SIGKILL`s it, boots it again on the same file
+      and reads everything back. Deliberately not seed-based: a seed-based
+      persistence test passes even when persistence is broken.
+- [x] **Anatomy asset manifest** as a real validated contract: `asiId`,
+      provenance, licence, attribution, FMA status, bounds and geometry budget,
+      with runtime validation. Strict schema, so a generated file cannot quietly
+      carry a clinical claim.
+- [x] **BodyParts3D conversion pipeline** running end to end for a **shoulder
+      vertical slice**: select, bind to `asiId`, reduce geometry, emit GLB, emit
+      manifest, enforce the budget. Byte-reproducible. *Blocked on one external
+      file* — see `assets/anatomy/README.md` for exactly which.
+- [x] **Spatial history read model.** Every place with its normalised point and
+      the episodes behind it, so the client never scans episodes to draw a body.
+      A location history, deliberately not a risk map.
+- [x] **Episode reopen read model**, so a resuming session gets the next question
+      and the outstanding set from the server rather than re-deriving them.
+
+**Bugs this work exposed and fixed.** `body_regions.point_x` / `point_y` and
+`sub_region_id` had been permanently NULL — `createEpisode` called `ensureRegion`
+with nulls before the mutations ran and nothing called it again, so a pin dropped
+on the body map never reached the table that exists to hold it. The Phase-0
+"heatmap" was a column and a comment. Now synced from the record inside the one
+transaction that writes it.
+
+### Phase 1B — still open
+
 - [ ] **Usability validation.** Does visual localisation beat typing? Measure it.
-- [ ] **3D anatomy layer.** `Three3dAnatomyAdapter` over BodyParts3D under CC BY 4.0,
-      decimated, with a generated `asi:*` manifest. The `AnatomyAdapter` contract
-      already exists.
+- [ ] **The other three regions through the asset pipeline.** `neck`,
+      `lower_back` and `knee` have no source mapping yet; the build reports that
+      rather than guessing.
+- [ ] **Render the generated assets.** The pipeline produces GLB; nothing consumes
+      them yet. The `AnatomyAdapter` contract already exists.
 - [ ] **Depth interaction.** The weakest part of the current UX. Users should be able to
       say "not the skin, not the muscle, deeper" and have the model respond. This is
       plan question §12.3 and it is unsolved.
 - [ ] **Write `layTerm` for every V1 structure.** Kenhub standard. Unglamorous,
       non-negotiable.
 - [ ] **Terminology binding.** SNOMED CT + FMA, verified, one region at a time.
+      Every generated FMA binding is `unverified` until a human checks it.
 - [ ] **Clinical review of the red-flag rules.** Named reviewer, named source, both
       false-positive and false-negative reasoning written down.
 - [ ] **Translate the red-flag copy**, and the router's region lexicon. A non-English
       safety message is arguably worse than none.
 - [ ] **Voice input.** People describe pain out loud. `faster-whisper` locally.
 - [ ] **Playwright tests** for the rendered UI (the logic layer is tested; the DOM is not).
-- [ ] **Schema migrations** replacing the rebuild-on-version-change policy. Acceptable
-      now, unacceptable once a real user has records.
+- [ ] **Wire the health map to the spatial read model.** The read model exists and is
+      tested; `apps/web` still renders the older count-only shape.
 
 ---
 

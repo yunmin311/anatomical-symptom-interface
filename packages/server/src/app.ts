@@ -34,6 +34,8 @@ import {
 } from '@asi/shared';
 import { env, gate, hasModel, releaseProfile } from './env.ts';
 import { createOrchestrator } from './orchestrator/index.ts';
+import { spatialHistoryWithEmptyRegions } from './db/spatial.ts';
+import { episodeForReopen } from './db/episode-lifecycle.ts';
 import {
   answersFor,
   appendTranscript,
@@ -315,6 +317,21 @@ app.get('/api/episodes/:id', (c) => {
   });
 });
 
+/**
+ * Everything a resuming session needs, in one payload: the record, the answers,
+ * the next question, how far through the interview the user was, and what is
+ * still outstanding.
+ *
+ * Without this a client reopening an episode has to re-derive the next question
+ * and the outstanding set in the browser, which is how a client ends up
+ * disagreeing with the server about both. The write path is untouched.
+ */
+app.get('/api/episodes/:id/reopen', (c) => {
+  const out = episodeForReopen(c.req.param('id'), releaseProfile);
+  if (!out) return c.json({ error: 'not found' }, 404);
+  return c.json(out);
+});
+
 app.post('/api/episodes/:id/note', async (c) => {
   const body = z.object({ text: z.string().min(1).max(4000) }).safeParse(await c.req.json());
   if (!body.success) return c.json({ error: body.error.flatten() }, 400);
@@ -339,6 +356,23 @@ app.get('/api/episodes/:id/summary.txt', (c) => {
 /* ---------------- personal health map ---------------- */
 
 app.get('/api/healthmap/:personId', (c) => c.json(healthMap(c.req.param('personId'))));
+
+/**
+ * The spatial history read model: every place, its normalised point, and the
+ * episodes behind the count, so the client never scans episodes to draw a body.
+ *
+ * A LOCATION history, not a risk map. Episode count is how often a place was
+ * described, and nothing in this payload weighs it against anything.
+ */
+app.get('/api/healthmap/:personId/spatial', (c) => {
+  const limit = c.req.query('limit');
+  return c.json(
+    spatialHistoryWithEmptyRegions(
+      c.req.param('personId'),
+      limit ? Math.max(1, Math.min(200, Number(limit))) : undefined,
+    ),
+  );
+});
 
 /* ---------------- offline grounding preview ---------------- */
 

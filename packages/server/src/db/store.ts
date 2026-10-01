@@ -357,6 +357,12 @@ export function applyMutations(episodeId: string, input: ApplyInput, profile: Re
     const rebuilt = rebuildRecord(episodeId, ep.region);
     run(`UPDATE episodes SET record_json = ?, updated_at = ? WHERE id = ?`, JSON.stringify(rebuilt), now(), episodeId);
 
+    // 3b. Keep the spatial index in step with the record. See syncSpatialIndex:
+    // body_regions is a derived index of where episodes are, and it was never
+    // being updated, so point_x/point_y and sub_region_id were permanently NULL
+    // and the personal health map had nothing to draw.
+    syncSpatialIndex(episodeId, rebuilt);
+
     // 4. Safety, from the answer-derived signals.
     const answers = answersFor(episodeId);
     const safety = evaluateSafety(rebuilt, {
@@ -430,6 +436,175 @@ function rebuildRecord(episodeId: string, region: string): SymptomRecord {
 
 function readRecord(episodeId: string, region: string): SymptomRecord {
   return rebuildRecord(episodeId, region);
+}
+
+/**
+ * PLACE IDENTITY.
+ *
+ * A "place" is one entry in the personal anatomical health map. Its identity is:
+ *
+ *     (person, region, side, subRegion, cell)
+ *
+ * where `cell` is the normalised pin quantised onto a grid. Region, side and
+ * sub-region alone are NOT enough, and the two defects that proved it are
+ * written up in migration 003. In short: two episodes in the same sub-region at
+ * different pins are two places, and two episodes at the same pin are one place
+ * with a count of two.
+ *
+ * Why the point is part of identity rather than an attribute: the same shoulder
+ * genuinely sore in two clearly different places is two entries in a body
+ * history, and collapsing them would misrepresent it. Why it is QUANTISED rather
+ * than exact: a body map is a schematic, and two pins a few pixels apart are the
+ * same place to a person. Exact floats would make every re-click a new place and
+ * the map would fill with near-identical dots, which is its own kind of lie.
+ *
+ * The cell size is a deliberate product decision, stated here so it can be argued
+ * with: 0.05 of the normalised body map is 20x20 cells across a region, which on
+ * the current schematic is roughly the size of a fingertip.
+ */
+export const LOCATION_CELL = 0.05;
+
+/** The grid cell a normalised pin falls in, or null when no pin was placed. */
+export function locationCell(point: { x: number; y: number } | null | undefined): {
+  x: number;
+  y: number;
+} | null {
+  if (!point) return null;
+  const clamp = (v: number) => Math.min(0.999_999, Math.max(0, v));
+  return {
+    x: Math.floor(clamp(point.x) / LOCATION_CELL),
+    y: Math.floor(clamp(point.y) / LOCATION_CELL),
+  };
+}
+
+/**
+ * Keep `body_regions` in step with the records it indexes.
+ *
+ * `body_regions` is a DERIVED spatial index: it exists so the health map can group
+ * episodes by place and read a pin without scanning every record. It is not a
+ * second source of truth, so it is rebuilt from the records rather than written by
+ * the client.
+ *
+ * Called from `applyMutations`, inside the one transaction that writes the record,
+ * so a pin cannot be stored without the index following it.
+ *
+ * MEMBERSHIP IS DERIVED, NEVER COUNTED. There is no increment or decrement. The
+ * aggregates on a place are recomputed from the episodes that actually point at
+ * it, which is what makes the index re-derivable: it cannot drift, it cannot
+ * double-count, and a restart changes nothing. The earlier version incremented
+ * nothing but did overwrite point columns, so it inherited the same class of bug.
+ *
+ * Re-homing is the other half. When an episode's location changes, it has to LEAVE
+ * the place it was in and JOIN the place it is now in, or the old place would keep
+ * counting a location that is no longer there.
+ */
+function syncSpatialIndex(episodeId: string, record: SymptomRecord): void {
+  const ep = get<{ region_id: string; side: string; person_id: string }>(
+    `SELECT region_id, side, person_id FROM episodes WHERE id = ?`, episodeId,
+  );
+  if (!ep) return;
+
+  const store = fieldStoreFor(episodeId);
+  const loc = record.location;
+
+  // `location.side` carries a schema DEFAULT of 'unknown'. A record where the
+  // user never chose a side has NOT said "unknown" -- they have said nothing --
+  // and copying that default over the region row would drag every place to
+  // 'unknown' and collapse left and right into one. Localisation's side stands
+  // unless the field store holds an actual side.
+  const side = store['location.side'] ? loc.side : ep.side;
+  const sub = loc.subRegionId ?? null;
+  const cell = locationCell(loc.point);
+  const previousRegionId = ep.region_id;
+
+  const placeId = findOrCreatePlace(ep.person_id, loc.region, side, sub, cell);
+
+  if (placeId !== previousRegionId) {
+    run(`UPDATE episodes SET region_id = ? WHERE id = ?`, placeId, episodeId);
+    // The place this episode left has to stop counting it.
+    refreshPlaceAggregates(previousRegionId);
+  }
+  refreshPlaceAggregates(placeId);
+}
+
+/** Find the place row for a key, creating it if this is the first episode there. */
+function findOrCreatePlace(
+  personId: string,
+  region: string,
+  side: string,
+  subRegionId: string | null,
+  cell: { x: number; y: number } | null,
+): string {
+  const existing = get<{ id: string }>(
+    `SELECT id FROM body_regions
+      WHERE person_id = ?
+        AND region = ?
+        AND side = ?
+        AND IFNULL(sub_region_id, '') = IFNULL(?, '')
+        AND IFNULL(point_cell_x, -1) = IFNULL(?, -1)
+        AND IFNULL(point_cell_y, -1) = IFNULL(?, -1)
+      LIMIT 1`,
+    personId, region, side, subRegionId, cell?.x ?? null, cell?.y ?? null,
+  );
+  if (existing) return existing.id;
+
+  const id = randomUUID();
+  run(
+    `INSERT INTO body_regions
+       (id, person_id, region, side, sub_region_id,
+        point_x, point_y, point_cell_x, point_cell_y, created_at, updated_at)
+     VALUES (?,?,?,?,?,?,?,?,?,?,?)`,
+    id, personId, region, side, subRegionId,
+    // The representative point starts as this episode's own pin; the aggregate
+    // pass below recomputes it as the mean of the pins that land here.
+    null, null, cell?.x ?? null, cell?.y ?? null, now(), now(),
+  );
+  return id;
+}
+
+/**
+ * Recompute one place's aggregates from the episodes that point at it.
+ *
+ * The representative point is the MEAN of the member pins, not the last one
+ * written. Last-writer-wins was the original bug: one episode's location changed
+ * because another episode existed.
+ *
+ * A place with no episodes is not a place, so it is deleted. That also cleans up
+ * the row `createEpisode` speculatively creates before the mutations run, and any
+ * place an episode has moved away from.
+ */
+function refreshPlaceAggregates(regionRowId: string): void {
+  if (!regionRowId) return;
+  const members = all(
+    `SELECT record_json FROM episodes WHERE region_id = ?`,
+    regionRowId,
+  );
+  if (!members.length) {
+    run(`DELETE FROM body_regions WHERE id = ?`, regionRowId);
+    return;
+  }
+
+  const pins: { x: number; y: number }[] = [];
+  for (const m of members) {
+    try {
+      const record = JSON.parse(String(m.record_json)) as {
+        location?: { point?: { x: number; y: number } | null };
+      };
+      const p = record.location?.point;
+      if (p && typeof p.x === 'number' && typeof p.y === 'number') pins.push(p);
+    } catch {
+      // A record projection that will not parse must not take the map down. The
+      // place still exists; it just contributes no representative point.
+    }
+  }
+
+  const meanX = pins.length ? pins.reduce((a, p) => a + p.x, 0) / pins.length : null;
+  const meanY = pins.length ? pins.reduce((a, p) => a + p.y, 0) / pins.length : null;
+
+  run(
+    `UPDATE body_regions SET point_x = ?, point_y = ?, updated_at = ? WHERE id = ?`,
+    meanX, meanY, now(), regionRowId,
+  );
 }
 
 /* ------------------------------------------------------------------ */
