@@ -154,15 +154,6 @@ export const useSession = create<SessionState>((set, get) => {
      * shows. Projecting it here rather than at each call site means a record can
      * never say "deep inside" while the viewer still displays every layer.
      */
-    /**
-     * Refresh the viewer's React state, and project the record's depth into the
-     * viewer on the way through.
-     *
-     * Depth is something the user told us — often via localisation rather than
-     * the depth control — and it decides which tissue layers the anatomy viewer
-     * shows. Projecting it here rather than at each call site means a record can
-     * never say "deep inside" while the viewer still displays every layer.
-     */
     syncViewer: () => {
       anatomy.apply({ type: 'setDepth', depth: get().record.location.depth });
       set((s) => ({ viewer: anatomy.getState(), viewerTick: s.viewerTick + 1 }));
@@ -199,9 +190,8 @@ export const useSession = create<SessionState>((set, get) => {
           anatomy.apply({ type: 'focusSubRegion', subRegionId: record.location.subRegionId });
         }
         anatomy.apply({
-          type: 'highlight',
+          type: 'setHighlighted',
           structureIds: considered.map((c) => c.structureId),
-          as: 'candidate',
         });
 
         const clarification =
@@ -233,17 +223,38 @@ export const useSession = create<SessionState>((set, get) => {
       get().syncViewer();
     },
 
-    /** Visual selection. NOT confirmation of a structure being the problem. */
+    /**
+     * Visual selection. NOT confirmation of a structure being the problem.
+     *
+     * The record's canonical set is `location.userSelectedStructureIds`; the
+     * viewer only ever mirrors it, via a replacing command so a deselected id
+     * can actually leave.
+     */
     select: (id) => {
-      anatomy.apply({ type: 'highlight', structureIds: [id], as: 'selected' });
       const record = selectStructure(get().record, id);
       set({ record });
+      anatomy.apply({
+        type: 'setSelected',
+        structureIds: record.location.userSelectedStructureIds,
+      });
       get().syncViewer();
     },
 
+    /**
+     * Withdraw a visual selection. The candidate survives — a dismissal is a view
+     * decision, and deleting the suggestion would be lossy — so this changes the
+     * canonical id set and tells the viewer to match.
+     */
     deselect: (id) => {
       const record = deselectStructure(get().record, id);
       set({ record });
+      // Without this the adapter kept the id as selected, so a deselect left the
+      // record and the viewer disagreeing about what the user pointed at.
+      anatomy.apply({
+        type: 'setSelected',
+        structureIds: record.location.userSelectedStructureIds,
+      });
+      get().syncViewer();
     },
 
     /**

@@ -57,6 +57,20 @@ export type ViewerCommand =
   | { type: 'hideLayers'; layers: TissueLayer[] }
   | { type: 'focusSubRegion'; subRegionId: string }
   | { type: 'highlight'; structureIds: string[]; as: 'candidate' | 'selected' }
+  /**
+   * REPLACE the selection, rather than adding to it. `highlight … as
+   * 'selected'` is additive by design, which is right for a click and wrong for
+   * a projection: a deselected id has to be able to leave. The canonical
+   * persisted authority is `location.userSelectedStructureIds`; this command
+   * only ever mirrors it.
+   */
+  | { type: 'setSelected'; structureIds: string[] }
+  /**
+   * REPLACE the candidate highlight set. Re-running localisation replaces the
+   * suggestion list wholesale, so an additive highlight would accumulate
+   * candidates the current record no longer has.
+   */
+  | { type: 'setHighlighted'; structureIds: string[] }
   | { type: 'clearHighlight' }
   /**
    * The user dismissed a suggestion: "not that one". Distinct from clearing a
@@ -137,6 +151,23 @@ export interface RenderedViewer extends AnatomyAdapter {
    * workspace can fall back to 2D instead of showing a blank canvas.
    */
   mount(host: HTMLElement): Promise<void>;
+  /**
+   * REPLACE this viewer's entire state with a snapshot of the source adapter.
+   *
+   * Replace, never merge. The command vocabulary above is mostly additive —
+   * `showLayers` can only ever add a layer, `highlight` can only ever add a
+   * highlight — so replaying a source snapshot through those commands can only
+   * ever produce a SUPERSET of the source. That is how a viewer ends up still
+   * drawing the skin layer after the record moved to "deep inside", or still
+   * holding a pin the record has cleared: a state the source can no longer
+   * produce and therefore can never correct.
+   *
+   * Having exactly one way to take state, and making it a replacement, is what
+   * keeps that class of drift from coming back. Implementations copy the
+   * snapshot wholesale and re-derive their visuals from it; they must not
+   * rebuild the renderer or reload meshes to do so.
+   */
+  projectState(snapshot: ViewerState): void;
   /** Resize to the host's content box. Must be safe to call before mount. */
   resize(width: number, height: number): void;
   /** Move the camera to a named anatomical view. */

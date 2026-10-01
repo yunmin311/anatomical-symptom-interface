@@ -129,6 +129,22 @@ export class Svg2dAnatomyAdapter implements AnatomyAdapter {
           (id) => !cmd.structureIds.includes(id),
         );
         break;
+      case 'setSelected':
+        // Replace, never merge: a deselected id has to be able to leave.
+        s.selectedStructureIds = [...new Set(cmd.structureIds)];
+        s.highlightedStructureIds = s.highlightedStructureIds.filter(
+          (id) => !s.selectedStructureIds.includes(id),
+        );
+        s.rejectedStructureIds = s.rejectedStructureIds.filter(
+          (id) => !s.selectedStructureIds.includes(id),
+        );
+        break;
+      case 'setHighlighted':
+        s.highlightedStructureIds = [...new Set(cmd.structureIds)];
+        s.selectedStructureIds = s.selectedStructureIds.filter(
+          (id) => !s.highlightedStructureIds.includes(id),
+        );
+        break;
       case 'clearHighlight':
         s.highlightedStructureIds = [];
         break;

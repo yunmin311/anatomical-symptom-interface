@@ -95,9 +95,24 @@ function hexToInt(value: string, fallback: number): number {
 }
 
 function readPalette(host: HTMLElement): Palette {
-  const styles = getComputedStyle(host);
-  const get = (name: string, fallback: number) =>
-    hexToInt(styles.getPropertyValue(name), fallback);
+  // A missing style engine (headless tests, SSR) and a host that is not a real
+  // Element (a stub, a detached node) must both fall back rather than stop a
+  // viewer from mounting; the fallback carries the same values.
+  let read: CSSStyleDeclaration | null = null;
+  try {
+    if (typeof globalThis.getComputedStyle === 'function')
+      read = globalThis.getComputedStyle(host);
+  } catch {
+    read = null;
+  }
+  const get = (name: string, fallback: number) => {
+    if (!read) return fallback;
+    try {
+      return hexToInt(read.getPropertyValue(name), fallback);
+    } catch {
+      return fallback;
+    }
+  };
   return {
     idle: get('--zone-idle', FALLBACK_PALETTE.idle),
     active: get('--accent', FALLBACK_PALETTE.active),
@@ -256,6 +271,23 @@ export class Three3dAnatomyAdapter implements RenderedViewer {
           (id) => !cmd.structureIds.includes(id),
         );
         break;
+      case 'setSelected':
+        // Replace, never merge. The canonical persisted authority is
+        // location.userSelectedStructureIds; this mirrors it.
+        s.selectedStructureIds = [...new Set(cmd.structureIds)];
+        s.highlightedStructureIds = s.highlightedStructureIds.filter(
+          (id) => !s.selectedStructureIds.includes(id),
+        );
+        s.rejectedStructureIds = s.rejectedStructureIds.filter(
+          (id) => !s.selectedStructureIds.includes(id),
+        );
+        break;
+      case 'setHighlighted':
+        s.highlightedStructureIds = [...new Set(cmd.structureIds)];
+        s.selectedStructureIds = s.selectedStructureIds.filter(
+          (id) => !s.highlightedStructureIds.includes(id),
+        );
+        break;
       case 'clearHighlight':
         s.highlightedStructureIds = [];
         break;
@@ -386,7 +418,7 @@ export class Three3dAnatomyAdapter implements RenderedViewer {
     // Frame the region with the real aspect ratio now that the size is known.
     this.retargetCamera(true);
 
-    this.frame = requestAnimationFrame(this.tick);
+    this.frame = requestFrame(this.tick);
   }
 
   resize(width: number, height: number): void {
@@ -448,6 +480,33 @@ export class Three3dAnatomyAdapter implements RenderedViewer {
     return { x: (v.x + 1) / 2, y: (1 - v.y) / 2 };
   }
 
+  /**
+   * Replace this viewer's state wholesale with the source's.
+   *
+   * The command path cannot express removal — `showLayers` only adds, `highlight`
+   * only adds — so projecting through it could only ever widen the gap between
+   * this viewer and its source. Copying the snapshot and re-deriving the scene
+   * from it is what makes the two states EQUAL rather than "at least as
+   * complete". Meshes and the renderer are untouched: only state and the visuals
+   * derived from it are replaced.
+   */
+  projectState(snapshot: ViewerState): void {
+    const regionChanged = snapshot.region !== this.state.region;
+    this.state = {
+      region: snapshot.region,
+      visibleSubRegionIds: [...snapshot.visibleSubRegionIds],
+      visibleLayers: [...snapshot.visibleLayers],
+      selectedStructureIds: [...snapshot.selectedStructureIds],
+      highlightedStructureIds: [...snapshot.highlightedStructureIds],
+      rejectedStructureIds: [...snapshot.rejectedStructureIds],
+      pins: snapshot.pins.map((pin) => ({ ...pin })),
+      activePin: snapshot.activePin ? { ...snapshot.activePin } : null,
+    };
+    if (regionChanged) this.retargetCamera();
+    this.syncScene();
+    this.emit();
+  }
+
   isLive(): boolean {
     return this.renderer !== null && !this.disposed && !this.contextLost;
   }
@@ -459,7 +518,7 @@ export class Three3dAnatomyAdapter implements RenderedViewer {
 
   dispose(): void {
     this.disposed = true;
-    if (this.frame) cancelAnimationFrame(this.frame);
+    if (this.frame) cancelFrame(this.frame);
     this.frame = 0;
     if (this.renderer && this.onCanvasContextLost)
       this.renderer.domElement.removeEventListener('webglcontextlost', this.onCanvasContextLost);
@@ -638,7 +697,7 @@ export class Three3dAnatomyAdapter implements RenderedViewer {
   }
 
   private tick = (): void => {
-    this.frame = requestAnimationFrame(this.tick);
+    this.frame = requestFrame(this.tick);
     if (!this.renderer || !this.scene || !this.camera) return;
     if (this.cameraGoal) {
       // Ease toward the goal so switching view reads as a move, not a cut.
@@ -654,6 +713,23 @@ export class Three3dAnatomyAdapter implements RenderedViewer {
 function clamp01(value: number): number {
   return Math.min(1, Math.max(0, value));
 }
+
+/**
+ * Frame scheduling that also works outside a browser.
+ *
+ * Headless tests mount a real adapter with a stub renderer, and there is no
+ * requestAnimationFrame there; falling back to a timer keeps the lifecycle —
+ * including cancelAnimationFrame on dispose — exercised rather than skipped.
+ */
+const requestFrame: (cb: FrameRequestCallback) => number =
+  typeof globalThis.requestAnimationFrame === 'function'
+    ? globalThis.requestAnimationFrame.bind(globalThis)
+    : (cb) => setTimeout(() => cb(Date.now()), 16) as unknown as number;
+
+const cancelFrame: (handle: number) => void =
+  typeof globalThis.cancelAnimationFrame === 'function'
+    ? globalThis.cancelAnimationFrame.bind(globalThis)
+    : (handle) => clearTimeout(handle as unknown as ReturnType<typeof setTimeout>);
 
 function primitiveGeometry(
   shape: 'box' | 'sphere' | 'cylinder' | 'capsule',

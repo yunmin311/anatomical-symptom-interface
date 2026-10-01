@@ -61,6 +61,12 @@ export interface WorkspaceOptions {
   manifest?: AnatomyManifest;
   /** Force the next start() to fail, for fallback tests. */
   failMount?: boolean;
+  /**
+   * Injected in tests: build the viewer instead of constructing one. The viewer
+   * is still mounted and still has to succeed, so the fallback path under test is
+   * the real one. Lets a headless test drive source -> renderer without a GPU.
+   */
+  createViewer?: (host: HTMLElement) => Promise<Three3dAnatomyAdapter>;
 }
 
 export class AnatomyWorkspace {
@@ -74,12 +80,14 @@ export class AnatomyWorkspace {
   private lastCommands: ViewerCommand[] = [];
   private view: CameraPreset = 'anterior';
   private failMount: boolean;
+  private opts: WorkspaceOptions;
   private disposed = false;
 
   constructor(source: AnatomyAdapter, opts: WorkspaceOptions = {}) {
     this.source = source;
     this.manifest = opts.manifest ?? FIXTURE_MANIFEST;
     this.failMount = opts.failMount ?? false;
+    this.opts = opts;
     this.status = {
       mode: '2d',
       ready: false,
@@ -106,12 +114,14 @@ export class AnatomyWorkspace {
     }
     let candidate: Three3dAnatomyAdapter | null = null;
     try {
-      candidate = new Three3dAnatomyAdapter({
-        manifest: this.manifest,
-        failMount: this.failMount,
-        onContextLost: () => this.reportContextLost(),
-      });
-      await candidate.mount(host);
+      candidate = this.opts.createViewer
+        ? await this.opts.createViewer(host)
+        : new Three3dAnatomyAdapter({
+            manifest: this.manifest,
+            failMount: this.failMount,
+            onContextLost: () => this.reportContextLost(),
+          });
+      if (!candidate.isLive()) await candidate.mount(host);
     } catch (cause) {
       const message = cause instanceof Error ? cause.message : String(cause);
       const reason: FallbackReason = /WebGL unavailable/.test(message)
@@ -154,25 +164,18 @@ export class AnatomyWorkspace {
   }
 
   /**
-   * Replay source state onto the 3D viewer.
+   * Project the source state onto the 3D viewer.
    *
-   * Replaying the whole state rather than diffing is deliberate: a viewer that
-   * missed an event must still be correct, and the state is small. View is
-   * included because it is not part of ViewerState.
+   * This is a REPLACEMENT, not a replay of commands. Every command in the
+   * vocabulary is additive, so replaying one could only ever leave the viewer
+   * holding MORE than the source: layers it should have dropped, a selection the
+   * record has removed, a pin that was cleared. projectState copies the snapshot
+   * and re-derives the scene from it, so the two states are equal afterwards.
    */
   private project(state: ViewerState): void {
     const viewer = this.viewer;
     if (!viewer?.isLive()) return;
-    viewer.apply({ type: 'focusRegion', region: state.region });
-    viewer.apply({ type: 'showLayers', layers: state.visibleLayers });
-    for (const id of state.visibleSubRegionIds)
-      viewer.apply({ type: 'focusSubRegion', subRegionId: id });
-    viewer.apply({ type: 'highlight', structureIds: state.highlightedStructureIds, as: 'candidate' });
-    viewer.apply({ type: 'highlight', structureIds: state.selectedStructureIds, as: 'selected' });
-    if (state.rejectedStructureIds.length)
-      viewer.apply({ type: 'reject', structureIds: state.rejectedStructureIds });
-    for (const pin of state.pins) viewer.apply({ type: 'dropPin', point: pin.point });
-    if (state.activePin) viewer.apply({ type: 'dropPin', point: state.activePin });
+    viewer.projectState(state);
   }
 
   getStatus(): WorkspaceStatus {
