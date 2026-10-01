@@ -198,20 +198,33 @@ test('adapter state follows the same command semantics as the 2D map', () => {
   assert.deepEqual(adapter.getState().activePin, { x: 0.4, y: 0.6 });
 });
 
-test('rejection withdraws a selection and survives re-highlighting', () => {
+test('rejection is presentation only and never withdraws a selection', () => {
   const adapter = new Three3dAnatomyAdapter({ manifest: FIXTURE_MANIFEST });
   adapter.apply({ type: 'highlight', structureIds: ['asi:shoulder.deltoid'], as: 'selected' });
   adapter.apply({ type: 'reject', structureIds: ['asi:shoulder.deltoid'] });
   assert.deepEqual(adapter.getState().rejectedStructureIds, ['asi:shoulder.deltoid']);
-  // Never both selected and rejected.
-  assert.deepEqual(adapter.getState().selectedStructureIds, []);
-  // A rejected structure leaves the pickable set until it is cleared.
+  // The canonical authority is location.userSelectedStructureIds. A rejection is
+  // a visual "not that one" and must not silently unselect something the record
+  // still says the user pointed at — only setSelected may change this set.
+  assert.deepEqual(adapter.getState().selectedStructureIds, ['asi:shoulder.deltoid']);
+  // A rejected structure still leaves the pickable set until it is cleared.
   assert.equal(
     adapter.pickableStructures().some((s) => s.id === 'asi:shoulder.deltoid'),
     false,
   );
   adapter.apply({ type: 'clearReject', structureIds: ['asi:shoulder.deltoid'] });
   assert.deepEqual(adapter.getState().rejectedStructureIds, []);
+  assert.deepEqual(adapter.getState().selectedStructureIds, ['asi:shoulder.deltoid']);
+});
+
+test('a candidate highlight never withdraws a selection either', () => {
+  const adapter = new Three3dAnatomyAdapter({ manifest: FIXTURE_MANIFEST });
+  adapter.apply({ type: 'setSelected', structureIds: ['asi:shoulder.deltoid'] });
+  // Re-running localisation replaces the candidate list. That must not reach
+  // into the canonical selection projection.
+  adapter.apply({ type: 'setHighlighted', structureIds: ['asi:shoulder.acromion'] });
+  assert.deepEqual(adapter.getState().selectedStructureIds, ['asi:shoulder.deltoid']);
+  assert.deepEqual(adapter.getState().highlightedStructureIds, ['asi:shoulder.acromion']);
 });
 
 test('a rejected structure is not pickable until the rejection is cleared', () => {
