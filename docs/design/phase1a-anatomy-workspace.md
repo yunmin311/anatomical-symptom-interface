@@ -48,8 +48,24 @@ asserts no `asiId` matches a UUID or an `ObjectN` pattern.
 
 ### The manifest seam
 
-`apps/web/src/anatomy/manifest.ts` defines the only thing that knows how an
-`asiId` relates to geometry:
+`apps/web/src/anatomy/manifest.ts` is the **renderer scene contract** — how a
+piece of geometry is handed to the viewer: which mesh, which views, which tissue
+layer, roughly where to point the camera. It is what lets the renderer contract
+be built and tested before any real asset exists, and it is the only thing that
+knows how an `asiId` relates to geometry.
+
+It is **not** the production asset manifest, and must not be cited as one:
+
+- Asset **identity, provenance and licensing** are domain concerns. They belong
+  to the canonical shared manifest,
+  `packages/shared/src/anatomy-manifest.ts`, landing with `phase1/core-foundation`.
+- The web manifest deliberately carries **no licence, no source attestation and
+  no asset provenance**. It cannot answer "may we ship this?" and is not meant to.
+- On integration, an **adapter converts the canonical manifest into this scene
+  shape**. The renderer keeps consuming the scene contract and changes nothing.
+
+Phase 1A does not copy, merge or re-implement the canonical manifest, and
+reconciling the two is explicitly left to integration.
 
 ```ts
 interface ManifestEntry {
@@ -211,15 +227,23 @@ no-WebGL fallback, and the health map with location marks.
 
 ## Where the real BodyParts3D manifest lands
 
-Nothing in the renderer needs to change. Supply a manifest:
+The renderer will not need to change. What lands is a manifest and an adapter
+that converts it.
 
-1. `source: 'bodyparts3d'` and no `disclaimer` — the fixture warning disappears
-   from the UI on its own.
-2. `geometry.type: 'url'` with the asset `url` and, when one file holds many
-   parts, the `nodeName` to extract.
-3. `asiId` values for every part, namespaced to the project, with
-   `subRegionId` / `structureId` bound to ontology ids. `verifyAgainstOntology`
-   will refuse anything else, which is the point.
+**The canonical source of asset truth is not the web manifest.** Once
+`phase1/core-foundation` provides `packages/shared/src/anatomy-manifest.ts`, that
+is where BodyParts3D asset identity, provenance and licensing are recorded, and
+this phase does not duplicate any of it. The web manifest is the scene contract
+the renderer consumes.
+
+The integration work is:
+
+1. An adapter reads the **canonical** manifest and emits the scene shape above.
+2. `source: 'bodyparts3d'` with `geometry.type: 'url'` plus the asset `url` and,
+   when one file holds many parts, the `nodeName` to extract.
+3. `asiId` per part, namespaced to the project, with `subRegionId` /
+   `structureId` bound to ontology ids. `verifyAgainstOntology` refuses anything
+   else, which is the point.
 4. `views` per part, so a part is only shown from cameras that can see it.
 5. `layer` per part, so felt depth has something to hide.
 6. `bounds.height` and `bounds.radius` describing the figure, so camera framing
@@ -229,7 +253,5 @@ Nothing in the renderer needs to change. Supply a manifest:
 adapter builds what it can and a missing asset is a manifest problem to report,
 not a crash.
 
-Licensing note: BodyParts3D and the alternatives carry their own terms. The
-manifest does not encode a licence, so that has to be recorded alongside the
-asset when it is chosen — see the existing note in `docs/research/anatomy-assets.md`
-and the handoff.
+Licensing is **not** this phase's to record. When BodyParts3D is chosen, its
+terms are captured in the canonical shared manifest, not here.

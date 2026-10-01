@@ -1,17 +1,24 @@
 /**
- * Anatomy asset manifest.
+ * RENDERER SCENE CONTRACT — not the production asset manifest.
  *
- * A manifest is the ONLY thing that knows how a business id relates to a piece
- * of geometry. The renderer resolves `asiId` -> engine handle through the
- * index built here and never the other way round, so no three.js UUID, mesh
- * name or DOM node can ever become a business identifier.
+ * This file describes how a piece of geometry is handed to the viewer: which
+ * mesh, which views, which tissue layer, roughly where to point the camera. It
+ * exists so the renderer contract can be built and tested before any real asset
+ * exists, and so the renderer never has to know where geometry came from.
+ *
+ * It is deliberately NOT the authoritative description of an anatomy asset.
+ * Asset identity, provenance and licensing are domain concerns and belong to the
+ * canonical shared manifest (`packages/shared/src/anatomy-manifest.ts`, landing
+ * with `phase1/core-foundation`). This file carries no licence, no source
+ * attestation and no asset provenance, and nothing here may be cited as such.
+ * When the canonical manifest lands, an adapter converts it into this scene
+ * shape; reconciliation between the two is integration work, deliberately out of
+ * scope here.
  *
  * Phase 1A ships a fixture manifest only. It is procedurally generated,
  * deliberately non-medical geometry whose sole purpose is to prove the
- * renderer contract. Nothing in it is anatomy, and `assertNonMedical` refuses
- * to let a fixture be mistaken for one. When the real BodyParts3D pipeline
- * lands, a second manifest with `source: 'bodyparts3d'` is added; no renderer
- * code changes, because everything below is source-agnostic.
+ * renderer contract. `assertNonMedical` refuses to let it be mistaken for an
+ * anatomy source, and the UI surfaces `disclaimer` whenever a fixture is active.
  */
 import type { BodyRegion, Structure, SubRegion, TissueLayer } from '@asi/shared';
 import type { CameraPreset, MapPoint } from './types.ts';
