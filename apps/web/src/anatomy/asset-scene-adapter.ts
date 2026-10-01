@@ -271,6 +271,7 @@ export function toRendererScene(
       licence: attribution.licence,
       source: attribution.source,
       notice: attribution.notice,
+      synthetic,
     },
     bounds,
     entries,
@@ -288,9 +289,11 @@ export function toRendererScene(
 /**
  * Read-only view of what a scene claims to be, for the UI's attribution panel.
  *
- * Returns null for a fixture, because a fixture has no licence provenance to
- * report: showing a licence line for synthetic geometry would be a fabrication,
- * and the whole reason `attribution` is null there is to make this impossible.
+ * Returns null for a fixture, and that is a DISPLAY decision rather than a claim
+ * that a fixture has no licence. A fixture's licence is real — this project
+ * generated the geometry — but reporting it in an "asset information" panel would
+ * read as provenance for an anatomy source, which is exactly what a synthetic
+ * asset must never appear to be. The synthetic notice is shown instead.
  */
 export function sceneLicenceEvidence(
   scene: RendererSceneManifest,
