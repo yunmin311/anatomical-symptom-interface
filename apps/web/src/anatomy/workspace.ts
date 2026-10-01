@@ -14,7 +14,7 @@
  */
 import { Three3dAnatomyAdapter } from './three3d.ts';
 import type { RendererSceneManifest } from './scene-manifest.ts';
-import { FIXTURE_MANIFEST } from './fixture-manifest.ts';
+import { FIXTURE_SCENE } from './active-scene.ts';
 import type {
   AnatomyAdapter,
   CameraPreset,
@@ -40,7 +40,7 @@ export interface WorkspaceStatus {
   mode: ViewerMode;
   ready: boolean;
   fallbackReason: FallbackReason;
-  /** Non-null while the manifest is a fixture; the UI must show it. */
+  /** Non-null while the scene is a fixture; the UI must show it. */
   disclaimer: string | null;
   /** What the user should be told, in plain words. */
   message: string | null;
@@ -85,7 +85,7 @@ export class AnatomyWorkspace {
 
   constructor(source: AnatomyAdapter, opts: WorkspaceOptions = {}) {
     this.source = source;
-    this.manifest = opts.manifest ?? FIXTURE_MANIFEST;
+    this.manifest = opts.manifest ?? FIXTURE_SCENE;
     this.failMount = opts.failMount ?? false;
     this.opts = opts;
     this.status = {

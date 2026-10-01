@@ -283,6 +283,11 @@ export const SHOULDER_MAPPING: readonly MappingEntry[] = [
  */
 export const UNMAPPABLE_SHOULDER: readonly { asiId: string; reason: string }[] = [
   {
+    asiId: 'asi:shoulder.deltoid',
+    reason:
+      'the source has deltoid geometry only as three parts, each with its own asi: identity above; joining them into one representation is not implemented, so the composite is not bound',
+  },
+  {
     asiId: 'asi:shoulder.acromion',
     reason:
       'no acromion concept exists anywhere in isa_element_parts.txt; BodyParts3D 4.0 has no isolated acromion mesh',
