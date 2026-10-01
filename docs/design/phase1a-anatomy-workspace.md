@@ -83,10 +83,13 @@ interface ManifestEntry {
 }
 ```
 
-Two guards make a fixture impossible to mistake for anatomy:
+Three guards keep a loaded asset from reading as anatomy:
 
-- `assertNonMedical` rejects a `source: 'fixture'` manifest that has no
-  disclaimer or that references an external asset.
+- `assertNonMedical` rejects a `source: 'fixture'` manifest with no disclaimer.
+- Any manifest using `url` geometry must name its assets in
+  `externalAssetNotice`. A loaded file is the one thing the renderer cannot
+  vouch for on its own, so an unattributable asset is refused outright. This is
+  the hook the canonical manifest will fill with real provenance.
 - `verifyAgainstOntology` rejects any entry naming a sub-region or structure the
   domain does not define, so an asset cannot make the viewer highlight
   something the record cannot store.
@@ -249,9 +252,20 @@ The integration work is:
 6. `bounds.height` and `bounds.radius` describing the figure, so camera framing
    works without hardcoded numbers.
 
-`primitive` entries may stay alongside `url` entries during a transition: the
-adapter builds what it can and a missing asset is a manifest problem to report,
-not a crash.
+`primitive` entries may stay alongside `url` entries during a transition.
+
+**What the renderer already does, and what is still missing.** The `url` path is
+implemented and tested against real GLB bytes: the renderer fetches the asset
+through three's GLTFLoader, resolves `nodeName` to an exact node, adopts the
+returned scene graph, and frames the camera from the loaded `Box3`. A missing
+node or a failed load **aborts mount and falls back to the 2D map** rather than
+drawing a body with holes in it. So the renderer is ready to consume the GLB
+scene contract a canonical manifest adapter would emit.
+
+What does not exist yet is that adapter, and any real anatomy asset to point it
+at. Nothing in this phase should be read as "the anatomy is loaded": today the
+only asset in the repo is a two-quad non-medical test fixture, and the canonical
+manifest that would name a real model lands with `phase1/core-foundation`.
 
 Licensing is **not** this phase's to record. When BodyParts3D is chosen, its
 terms are captured in the canonical shared manifest, not here.

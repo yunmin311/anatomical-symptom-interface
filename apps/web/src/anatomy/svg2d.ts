@@ -120,7 +120,9 @@ export class Svg2dAnatomyAdapter implements AnatomyAdapter {
       case 'reject': {
         const set = new Set(cmd.structureIds);
         s.rejectedStructureIds = [...new Set([...s.rejectedStructureIds, ...set])];
-        s.selectedStructureIds = s.selectedStructureIds.filter((id) => !set.has(id));
+        // Presentation only. Filtering the selection out here let a purely
+        // visual dismissal silently contradict the canonical
+        // location.userSelectedStructureIds, which only setSelected may change.
         s.highlightedStructureIds = s.highlightedStructureIds.filter((id) => !set.has(id));
         break;
       }
@@ -141,9 +143,6 @@ export class Svg2dAnatomyAdapter implements AnatomyAdapter {
         break;
       case 'setHighlighted':
         s.highlightedStructureIds = [...new Set(cmd.structureIds)];
-        s.selectedStructureIds = s.selectedStructureIds.filter(
-          (id) => !s.highlightedStructureIds.includes(id),
-        );
         break;
       case 'clearHighlight':
         s.highlightedStructureIds = [];
@@ -151,6 +150,9 @@ export class Svg2dAnatomyAdapter implements AnatomyAdapter {
       case 'dropPin':
       case 'movePin':
         s.activePin = cmd.point;
+        break;
+      case 'clearPin':
+        s.activePin = null;
         break;
       case 'removePin':
         s.pins = s.pins.filter((p) => p.id !== cmd.pinId);
