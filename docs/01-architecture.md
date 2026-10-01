@@ -40,6 +40,50 @@ rendered as a **pre-visit summary** — with **safety messaging produced by rule
 └──────────────────────────────────────────────────────────────┘
 ```
 
+## What a "place" is
+
+`body_regions` is a **derived spatial index**: one row per *place*, the unit the
+personal health map groups by. Its identity is:
+
+```
+(person, region, side, subRegion, cell)
+```
+
+where `cell` is the normalised pin quantised onto a 0.05 grid.
+
+Region, side and sub-region alone are **not** enough, and two bugs proved it. A
+row created before its sub-region was known could not be found again by a later
+episode that landed in the same sub-region, splitting one place into two rows of
+one. Two episodes in the same region and side with no sub-region shared a row,
+and the pin columns were overwritten by whichever wrote last, merging two
+distinct places and silently moving one episode's location.
+
+**Why the point is part of identity.** The same shoulder genuinely sore in two
+clearly different places is two entries in a body history, and collapsing them
+misrepresents it.
+
+**Why it is quantised rather than exact.** A body map is schematic, and two pins a
+few pixels apart are the same place to a person. Exact coordinates would make
+every re-click a new place, and the map would fill with near-identical dots, which
+is its own kind of lie. 0.05 of the normalised map is 20×20 cells per region,
+roughly a fingertip on the current schematic. It is a product decision, so it is
+written here to be argued with rather than buried in a constant.
+
+**Membership is derived, never counted.** There is no increment and no decrement.
+A place's aggregates are recomputed from the episodes that actually point at it,
+which is what makes the index re-derivable: it cannot drift, cannot double-count,
+and a restart changes nothing. The representative point is the **mean** of the
+member pins, not the last one written, so adding an episode cannot move another
+episode's location.
+
+**Moving an episode re-homes it.** It leaves the place it was in and joins the one
+it is now in, on both pin and sub-region. A place with no episodes is not a place,
+so it is deleted.
+
+An episode's **own** pin is returned next to the place aggregate, because they are
+different facts: a client given only the aggregate would attribute every episode in
+a place to the same spot.
+
 ## Storage: migrations, not rebuilds
 
 The schema is versioned by an ordered migration list in
