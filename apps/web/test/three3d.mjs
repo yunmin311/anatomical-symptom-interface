@@ -69,10 +69,53 @@ try {
     ok(`WebGL live (${info.width}x${info.height})`);
   });
 
-  await check('fixture disclaimer is shown while a fixture is active', async () => {
-    const text = await page.locator('[data-testid="fixture-disclaimer"]').textContent().catch(() => null);
-    if (text && /not anatomy/i.test(text)) ok('disclaimer states it is not anatomy');
-    else bad(`disclaimer missing or unclear: ${text}`);
+  await check('a fixture is never allowed to pass as anatomy', async () => {
+    // Two directions, because one is not enough.
+    //
+    // This assertion used to be "the disclaimer is on screen", which was only true
+    // while the app happened to be showing a fixture. Production now shows real
+    // anatomy, so that assertion failed while the product was behaving CORRECTLY:
+    // real geometry must not carry a "this is not anatomy" banner. A test that
+    // encodes a coincidence fails the moment the coincidence changes, and the fix
+    // people reach for then is to delete it.
+    //
+    // The rule is the pair: a fixture ALWAYS discloses itself, and real anatomy
+    // NEVER claims to be a fixture. Both halves are asserted, so neither can be
+    // satisfied by leaving the disclaimer out of the component entirely.
+    const live = await page.locator('[data-testid="fixture-disclaimer"]').textContent().catch(() => null);
+    const sceneSource = await page.evaluate(async () => {
+      const { ACTIVE_SCENE } = await import('/src/anatomy/active-scene.ts');
+      return { source: ACTIVE_SCENE.source, entries: ACTIVE_SCENE.entries.length };
+    });
+
+    if (sceneSource.source === 'fixture') {
+      if (live && /not anatomy/i.test(live)) ok('fixture is active and discloses itself');
+      else bad(`a fixture is active but the disclaimer is missing: ${live}`);
+    } else {
+      if (live) bad(`real anatomy is showing a fixture disclaimer: ${live}`);
+      else ok(`real anatomy (${sceneSource.entries} entries) shows no fixture disclaimer`);
+      const attribution = await page
+        .locator('[data-testid="anatomy-attribution"]')
+        .textContent()
+        .catch(() => null);
+      if (!attribution) bad('real anatomy shows no attribution');
+      else ok('real anatomy names its source instead');
+    }
+
+    // The guarantee itself, tested directly: the disclaimer is a property of the
+    // FIXTURE SCENE, not of the viewer's mood.
+    const fixture = await page.evaluate(async () => {
+      const { AnatomyWorkspace } = await import('/src/anatomy/workspace.ts');
+      const { FIXTURE_SCENE } = await import('/src/anatomy/active-scene.ts');
+      const ws = new AnatomyWorkspace(null, { manifest: FIXTURE_SCENE });
+      const status = ws.getStatus();
+      ws.dispose();
+      return { source: FIXTURE_SCENE.source, disclaimer: status.disclaimer };
+    });
+    if (fixture.source !== 'fixture') bad('FIXTURE_SCENE is not marked as a fixture');
+    else if (!fixture.disclaimer || !/not anatomy/i.test(fixture.disclaimer))
+      bad(`FIXTURE_SCENE carries no usable disclaimer: ${fixture.disclaimer}`);
+    else ok('FIXTURE_SCENE always discloses itself as non-anatomy');
   });
 
   await check('picking a structure returns an asiId, never an engine handle', async () => {

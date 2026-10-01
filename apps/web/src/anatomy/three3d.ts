@@ -1,14 +1,26 @@
 /**
  * Three3dAnatomyAdapter — the 3D viewer behind the same contract as the 2D map.
  *
- * Scope, stated plainly: Phase 1A wires the RENDERER, not anatomy. It can load
- * real GLB assets — `geometry.type: 'url'` fetches a file, resolves a named node
- * and adopts the returned scene graph — but the only assets that exist today are
- * procedural fixture volumes and one two-quad non-medical test file. There is no
- * anatomical model here and the adapter never claims otherwise; a loaded file
- * must be named in `manifest.externalAssetNotice` and a fixture must carry a
- * `disclaimer`, both surfaced by the UI. When the canonical manifest lands it
- * adds a manifest and an adapter, not renderer code.
+ * ## What this renders
+ *
+ * Real, externally sourced anatomy. `geometry.type: 'url'` fetches a GLB and adopts
+ * the returned scene graph, and the production scenes are built from the canonical
+ * manifest, so what appears on screen is BodyParts3D shoulder geometry — currently
+ * one scene per side, chosen by the record's `location.side`.
+ *
+ * The synthetic fixture is still here and is still TEST-ONLY. It is what the picking,
+ * layer-visibility and fallback tests mount, because its geometry is known-good and a
+ * real asset's gaps would make those tests lie. A fixture must carry a `disclaimer`
+ * and must never become the production scene; `assertProductionSceneIsReal` is the
+ * guard, and it runs at scene build time rather than being a comment.
+ *
+ * Two consequences of rendering real anatomy that the code below has to respect:
+ *
+ *   - the mesh is in the source's own units and coordinate frame, not in the
+ *     fixture's. Camera framing is derived from the measured scene rather than
+ *     assumed, which is why `retargetCamera` computes its own near and far planes.
+ *   - the side of the geometry is STATED by the scene entry, never inferred from the
+ *     mesh name or the x coordinate. See `RendererSceneEntry.laterality`.
  *
  * Identity is the load-bearing rule. Engine objects are held in a private
  * `Map<asiId, Object3D>` and never returned, never stored in viewer state and
@@ -610,6 +622,10 @@ export class Three3dAnatomyAdapter implements RenderedViewer {
         subRegionIds: [...entry.subRegionIds],
         ...(entry.soleSubRegionId ? { subRegionId: entry.soleSubRegionId } : {}),
         structureId: entry.structureId,
+        // The side of the geometry that was actually hit, read off the scene entry
+        // the ray resolved to. A statement about which mesh was under the cursor --
+        // not a clinical side, and not something the renderer may write to a record.
+        laterality: entry.laterality,
         point: {
           x: clamp01(
             (hit.point.x + this.manifest.bounds.radius) / (this.manifest.bounds.radius * 2),
@@ -1064,18 +1080,35 @@ export class Three3dAnatomyAdapter implements RenderedViewer {
         box.expandByPoint(v);
         measured = true;
       }
-      if (measured && !box.isEmpty()) {
-        box.getCenter(this.focus);
-        const sphere = box.getBoundingSphere(new THREE.Sphere());
-        radius = Math.max(0.08, sphere.radius);
+if (measured && !box.isEmpty()) {
+      box.getCenter(this.focus);
+      const sphere = box.getBoundingSphere(new THREE.Sphere());
+      radius = Math.max(0.08, sphere.radius);
+      // FRUSTUM FROM THE ACTUAL SCENE, NOT FROM A CONSTANT.
+      //
+      // The depth planes were a hardcoded 0.05..50, sized for the fixture, which is
+      // about 1.8 units tall and sits on the origin. Real anatomy is in
+      // MILLIMETRES: the BodyParts3D shoulder meshes span roughly 80-280 units and
+      // sit about 1300 units from the origin, so every ray left the frustum before
+      // it reached the geometry. Nothing crashed and nothing rendered as "no hit" in
+      // a way anyone would read as a picking bug -- the viewer simply showed real
+      // anatomy that could not be clicked.
+      //
+      // Derived from the measured sphere so it holds for any asset in any units: far
+      // clears the camera and the far side of the body with room to spare, near is a
+      // small fraction of the radius so precision survives at any scale.
+      const depthScale = Math.max(radius, 0.08);
+      if (this.camera) {
+        this.camera.near = Math.max(0.001, depthScale * 0.01);
+        this.camera.far = depthScale * 40 + distanceFor(radius, this.camera) * 4;
+        this.camera.updateProjectionMatrix();
       }
+    }
     }
     const station = CAMERA_PRESETS[this.view];
     const target = this.focus.clone();
     // Fit the sphere in the tighter of the two field axes, with headroom.
-    const vFov = (this.camera?.fov ?? 38) * (Math.PI / 180);
-    const hFov = 2 * Math.atan(Math.tan(vFov / 2) * Math.max(1, this.camera?.aspect ?? 1));
-    const distance = (radius / Math.sin(Math.min(vFov, hFov) / 2)) * 1.35;
+    const distance = this.camera ? distanceFor(radius, this.camera) : radius * 4;
     const direction = new THREE.Vector3(...station.position).normalize();
     const position = direction.multiplyScalar(distance).add(target);
     if (immediate || !this.camera) {
@@ -1099,6 +1132,19 @@ export class Three3dAnatomyAdapter implements RenderedViewer {
     }
     this.renderer.render(this.scene, this.camera);
   };
+}
+
+/**
+ * How far back the camera must sit to fit a sphere of `radius` in the frustum.
+ *
+ * Shared by `retargetCamera` and the depth-plane calculation, because a far plane
+ * derived from a different distance than the camera actually uses is exactly the kind
+ * of near-miss that only shows up on some assets.
+ */
+function distanceFor(radius: number, camera: THREE.PerspectiveCamera): number {
+  const vFov = camera.fov * (Math.PI / 180);
+  const hFov = 2 * Math.atan(Math.tan(vFov / 2) * Math.max(1, camera.aspect || 1));
+  return (radius / Math.sin(Math.min(vFov, hFov) / 2)) * 1.35;
 }
 
 function clamp01(value: number): number {

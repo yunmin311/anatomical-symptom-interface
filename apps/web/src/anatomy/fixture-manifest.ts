@@ -21,7 +21,7 @@
  * as seen from the front, which is mirrored in the lateral presets.
  */
 import { REGIONS, TISSUE_LAYER_ORDER } from '@asi/shared';
-import type { BodyRegion, Structure, SubRegion, TissueLayer } from '@asi/shared';
+import type { BodyRegion, Laterality, Structure, SubRegion, TissueLayer } from '@asi/shared';
 import type { RendererSceneManifest, RendererSceneEntry } from './scene-manifest.ts';
 import type { CameraPreset } from './types.ts';
 
@@ -226,6 +226,14 @@ const STRUCTURE_PROXIES: {
   subRegionId: string;
   structureId: string;
   layer: TissueLayer;
+  /**
+   * Stated, like every other laterality in the renderer contract.
+   *
+   * The fixture draws the figure's left on +x, and it would be easy to let a sign
+   * test assign these. That is the inference this field exists to prevent, so the
+   * side is written next to the geometry that is on that side.
+   */
+  laterality: Laterality;
   geometry: Primitive;
   views: CameraPreset[];
   focusPoint: [number, number];
@@ -236,6 +244,7 @@ const STRUCTURE_PROXIES: {
     subRegionId: 'shoulder.lateral',
     structureId: 'asi:shoulder.deltoid',
     layer: 'muscle',
+    laterality: 'left',
     geometry: sphere([0.26, Y.shoulder, 0.0], [0.1, 0.1, 0.11]),
     views: ALL_VIEWS,
     focusPoint: [0.74, 0.37],
@@ -245,6 +254,7 @@ const STRUCTURE_PROXIES: {
     subRegionId: 'shoulder.anterior',
     structureId: 'asi:shoulder.biceps-long-head-tendon',
     layer: 'tendon',
+    laterality: 'left',
     geometry: capsule([0.17, Y.shoulder - 0.01, 0.1], [0.03, 0.07, 0.03]),
     views: ['anterior', 'lateral_left', 'lateral_right'],
     focusPoint: [0.67, 0.36],
@@ -254,6 +264,7 @@ const STRUCTURE_PROXIES: {
     subRegionId: 'shoulder.lateral',
     structureId: 'asi:shoulder.acromion',
     layer: 'bone',
+    laterality: 'left',
     geometry: box([0.24, Y.shoulder + 0.07, 0.0], [0.08, 0.03, 0.08]),
     views: ALL_VIEWS,
     focusPoint: [0.74, 0.33],
@@ -263,6 +274,7 @@ const STRUCTURE_PROXIES: {
     subRegionId: 'shoulder.lateral',
     structureId: 'asi:shoulder.acromioclavicular-joint',
     layer: 'joint',
+    laterality: 'left',
     geometry: sphere([0.2, Y.shoulder + 0.08, 0.02], [0.035, 0.035, 0.035]),
     views: ALL_VIEWS,
     focusPoint: [0.7, 0.32],
@@ -272,6 +284,7 @@ const STRUCTURE_PROXIES: {
     subRegionId: 'shoulder.lateral',
     structureId: 'asi:shoulder.supraspinatus-tendon',
     layer: 'tendon',
+    laterality: 'left',
     geometry: box([0.2, Y.shoulder + 0.05, -0.02], [0.07, 0.025, 0.05]),
     views: ['posterior', 'lateral_left', 'lateral_right'],
     focusPoint: [0.7, 0.34],
@@ -282,6 +295,7 @@ const STRUCTURE_PROXIES: {
     subRegionId: 'neck.anterior',
     structureId: 'asi:neck.sternocleidomastoid',
     layer: 'muscle',
+    laterality: 'left',
     geometry: capsule([-0.05, Y.neckTop - 0.04, 0.06], [0.03, 0.07, 0.03]),
     views: ['anterior', 'lateral_left', 'lateral_right'],
     focusPoint: [0.46, 0.3],
@@ -291,6 +305,7 @@ const STRUCTURE_PROXIES: {
     subRegionId: 'neck.anterior',
     structureId: 'asi:neck.cervical-spine',
     layer: 'bone',
+    laterality: 'left',
     geometry: capsule([0, Y.neckTop - 0.05, 0.0], [0.04, 0.08, 0.04]),
     views: ALL_VIEWS,
     focusPoint: [0.5, 0.31],
@@ -300,6 +315,7 @@ const STRUCTURE_PROXIES: {
     subRegionId: 'neck.lateral',
     structureId: 'asi:neck.brachial-plexus',
     layer: 'nerve',
+    laterality: 'left',
     geometry: sphere([0.09, Y.neckTop - 0.06, 0.0], [0.025, 0.04, 0.025]),
     views: ALL_VIEWS,
     focusPoint: [0.59, 0.33],
@@ -310,6 +326,7 @@ const STRUCTURE_PROXIES: {
     subRegionId: 'lower_back.central',
     structureId: 'asi:lower-back.lumbar-spine',
     layer: 'bone',
+    laterality: 'left',
     geometry: box([0, Y.lowerBack, -0.09], [0.045, 0.16, 0.04]),
     views: ['posterior', 'lateral_left', 'lateral_right'],
     focusPoint: [0.5, 0.65],
@@ -319,6 +336,7 @@ const STRUCTURE_PROXIES: {
     subRegionId: 'lower_back.left_paravertebral',
     structureId: 'asi:lower-back.erector-spinae',
     layer: 'muscle',
+    laterality: 'left',
     geometry: box([-0.12, Y.lowerBack, -0.09], [0.04, 0.16, 0.05]),
     views: ['posterior', 'lateral_left'],
     focusPoint: [0.44, 0.66],
@@ -328,6 +346,7 @@ const STRUCTURE_PROXIES: {
     subRegionId: 'lower_back.central',
     structureId: 'asi:lower-back.thoracolumbar-fascia',
     layer: 'fascia',
+    laterality: 'left',
     geometry: box([0, Y.lowerBack, -0.13], [0.2, 0.17, 0.02]),
     views: ['posterior', 'lateral_left', 'lateral_right'],
     focusPoint: [0.5, 0.66],
@@ -337,6 +356,7 @@ const STRUCTURE_PROXIES: {
     subRegionId: 'lower_back.sacrococcygeal',
     structureId: 'asi:lower-back.coccyx',
     layer: 'bone',
+    laterality: 'left',
     geometry: sphere([0, Y.hip + 0.03, -0.12], [0.035, 0.045, 0.03]),
     views: ['posterior', 'lateral_left', 'lateral_right'],
     focusPoint: [0.5, 0.75],
@@ -346,6 +366,7 @@ const STRUCTURE_PROXIES: {
     subRegionId: 'lower_back.sacrococcygeal',
     structureId: 'asi:lower-back.sacrotuberous-ligament',
     layer: 'ligament',
+    laterality: 'left',
     geometry: box([0.06, Y.hip + 0.02, -0.12], [0.05, 0.06, 0.02]),
     views: ['posterior', 'lateral_left', 'lateral_right'],
     focusPoint: [0.56, 0.75],
@@ -356,6 +377,7 @@ const STRUCTURE_PROXIES: {
     subRegionId: 'knee.anterior',
     structureId: 'asi:knee.patella',
     layer: 'bone',
+    laterality: 'left',
     geometry: sphere([0.1, Y.knee, 0.08], [0.05, 0.05, 0.03]),
     views: ['anterior', 'lateral_left', 'lateral_right'],
     focusPoint: [0.57, 0.85],
@@ -365,6 +387,7 @@ const STRUCTURE_PROXIES: {
     subRegionId: 'knee.anterior',
     structureId: 'asi:knee.patellar-tendon',
     layer: 'tendon',
+    laterality: 'left',
     geometry: box([0.1, Y.knee - 0.07, 0.06], [0.035, 0.05, 0.025]),
     views: ['anterior', 'lateral_left', 'lateral_right'],
     focusPoint: [0.57, 0.88],
@@ -374,6 +397,7 @@ const STRUCTURE_PROXIES: {
     subRegionId: 'knee.anterior',
     structureId: 'asi:knee.prepatellar-bursa',
     layer: 'fascia',
+    laterality: 'left',
     geometry: sphere([0.1, Y.knee + 0.01, 0.1], [0.055, 0.05, 0.02]),
     views: ['anterior', 'lateral_left', 'lateral_right'],
     focusPoint: [0.57, 0.84],
@@ -395,6 +419,10 @@ function subRegionEntries(): RendererSceneEntry[] {
         // Sub-region volumes are proxies, not tissue, so they sit on the skin
         // layer: hiding "deep" tissue must not make a region unpickable.
         layer: 'skin',
+        // A sub-region proxy is a schematic click volume, not a one-sided piece of
+        // anatomy, so it claims no side. Saying `bilateral` here would be a guess
+        // dressed as a fact, and `not_applicable` is the honest answer.
+        laterality: 'not_applicable',
         views: proxy.views,
         geometry: proxy.geometry,
         focusPoint: { x: proxy.focusPoint[0], y: proxy.focusPoint[1] },
@@ -418,6 +446,7 @@ function structureEntries(): RendererSceneEntry[] {
     soleSubRegionId: proxy.subRegionId,
     structureId: proxy.structureId,
     layer: proxy.layer,
+    laterality: proxy.laterality,
     views: proxy.views,
     geometry: proxy.geometry,
     focusPoint: { x: proxy.focusPoint[0], y: proxy.focusPoint[1] },

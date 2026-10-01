@@ -68,20 +68,25 @@ function syntheticMesh(name: string, rings: number, seg: number, radius: number)
   return { name, positions, indices };
 }
 
-const ARCHIVE_LIKE = (): Map<string, SourceMesh> =>
-  new Map([
-    ['Deltoid_L', syntheticMesh('Deltoid_L', 40, 48, 1.2)],
-    ['Supraspinatus_tendon_L', syntheticMesh('Supraspinatus_tendon_L', 24, 32, 0.5)],
-    ['Infraspinatus_L', syntheticMesh('Infraspinatus_L', 32, 40, 0.9)],
-    ['Teres_minor_L', syntheticMesh('Teres_minor_L', 20, 24, 0.35)],
-    ['Scapula_L', syntheticMesh('Scapula_L', 30, 36, 1.6)],
-    ['Acromion_L', syntheticMesh('Acromion_L', 16, 20, 0.45)],
-    ['Coracoid_process_L', syntheticMesh('Coracoid_process_L', 14, 18, 0.3)],
-    ['Subscapularis_L', syntheticMesh('Subscapularis_L', 28, 34, 0.8)],
-    ['Trapezius_L', syntheticMesh('Trapezius_L', 26, 30, 1.4)],
-    // Deliberately NOT present: the bursa (expected absent) and the joints
-    // (unexpected gaps the pipeline must report rather than paper over).
-  ]);
+/**
+ * The archive's real LEFT-side file names, with synthetic geometry in their place.
+ *
+ * Real names, synthetic meshes. The names are the ones read out of
+ * isa_element_parts.txt for BodyParts3D 4.0, so a test binds what the pipeline will
+ * actually meet; the geometry is a deterministic blob because these tests are about
+ * selection and validity, not anatomy. Writing English labels here — as this fixture
+ * used to — is exactly the mistake the real archive exposed.
+ *
+ * Read from the mapping so the two cannot drift.
+ */
+const ARCHIVE_LIKE = (): Map<string, SourceMesh> => {
+  const leftNames = SHOULDER_MAPPING.flatMap((e) =>
+    e.candidates.filter((c) => c.side === 'left').map((c) => c.meshName),
+  ).filter((n) => !n.startsWith('UNAVAILABLE:'));
+  return new Map(
+    leftNames.map((n, i) => [n, syntheticMesh(n, 20 + i * 2, 24 + i, 0.4 + i * 0.1)]),
+  );
+};
 
 /* ================================================================== */
 /* Selection                                                           */
@@ -89,20 +94,45 @@ const ARCHIVE_LIKE = (): Map<string, SourceMesh> =>
 
 test('selection binds only meshes that exist in the input', () => {
   const names = [...ARCHIVE_LIKE().keys()];
-  const r = selectStructures('shoulder', names);
+  const r = selectStructures('shoulder', names, 'left');
   const byId = new Map(r.bound.map((b) => [b.asiId, b.meshName]));
 
-  assert.equal(byId.get('asi:shoulder.deltoid'), 'Deltoid_L');
-  assert.equal(byId.get('asi:shoulder.supraspinatus-tendon'), 'Supraspinatus_tendon_L');
-  assert.equal(byId.get('asi:shoulder.scapula'), 'Scapula_L');
+  // Real archive names, and the LEFT file of each pair.
+  assert.equal(byId.get('asi:shoulder.supraspinatus-tendon'), 'FJ1506M');
+  assert.equal(byId.get('asi:shoulder.infraspinatus'), 'FJ1500M');
+  assert.equal(byId.get('asi:shoulder.teres-minor'), 'FJ1508M');
+  assert.equal(byId.get('asi:shoulder.subscapularis'), 'FJ1504M');
+  assert.equal(byId.get('asi:shoulder.scapula'), 'FJ3279');
   // Present in the mapping, absent from the input: reported, not invented.
   const missing = r.unmapped.map((u) => u.asiId);
   assert.ok(missing.includes('asi:shoulder.glenohumeral-joint'));
   assert.ok(missing.includes('asi:shoulder.acromioclavicular-joint'));
 });
 
+test('a side selects which of the source pair is bound', () => {
+  // BodyParts3D carries both sides and the base file is the RIGHT one, so a build
+  // must be able to say which it produced -- and must not silently bind the other.
+  const names = [...ARCHIVE_LIKE().keys(), 'FJ1506'];
+  const left = selectStructures('shoulder', names, 'left');
+  const right = selectStructures('shoulder', names, 'right');
+  const id = 'asi:shoulder.supraspinatus-tendon';
+  assert.equal(left.bound.find((b) => b.asiId === id)?.meshName, 'FJ1506M');
+  assert.equal(right.bound.find((b) => b.asiId === id)?.meshName, 'FJ1506');
+  // The side comes from the SOURCE, and is recorded on the binding.
+  assert.equal(left.bound.find((b) => b.asiId === id)?.side, 'left');
+  assert.equal(right.bound.find((b) => b.asiId === id)?.side, 'right');
+});
+
+test('a build binds one mesh per structure, never both sides of it', () => {
+  const names = [...ARCHIVE_LIKE().keys(), 'FJ1506', 'FJ1500', 'FJ1508'];
+  const r = selectStructures('shoulder', names, 'left');
+  const byId = new Map(r.bound.map((b) => [b.asiId, b.meshName]));
+  assert.equal(byId.get('asi:shoulder.supraspinatus-tendon'), 'FJ1506M');
+  assert.equal(byId.has('asi:shoulder.supraspinatus-tendon') ? r.bound.filter((b) => b.asiId === 'asi:shoulder.supraspinatus-tendon').length : 0, 1);
+});
+
 test('a structure is never bound to a mesh that does not exist', () => {
-  const r = selectStructures('shoulder', [...ARCHIVE_LIKE().keys()]);
+  const r = selectStructures('shoulder', [...ARCHIVE_LIKE().keys()], 'left');
   const present = new Set(ARCHIVE_LIKE().keys());
   for (const b of r.bound) {
     assert.ok(present.has(b.meshName), `bound to a missing mesh: ${b.meshName}`);
@@ -110,31 +140,32 @@ test('a structure is never bound to a mesh that does not exist', () => {
 });
 
 test('a bursal space is reported as expected-absent, not as a failure', () => {
-  const r = selectStructures('shoulder', [...ARCHIVE_LIKE().keys()]);
+  const r = selectStructures('shoulder', [...ARCHIVE_LIKE().keys()], 'left');
   const bursa = r.unmapped.find((u) => u.asiId === 'asi:shoulder.subacromial-bursa');
   assert.ok(bursa, 'the bursa should be reported');
   assert.equal(bursa.expectedAbsent, true);
 });
 
 test('an empty input binds nothing and invents nothing', () => {
-  const r = selectStructures('shoulder', []);
+  const r = selectStructures('shoulder', [], 'left');
   assert.equal(r.bound.length, 0);
   assert.equal(r.unmapped.length, SHOULDER_MAPPING.length);
 });
 
 test('one source mesh is never bound to two asiIds', () => {
-  // Deltoid lists two candidate spellings; if both were somehow present the
-  // first must win and the second must not also claim it.
-  const names = ['Deltoid_L', 'Deltoid_muscle_L'];
-  const r = selectStructures('shoulder', names);
+  // Both sides of one concept present: only the requested side may claim a mesh,
+  // and no mesh may be claimed twice.
+  const names = ['FJ1506', 'FJ1506M'];
+  const r = selectStructures('shoulder', names, 'left');
   const claims = r.bound.map((b) => b.meshName);
   assert.equal(new Set(claims).size, claims.length, 'a mesh was claimed twice');
-  assert.equal(claims[0], 'Deltoid_L', 'preference order was not respected');
+  assert.ok(claims.includes('FJ1506M'), 'preference order was not respected');
+  assert.ok(!claims.includes('FJ1506'), 'the wrong side was bound');
 });
 
 test('unclaimed source meshes are reported rather than silently dropped', () => {
-  const r = selectStructures('shoulder', ['Humerus_L', 'Clavicle_L', 'Deltoid_L']);
-  assert.deepEqual(r.unusedMeshNames.sort(), ['Clavicle_L', 'Humerus_L']);
+  const r = selectStructures('shoulder', ['FJ9999', 'FJ1506M'], 'left');
+  assert.deepEqual(r.unusedMeshNames, ['FJ9999']);
 });
 
 test('every mapping row names a structure the domain actually has', () => {
@@ -256,7 +287,7 @@ test('something that is not a GLB is rejected', () => {
 /* ================================================================== */
 
 test('the pipeline runs end to end and produces a valid manifest', () => {
-  const result = runPipeline('shoulder', ARCHIVE_LIKE(), { gridDivisions: 8 });
+  const result = runPipeline('shoulder', ARCHIVE_LIKE(), { gridDivisions: 8, side: 'left' });
   assert.ok(result.manifest.entries.length > 0, 'no entries produced');
 
   // Parsed through the real schema plus the cross-checks.
@@ -267,7 +298,7 @@ test('the pipeline runs end to end and produces a valid manifest', () => {
 });
 
 test('every manifest entry has a mesh that was actually written', () => {
-  const result = runPipeline('shoulder', ARCHIVE_LIKE(), { gridDivisions: 8 });
+  const result = runPipeline('shoulder', ARCHIVE_LIKE(), { gridDivisions: 8, side: 'left' });
   for (const e of result.manifest.entries) {
     assert.ok(result.files.has(e.file), `manifest names a mesh that was not produced: ${e.file}`);
   }
@@ -275,11 +306,15 @@ test('every manifest entry has a mesh that was actually written', () => {
 });
 
 test('mesh file names are derived from asiId, not from the source name', () => {
-  const result = runPipeline('shoulder', ARCHIVE_LIKE(), { gridDivisions: 8 });
-  const deltoid = result.manifest.entries.find((e) => e.asiId === 'asi:shoulder.deltoid');
-  assert.equal(deltoid?.file, 'shoulder/asi-shoulder-deltoid.glb');
-  assert.equal(deltoid?.meshName, 'Deltoid_L');
-  assert.ok(!deltoid!.file.includes('Deltoid_L'), 'the source name leaked into the file path');
+  const result = runPipeline('shoulder', ARCHIVE_LIKE(), { gridDivisions: 8, side: 'left' });
+  // The scapula: bound to a real FJ file, written to a path named for our own id.
+  const scapula = result.manifest.entries.find((e) => e.asiId === 'asi:shoulder.scapula');
+  assert.equal(scapula?.file, 'shoulder/asi-shoulder-scapula.glb');
+  assert.equal(scapula?.meshName, 'FJ3279');
+  assert.ok(
+    !scapula!.file.includes('FJ3279'),
+    'the source element id leaked into the file path, so renaming upstream would rename our files',
+  );
 });
 
 test('renaming a source mesh does not change the generated file name', () => {
@@ -290,8 +325,8 @@ test('renaming a source mesh does not change the generated file name', () => {
 });
 
 test('the whole pipeline is reproducible byte for byte', () => {
-  const a = runPipeline('shoulder', ARCHIVE_LIKE(), { gridDivisions: 8 });
-  const b = runPipeline('shoulder', ARCHIVE_LIKE(), { gridDivisions: 8 });
+  const a = runPipeline('shoulder', ARCHIVE_LIKE(), { gridDivisions: 8, side: 'left' });
+  const b = runPipeline('shoulder', ARCHIVE_LIKE(), { gridDivisions: 8, side: 'left' });
   assert.equal(
     JSON.stringify(a.manifest),
     JSON.stringify(b.manifest),
@@ -303,7 +338,7 @@ test('the whole pipeline is reproducible byte for byte', () => {
 });
 
 test('licence and attribution are on every entry', () => {
-  const result = runPipeline('shoulder', ARCHIVE_LIKE(), { gridDivisions: 8 });
+  const result = runPipeline('shoulder', ARCHIVE_LIKE(), { gridDivisions: 8, side: 'left' });
   for (const e of result.manifest.entries) {
     assert.equal(e.licence.id, BODYPARTS3D_LICENCE.id);
     assert.ok(e.licence.attribution.includes('BodyParts3D'), 'attribution line missing');
@@ -314,7 +349,7 @@ test('licence and attribution are on every entry', () => {
 });
 
 test('every entry records where its geometry came from', () => {
-  const result = runPipeline('shoulder', ARCHIVE_LIKE(), { gridDivisions: 8 });
+  const result = runPipeline('shoulder', ARCHIVE_LIKE(), { gridDivisions: 8, side: 'left' });
   for (const e of result.manifest.entries) {
     assert.equal(e.source.dataset, BODYPARTS3D_SOURCE.dataset);
     assert.ok(e.source.release.length > 0, 'no source release recorded');
@@ -323,7 +358,7 @@ test('every entry records where its geometry came from', () => {
 });
 
 test('FMA bindings stay unverified, because nothing has been checked', () => {
-  const result = runPipeline('shoulder', ARCHIVE_LIKE(), { gridDivisions: 8 });
+  const result = runPipeline('shoulder', ARCHIVE_LIKE(), { gridDivisions: 8, side: 'left' });
   for (const e of result.manifest.entries) {
     assert.equal(e.fma.status, 'unverified', 'an FMA binding was claimed as verified');
   }
@@ -332,7 +367,7 @@ test('FMA bindings stay unverified, because nothing has been checked', () => {
 });
 
 test('the manifest records real reduction, not an aspiration', () => {
-  const result = runPipeline('shoulder', ARCHIVE_LIKE(), { gridDivisions: 6 });
+  const result = runPipeline('shoulder', ARCHIVE_LIKE(), { gridDivisions: 6, side: 'left' });
   for (const e of result.manifest.entries) {
     assert.ok((e.geometry.sourceTriangles ?? 0) > e.geometry.triangles, 'nothing was reduced');
     assert.ok((e.geometry.reduction ?? 0) > 0);
@@ -341,7 +376,7 @@ test('the manifest records real reduction, not an aspiration', () => {
 });
 
 test('the geometry budget is enforced against what was actually produced', () => {
-  const result = runPipeline('shoulder', ARCHIVE_LIKE(), { gridDivisions: 40 });
+  const result = runPipeline('shoulder', ARCHIVE_LIKE(), { gridDivisions: 40, side: 'left' });
   const issues = validateManifest(result.manifest, {
     fileSizes: new Map([...result.files].map(([k, v]) => [k, v.byteLength])),
     budget: { maxTotalTriangles: 50, maxTrianglesPerMesh: 50, maxTotalBytes: 1024 },
@@ -352,7 +387,7 @@ test('the geometry budget is enforced against what was actually produced', () =>
 test('a sensible grid resolution fits the default budget', () => {
   // The default budget has to be achievable, or every build fails and the budget
   // stops meaning anything.
-  const result = runPipeline('shoulder', ARCHIVE_LIKE(), { gridDivisions: 10 });
+  const result = runPipeline('shoulder', ARCHIVE_LIKE(), { gridDivisions: 10, side: 'left' });
   const issues = validateManifest(result.manifest, {
     fileSizes: new Map([...result.files].map(([k, v]) => [k, v.byteLength])),
   });
@@ -362,12 +397,53 @@ test('a sensible grid resolution fits the default budget', () => {
 });
 
 test('gaps are reported in the build log, not buried', () => {
-  const result = runPipeline('shoulder', ARCHIVE_LIKE(), { gridDivisions: 8 });
+  const result = runPipeline('shoulder', ARCHIVE_LIKE(), { gridDivisions: 8, side: 'left' });
   const joined = result.notes.join('\n');
-  assert.match(joined, /glenohumeral-joint/);
-  assert.match(joined, /tried/, 'a reported gap should say what it looked for');
-  // An expected-absent space is reported differently from a real gap.
-  assert.match(joined, /bursa[\s\S]*no source mesh expected/);
+// An expected-absent structure is reported differently from a real gap, and
+    // says WHY, so a reader can tell a deliberate decision from a gap nobody looked
+    // at. This is the difference between "we checked and there is no acromion" and
+    // "the mapping was never finished".
+    assert.match(joined, /glenohumeral-joint[\s\S]*no source mesh expected/);
+    assert.match(joined, /glenohumeral-joint[\s\S]*glenohumeral joint concept/i);
+    // The bursa is expected-absent for a different, stated reason.
+    assert.match(joined, /bursa[\s\S]*no source mesh expected/);
+    assert.match(joined, /bursa[\s\S]*solid anatomy/i);
+    // An expected-absent candidate is never named like a real archive file, so the
+    // log cannot be misread as a search that just failed to match.
+    assert.doesNotMatch(
+      joined,
+      /tried UNAVAILABLE/,
+      'an expected-absent structure must not report a candidate search at all',
+    );
+  });
+
+test('a build reports a real gap as a gap, with what it looked for', () => {
+  // Distinct from the expected-absent path above: this structure IS in the mapping
+  // and IS missing from the input, which is the case that would otherwise be
+  // mistaken for an intentional omission.
+  const meshes = ARCHIVE_LIKE();
+  // Assert the fixture really contains it, so a future mapping change cannot turn
+  // this into a test that removes nothing and then asserts a gap that never
+  // depended on the removal.
+  assert.ok(meshes.has('FJ1504M'), 'the fixture no longer contains the mesh being removed');
+  meshes.delete('FJ1504M');
+  const joined = runPipeline('shoulder', meshes, { gridDivisions: 8, side: 'left' })
+    .notes.join('\n');
+  // Every candidate is listed, because which one this build wanted is not something
+  // a reader should have to infer from the build command.
+  assert.match(
+    joined,
+    /subscapularis: no source mesh found; tried FJ1504, FJ1504M\b/,
+    `unexpected note text: ${joined}`,
+  );
+  // Scoped to its OWN note line. A greedy cross-line match would run on to the
+  // acromion's expected-absent line and pass or fail for the wrong reason.
+  const ownLine = joined.split('\n').find((l) => l.includes('subscapularis')) ?? '';
+  assert.doesNotMatch(
+    ownLine,
+    /no source mesh expected/,
+    'a mesh that was simply missing must not be reported as intentionally absent',
+  );
 });
 
 test('sub-regions come from the domain, so a structure appears where it is selectable', () => {
@@ -375,13 +451,15 @@ test('sub-regions come from the domain, so a structure appears where it is selec
     subRegionsContaining('shoulder', 'asi:shoulder.deltoid').sort(),
     ['shoulder.anterior', 'shoulder.lateral'],
   );
-  const deltoid = runPipeline('shoulder', ARCHIVE_LIKE(), { gridDivisions: 8 })
-    .manifest.entries.find((e) => e.asiId === 'asi:shoulder.deltoid');
-  assert.equal(deltoid?.subRegionIds.length, 2, 'a two-sub-region structure was bound to one');
+  // The scapula lives in one sub-region, so it carries exactly that list rather
+  // than a truncated first element -- the whole list is the truth.
+  const scapula = runPipeline('shoulder', ARCHIVE_LIKE(), { gridDivisions: 8, side: 'left' })
+    .manifest.entries.find((e) => e.asiId === 'asi:shoulder.scapula');
+  assert.deepEqual(scapula?.subRegionIds, ['shoulder.posterior']);
 });
 
 test('a mesh cannot be mistaken for a selection: no clinical claim is emitted', () => {
-  const result = runPipeline('shoulder', ARCHIVE_LIKE(), { gridDivisions: 8 });
+  const result = runPipeline('shoulder', ARCHIVE_LIKE(), { gridDivisions: 8, side: 'left' });
   const text = JSON.stringify(result.manifest);
   for (const forbidden of ['selectedByUser', 'diagnosis', 'severity', 'finding']) {
     assert.equal(text.includes(forbidden), false, `the manifest emitted ${forbidden}`);

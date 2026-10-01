@@ -45,17 +45,27 @@ import type {
 } from './scene-manifest.ts';
 
 /**
- * A manifest whose generator declares itself synthetic is dev/test-only.
+ * The generator-name prefix that marks a manifest as synthetic.
  *
- * The marker lives on `generator` rather than a bespoke flag because the top
- * level of the canonical schema is intentionally not `.strict()` and a
- * hand-added field would simply be stripped — a synthetic manifest that
- * silently lost its own "synthetic" marker is exactly the confusion this
- * prevents. The prefix is checked, not the whole string, so a generator can
- * still version itself.
+ * Exported so THREE parties can agree on it: the adapter, the embed script that
+ * decides whether a manifest may become the production scene, and the tests. When it
+ * lived only in the adapter, the build script could not ask the question and had to
+ * guess.
+ *
+ * The marker lives on `generator` rather than a bespoke flag because the top level of
+ * the canonical schema is intentionally not `.strict()`, so a hand-added field would
+ * simply be stripped: a synthetic manifest that silently lost its own "synthetic"
+ * marker is exactly the confusion this prevents. The prefix is checked, not the whole
+ * string, so a generator can still version itself.
  */
-const SYNTHETIC_GENERATOR_PREFIX = 'asi-synthetic';
-
+export const SYNTHETIC_GENERATOR_PREFIX = 'asi-synthetic';
+/**
+ * Is this manifest synthetic test geometry rather than sourced anatomy?
+ *
+ * Read from `generator.name`, so the marker travels WITH the data instead of living
+ * in a loader's head: a manifest that silently lost its own "synthetic" marker is
+ * exactly the confusion this prevents.
+ */
 export function isSyntheticManifest(manifest: AssetManifest): boolean {
   return manifest.generator.name.startsWith(SYNTHETIC_GENERATOR_PREFIX);
 }
@@ -293,6 +303,11 @@ export function toRendererSceneEntry(
     structureId: entry.asiId,
     // 7. layer carried through unchanged.
     layer: entry.layer,
+    // 8. laterality carried through unchanged. Copied, never derived: the source
+    //    mapping chose which real file this is, and a renderer that re-guessed the
+    //    side from the filename or the x coordinate could not tell a correct left
+    //    mesh from a mirrored one.
+    laterality: entry.laterality,
     views,
     geometry: {
       type: 'url',

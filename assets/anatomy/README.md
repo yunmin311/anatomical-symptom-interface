@@ -43,12 +43,25 @@ detectable rather than discovered later. See `docs/research/anatomy-assets.md`.
 mkdir -p assets/anatomy/source
 unzip -q ~/Downloads/isa_BP3D_4.0_obj_99.zip -d assets/anatomy/source
 
-# 3. run the pipeline
-node scripts/build-anatomy.mjs --region shoulder \
-  --input assets/anatomy/source \
-  --out assets/anatomy/generated \
-  --grid 10
+# 3. run the pipeline, once per side
+#
+# `--side` is not a display option. One `asiId` is one structure, and BodyParts3D
+# ships two files for it, so the side decides WHICH REAL MESH becomes the entry --
+# and it is recorded as `laterality` from the source concept the mapping named.
+# Building both into one directory would let one side overwrite the other, which is
+# how a left manifest ends up pointing at right geometry.
+for SIDE in left right; do
+  node scripts/build-anatomy.mjs --region shoulder --side "$SIDE" \
+    --input assets/anatomy/source/obj/isa_BP3D_4.0_obj_99 \
+    --out "assets/anatomy/generated/$SIDE" \
+    --grid 10
+  node scripts/embed-anatomy-manifest.mjs --side "$SIDE"
+done
 ```
+
+Nothing is mirrored. The right shoulder is built from the source's own right-side
+meshes (`FJ1468`, `FJ1500M`-style base ids) against different FMA concepts, and the
+`laterality` gate checks that on both sides.
 
 With no `--input` the script prints the file it needs and the exact command to
 run, and writes nothing. It will not download the archive, will not commit it,
@@ -78,9 +91,10 @@ same GLBs, which is what makes a generated manifest reviewable.
 There is exactly one path, and it is one-directional:
 
 ```text
-manifest.json → parseManifest()      validate against the domain and the budget
-                → toRendererScene()   apps/web/src/anatomy/asset-scene-adapter.ts
-                → RendererSceneManifest → the renderer mounts it
+generated/<side>/manifest.json → parseManifest()      validate against the domain
+                             → toRendererScene()      and the budget
+                             → RendererSceneManifest  apps/web/src/anatomy/asset-scene-adapter.ts
+                             → the renderer mounts it
 ```
 
 Things worth knowing before you add a field or change one:
@@ -98,6 +112,19 @@ Things worth knowing before you add a field or change one:
   `licence.attribution`, `source.dataset` and `source.release`, and
   `assertSceneAttribution` refuses a scene whose string disagrees — so it cannot
   be written by hand and cannot drift from the licence above.
+- **`laterality` is copied, never derived.** The side is established once, by the
+  mapping naming a real source concept, and travels
+  `AssetManifestEntry → RendererSceneEntry → PickResult` unchanged. Nothing infers
+  it from a filename, an `M` suffix, an x coordinate, a camera angle or which half
+  of the screen a mesh lands on. `buildProductionScene` refuses a build whose
+  manifest disagrees with its own `--side`, and the `laterality` gate checks both
+  shoulders.
+- **`geometry.units` is `mm`, and it was measured.** The archive carries no unit
+  field. BodyParts3D documents its model as an adult human male, and the source
+  meshes span 1729.74 units top to bottom: 1.73 m as millimetres, 17.3 m as
+  centimetres, 1730 m as metres. Camera framing stays unit-agnostic and derives
+  its near and far planes from the measured scene, so a source in different units
+  will still frame correctly.
 - **The pipeline is proven without the real archive**, using clearly-labelled
   synthetic geometry in `apps/web/test/`: canonical manifest → validate → adapter
   → scene → real GLB bytes → `GLTFLoader` → three.js scene graph → descendant

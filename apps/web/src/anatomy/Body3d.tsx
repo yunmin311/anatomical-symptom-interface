@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState } from 'react';
 import { AnatomyWorkspace } from './workspace.ts';
 import type { WorkspaceStatus } from './workspace.ts';
-import { ACTIVE_SCENE } from './active-scene.ts';
+import type { Side } from '@asi/shared';
+import { sceneFor } from './active-scene.ts';
 import { AnatomyAttribution } from '../ui/AnatomyAttribution.tsx';
 import type { PickResult } from './types.ts';
 import { anatomy } from '../state/session.ts';
@@ -22,6 +23,7 @@ export function Body3d({
   onPick,
   onStatus,
   active,
+  side,
 }: {
   /**
    * A raycast result, reported whole. Deliberately not narrowed to a sub-region:
@@ -29,6 +31,14 @@ export function Body3d({
    * that decision belongs to the session's caller, not to the renderer host.
    */
   onPick: (hit: PickResult) => void;
+  /**
+   * The record's side, and it decides WHICH real scene is mounted.
+   *
+   * The viewer shows one shoulder at a time, so rendering "the" scene without asking
+   * this question means guessing -- and the guess is invisible: left anatomy looks
+   * exactly like right anatomy until you know which one you are looking at.
+   */
+  side: Side;
   /**
    * Full workspace status. The caller needs the fallback REASON, not just a
    * boolean, to tell "still starting" apart from "gave up": switching surfaces
@@ -45,11 +55,20 @@ export function Body3d({
   const onStatusRef = useRef(onStatus);
   onStatusRef.current = onStatus;
 
+  // Which scene the record's side calls for, decided once per side so the effect below
+  // remounts when the side changes rather than on every render.
+  const selection = sceneFor(side);
+  const mountable = selection.kind === 'scene' ? selection.scene : null;
+  const needsSide = selection.kind === 'needs-side' || selection.kind === 'none';
+  const reason =
+    selection.kind === 'needs-side' || selection.kind === 'none' ? selection.reason : null;
+
   useEffect(() => {
     const host = hostRef.current;
     if (!host || !active) return;
+    if (!mountable) return;
     let cancelled = false;
-    const workspace = new AnatomyWorkspace(anatomy, { manifest: ACTIVE_SCENE });
+    const workspace = new AnatomyWorkspace(anatomy, { manifest: mountable });
     workspaceRef.current = workspace;
     const unsubscribe = workspace.subscribe((next) => {
       if (cancelled) return;
@@ -77,7 +96,9 @@ export function Body3d({
       workspace.dispose();
       workspaceRef.current = null;
     };
-  }, [active]);
+    // `mountable` rather than `side`: it is the scene identity, so a rebuild that
+    // produces an equal-but-new object remounts and an unchanged side does not.
+  }, [active, mountable]);
 
   const workspace = workspaceRef.current;
   const live3d = status?.mode === '3d' && !failed;
@@ -89,11 +110,26 @@ export function Body3d({
       hidden={!active}
     >
       {/*
+        Stated where the canvas is, because a 3D viewer with no side named is the one
+        place a user could look at left anatomy and believe it was right. This is the
+        record's side, the same one that chose the scene.
+      */}
+      {needsSide && (
+        <p className="viewer3d__disclaimer" data-testid="side-required">
+          {reason}
+        </p>
+      )}
+      {/*
         The mode indicator lives in the panel toolbar, so this bar carries only
         what the canvas cannot say for itself: that these are placeholder
         volumes, and why there is no image.
       */}
       <div className="viewer3d__toolbar">
+        {side !== 'unknown' && side !== 'bilateral' && mountable && (
+          <p className="viewer3d__side" data-testid="viewer-side">
+            Showing your {side} side.
+          </p>
+        )}
         {status?.disclaimer && (
           <p className="viewer3d__disclaimer" data-testid="fixture-disclaimer">
             {status.disclaimer}
@@ -105,7 +141,7 @@ export function Body3d({
           the map, and it reads the canonical provenance through the adapter, so
           there is no path by which a licence gets typed in by hand.
         */}
-        <AnatomyAttribution scene={ACTIVE_SCENE} />
+        {mountable && <AnatomyAttribution scene={mountable} />}
       </div>
 
       {/* The host is always mounted so a fallback has somewhere to go. */}

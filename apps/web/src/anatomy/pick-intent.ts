@@ -24,9 +24,65 @@
  * canonical authority for a visual selection stays
  * `location.userSelectedStructureIds`, and this file has no opinion about storage.
  */
+import type { Laterality, Side } from '@asi/shared';
 import type { MapPoint, PickResult } from './types.ts';
 import { resolveSubRegionForStructure } from './scene-manifest.ts';
 import type { SubRegionResolution } from './scene-manifest.ts';
+
+/**
+ * Does the picked geometry's side agree with the side already on the record?
+ *
+ * ## The rule, and why each answer is what it is
+ *
+ * `record.location.side` is the authority and only a user changes it. `hit.laterality`
+ * is a fact about which mesh was under the cursor. They are different kinds of thing,
+ * so a disagreement is information, not a correction.
+ *
+ * - **contradiction**: the record says left, the mesh is right. The pick is REFUSED.
+ *   Applying it would let a camera angle rewrite a clinical field, and correcting the
+ *   record to match would silently rewrite what the user said. Neither the geometry
+ *   nor the record outranks the other, so the only honest move is to say so and change
+ *   nothing. Showing the wrong shoulder while the record claims the other is a
+ *   scene-selection bug, and the fix belongs there.
+ * - **compatible**: the record side matches, or the record has no side yet. The pick
+ *   proceeds.
+ * - **proposal**: there is nothing to contradict and the record side is `unknown`.
+ *
+ * ## An unknown record side is NOT silently filled in here
+ *
+ * It is tempting to treat a real one-sided mesh as the answer to "which side is this",
+ * and the geometry really is evidence. But the pick is a CLICK, and a click on a
+ * structure says "this structure", not "and the side is now settled". Settling it
+ * would make the side an inference from camera angle rather than something the user
+ * said. So the side is reported as a proposal and the caller decides; nothing here
+ * writes a record field.
+ *
+ * `bilateral`, `midline`, `not_applicable` and an absent side never contradict
+ * anything: geometry that is not one-sided cannot disagree with a one-sided record.
+ */
+export type PickSideAgreement =
+  | { kind: 'compatible' }
+  | { kind: 'proposal'; laterality: Laterality }
+  | { kind: 'contradiction'; picked: Laterality; recorded: Side; reason: string };
+
+export function pickSideAgreement(
+  picked: Laterality | undefined,
+  recorded: Side,
+): PickSideAgreement {
+  if (!picked || picked === 'bilateral' || picked === 'midline' || picked === 'not_applicable')
+    return { kind: 'compatible' };
+  if (recorded === 'unknown' || recorded === 'bilateral') return { kind: 'proposal', laterality: picked };
+  if (recorded !== picked)
+    return {
+      kind: 'contradiction',
+      picked,
+      recorded,
+      reason:
+        `The viewer is showing ${picked} anatomy while the record says ${recorded}. ` +
+        `Nothing was changed, because only you can change the recorded side.`,
+    };
+  return { kind: 'compatible' };
+}
 
 /**
  * A pick resolved into an action, with the sub-region consequence decided but not
@@ -71,8 +127,24 @@ export type PickIntent =
  * produces a structure intent — selecting a structure does not depend on knowing
  * the area, and refusing the whole click would lose the part we are certain about.
  */
-export function intentFromPick(hit: PickResult, currentSubRegionId: string | null): PickIntent {
+export function intentFromPick(
+  hit: PickResult,
+  currentSubRegionId: string | null,
+  currentSide: Side = 'unknown',
+): PickIntent {
   if (hit.kind === 'none') return { kind: 'none', reason: 'Nothing was hit.' };
+
+  // A real mesh states which side it is. If the record already has a side and the
+  // geometry says otherwise, the pick is refused rather than applied -- see
+  // pickSideAgreement for why the alternative is unacceptable.
+  if (hit.kind === 'structure') {
+    const agreement = pickSideAgreement(hit.laterality, currentSide);
+    if (agreement.kind === 'contradiction')
+      return {
+        kind: 'none',
+        reason: agreement.reason,
+      };
+  }
 
   if (hit.kind === 'subregion') {
     // A sub-region entry has exactly one sub-region, so `soleSubRegionId` is always
@@ -116,8 +188,12 @@ export function intentFromPick(hit: PickResult, currentSubRegionId: string | nul
  * authority for it is still `location.userSelectedStructureIds`; this only says
  * what should be selected.
  *
- * `subRegionId` is left UNCHANGED for an unresolved pick. That is the single most
- * important line in this file.
+ * `subRegionId` is RECONCILED against the candidates for an unresolved pick, not
+ * left alone. That is the single most important line in this file, and the rule is
+ * three cases rather than one: a draft area the structure can be in is kept, an
+ * absent one stays absent, and a draft area it CANNOT be in is cleared. See
+ * `draftAreaIsCompatible` for why a stale area is not harmless — it is what the
+ * confirm button would submit.
  */
 export interface PickDraft {
   subRegionId: string | null;
@@ -228,6 +304,14 @@ export function draftAreaIsCompatible(
 
 /**
  * Bring the draft into line with the structure the user just pointed at.
+ *
+ * COMPATIBLE DRAFT: kept whole, area and pin both, because the user already said it
+ * and the structure genuinely can be there. It stays a DRAFT — nothing is committed
+ * here, and the confirm button is still the thing that persists it.
+ *
+ * INCOMPATIBLE DRAFT: cleared, so the confirm button cannot submit an area the
+ * structure cannot be in. The user chooses again from the candidates, which is the
+ * one thing a tool must not do on their behalf.
  *
  * AND THE PIN, DELIBERATELY. Clearing an area because it cannot hold the structure
  * has to take the pin that was dropped in that area with it, or the confirm button

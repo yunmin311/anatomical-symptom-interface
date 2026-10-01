@@ -11,7 +11,15 @@
  * Next:    Three3dAnatomyAdapter over BodyParts3D / Z-Anatomy, added behind
  *          this same interface with no changes above it.
  */
-import type { BodyRegion, Depth, Side, Structure, SubRegion, TissueLayer } from '@asi/shared';
+import type {
+  BodyRegion,
+  Depth,
+  Laterality,
+  Side,
+  Structure,
+  SubRegion,
+  TissueLayer,
+} from '@asi/shared';
 
 /** A point on the body map, normalised 0..1 so it is resolution independent. */
 export interface MapPoint {
@@ -152,6 +160,23 @@ export interface PickResult {
   structureId?: string;
   /** Normalised 0..1 surface point, so a pin means the same in 2D and 3D. */
   point?: MapPoint;
+  /**
+   * The side of the body the HIT GEOMETRY is, read from the renderer scene entry.
+   * Absent when nothing was hit, or when the entry does not state a side.
+   *
+   * ## This is a geometric fact, not a clinical one
+   *
+   * The user pointed at geometry that came from the source's left shoulder. That is a
+   * statement about which mesh was under the cursor. It is NOT a finding, and it is
+   * NOT the record's side.
+   *
+   * The persisted authority for side is `record.location.side`, and it can only change
+   * through a user action. A pick may therefore propose a side, but it may never
+   * write one: a renderer that overwrote the record from a raycast would let a camera
+   * angle silently rewrite a clinical field. Where the two disagree, that is a
+   * mismatch to surface, not a correction to apply.
+   */
+  laterality?: Laterality;
 }
 
 export type CameraPreset = 'anterior' | 'posterior' | 'lateral_left' | 'lateral_right';

@@ -159,7 +159,9 @@ export function BodyMap() {
   function handlePick(hit: PickResult) {
     // The RECORD's sub-region, not the draft: the "keep" rule is about what the user
     // has already told us, and a draft they have not committed is not that.
-    const intent = intentFromPick(hit, location.subRegionId ?? null);
+    // The RECORD's sub-region and side, so a pick that contradicts a side the user
+  // already confirmed is refused rather than applied. See pickSideAgreement.
+  const intent = intentFromPick(hit, location.subRegionId ?? null, location.side);
     const effect = reducePickToDraft(
       intent,
       { subRegionId: pendingSub, point: pendingPoint },
@@ -246,9 +248,10 @@ export function BodyMap() {
               <strong>{region.label}</strong>
               <span>{VIEW_LABEL[view]}</span>
             </div>
-            <Body3d
-              active={surface === '3d'}
-              onPick={handlePick}
+<Body3d
+            active={surface === '3d'}
+            side={location.side}
+            onPick={handlePick}
               onStatus={(next) => {
                 setThreeDReady(next.mode === '3d');
                 // Only a real failure moves the toolbar. The workspace emits a

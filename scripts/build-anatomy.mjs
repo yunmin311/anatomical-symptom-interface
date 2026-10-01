@@ -48,7 +48,7 @@ const REGION = flag('region', 'shoulder');
 const INPUT = flag('input');
 const OUT = flag('out', 'assets/anatomy/generated');
 const GRID = Number(flag('grid', '10'));
-const LATERALITY = flag('laterality', 'left');
+const SIDE = flag('side', 'left');
 const ARCHIVE = flag('archive');
 const RETRIEVED = flag('retrieved');
 
@@ -106,6 +106,7 @@ async function main() {
   console.log(`[anatomy] source dataset    ${BODYPARTS3D_SOURCE.dataset} ${BODYPARTS3D_SOURCE.release} (concepts ${BODYPARTS3D_SOURCE.conceptRelease})`);
   console.log(`[anatomy] licence           ${BODYPARTS3D_LICENCE.id}, page verified ${BODYPARTS3D_LICENCE.verifiedOn}`);
   console.log(`[anatomy] structures wanted  ${wanted.length}`);
+  console.log(`[anatomy] side              ${SIDE}`);
 
   if (!INPUT) {
     console.log('');
@@ -147,7 +148,7 @@ async function main() {
 
   const result = runPipeline(REGION, meshes, {
     gridDivisions: GRID,
-    laterality: LATERALITY,
+    side: SIDE,
     retrievedAt: RETRIEVED ?? null,
     archive: ARCHIVE,
   });

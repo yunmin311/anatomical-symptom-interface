@@ -220,7 +220,11 @@ test('a structure with no layTerm still produces a sentence', () => {
 
 const DRAFT = { subRegionId: null as string | null, point: null as { x: number; y: number } | null };
 
-test('an unresolved pick leaves the draft area EXACTLY as it was', () => {
+// The title used to claim an unresolved pick "leaves the draft area EXACTLY as it
+// was", which was the bug: it only holds for a COMPATIBLE draft, and an incompatible
+// one has to be cleared or the confirm button submits a location the structure
+// cannot be in. `draftAreaIsCompatible` now states all three cases.
+test('an unresolved pick with no draft area still ends with no area', () => {
   const intent = intentFromPick(pick(), null);
   const effect = reducePickToDraft(intent, DRAFT, null);
   assert.equal(effect.draft.subRegionId, null, 'an unresolved pick chose an area');
