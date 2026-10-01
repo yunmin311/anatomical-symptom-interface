@@ -116,8 +116,12 @@ export function intentFromPick(hit: PickResult, currentSubRegionId: string | nul
  * authority for it is still `location.userSelectedStructureIds`; this only says
  * what should be selected.
  *
- * `subRegionId` is left UNCHANGED for an unresolved pick. That is the single most
- * important line in this file.
+ * `subRegionId` is RECONCILED against the candidates for an unresolved pick, not
+ * left alone. That is the single most important line in this file, and the rule is
+ * three cases rather than one: a draft area the structure can be in is kept, an
+ * absent one stays absent, and a draft area it CANNOT be in is cleared. See
+ * `draftAreaIsCompatible` for why a stale area is not harmless — it is what the
+ * confirm button would submit.
  */
 export interface PickDraft {
   subRegionId: string | null;
@@ -228,6 +232,14 @@ export function draftAreaIsCompatible(
 
 /**
  * Bring the draft into line with the structure the user just pointed at.
+ *
+ * COMPATIBLE DRAFT: kept whole, area and pin both, because the user already said it
+ * and the structure genuinely can be there. It stays a DRAFT — nothing is committed
+ * here, and the confirm button is still the thing that persists it.
+ *
+ * INCOMPATIBLE DRAFT: cleared, so the confirm button cannot submit an area the
+ * structure cannot be in. The user chooses again from the candidates, which is the
+ * one thing a tool must not do on their behalf.
  *
  * AND THE PIN, DELIBERATELY. Clearing an area because it cannot hold the structure
  * has to take the pin that was dropped in that area with it, or the confirm button
