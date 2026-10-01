@@ -31,14 +31,20 @@
  * See assets/anatomy/README.md for the archive and licence.
  */
 import { parseManifest } from '@asi/shared';
-import type { AssetManifest, BodyRegion } from '@asi/shared';
+import type { AssetManifest, BodyRegion, Side } from '@asi/shared';
 import { FIXTURE_MANIFEST } from './fixture-manifest.ts';
 import { toRendererScene, isSyntheticManifest } from './asset-scene-adapter.ts';
 import type { RendererSceneManifest } from './scene-manifest.ts';
 import {
-  CANONICAL_ANATOMY_MANIFEST,
-  CANONICAL_ASSET_ROOT,
-} from './generated/canonical-manifest.ts';
+  CANONICAL_ANATOMY_MANIFEST as LEFT_MANIFEST,
+  CANONICAL_ASSET_ROOT as LEFT_ASSET_ROOT,
+  CANONICAL_SIDE as LEFT_SIDE,
+} from './generated/canonical-manifest.left.ts';
+import {
+  CANONICAL_ANATOMY_MANIFEST as RIGHT_MANIFEST,
+  CANONICAL_ASSET_ROOT as RIGHT_ASSET_ROOT,
+  CANONICAL_SIDE as RIGHT_SIDE,
+} from './generated/canonical-manifest.right.ts';
 
 /**
  * The synthetic fixture. Rendering, interaction, picking and adapter tests only.
@@ -57,10 +63,12 @@ export const FIXTURE_SCENE: RendererSceneManifest = FIXTURE_MANIFEST;
  * activate its anatomy assets is a different problem from a build with a broken one,
  * and the message should say which.
  */
-function buildProductionScene(): RendererSceneManifest {
+function buildProductionScene(side: 'left' | 'right'): RendererSceneManifest {
   let canonical: AssetManifest;
+  const raw = side === LEFT_SIDE ? LEFT_MANIFEST : RIGHT_MANIFEST;
+  const assetRoot = side === LEFT_SIDE ? LEFT_ASSET_ROOT : RIGHT_ASSET_ROOT;
   try {
-    canonical = parseManifest(CANONICAL_ANATOMY_MANIFEST);
+    canonical = parseManifest(raw);
   } catch (error) {
     throw new Error(
       `the generated anatomy manifest does not satisfy the canonical contract, so no anatomy ` +
@@ -75,7 +83,19 @@ function buildProductionScene(): RendererSceneManifest {
         'production scene. Run scripts/embed-anatomy-manifest.mjs on a real generated manifest.',
     );
 
-  const scene = toRendererScene(canonical, { assetRoot: CANONICAL_ASSET_ROOT });
+  // The build flag and the manifest have to agree. The side is a fact the source
+  // mapping established when it chose which real mesh to load; a `--side right`
+  // build whose manifest says `left` is a mislabeled build, and shipping it would put
+  // right-labelled anatomy on screen with left provenance.
+  const claimed = [...new Set(canonical.entries.map((e) => e.laterality))];
+  if (claimed.length !== 1 || claimed[0] !== side)
+    throw new Error(
+      `the generated ${side} manifest carries laterality ${claimed.join('/')}. The side is a ` +
+        `fact from the source mapping, not a label, so this build is refused rather than ` +
+        `displayed. Rebuild it with scripts/build-anatomy.mjs --side ${side}.`,
+    );
+
+  const scene = toRendererScene(canonical, { assetRoot });
   assertProductionSceneIsReal(scene);
   return scene;
 }
@@ -101,8 +121,84 @@ export function assertProductionSceneIsReal(scene: RendererSceneManifest): void 
     );
 }
 
-/** The scene the product renders. Built from the canonical manifest, once. */
-export const ACTIVE_SCENE: RendererSceneManifest = buildProductionScene();
+/**
+ * The real scenes, one per side, built from their own canonical manifests.
+ *
+ * ## Why there is no single ACTIVE_SCENE any more
+ *
+ * One scene was honest while only the left side existed. With both sides built it
+ * stops being honest, because "the scene" has to be a guess: the app would be
+ * rendering left anatomy for a user whose record says right, or rendering left
+ * anatomy for a user who never said. Both would look entirely correct on screen,
+ * which is what makes the mistake hard to see.
+ *
+ * So the side is a parameter here and the caller has to pass one. There is no
+ * default, and `sceneFor` below refuses anything it cannot answer honestly.
+ */
+export const PRODUCTION_SCENES: {
+  readonly left: RendererSceneManifest;
+  readonly right: RendererSceneManifest;
+} = {
+  left: buildProductionScene('left'),
+  right: buildProductionScene('right'),
+};
+
+/**
+ * What the viewer should show for a given record side, and why.
+ *
+ * Every outcome is named, because the alternative is the app choosing a side
+ * silently. A user with no side recorded would otherwise get whichever shoulder
+ * happened to be first in the object literal, and would have no way to know that the
+ * geometry they clicked belongs to a side they never confirmed.
+ *
+ * - `left` / `right`: the real scene for that side.
+ * - `needs-side`: `unknown`, or `bilateral` when only one side's geometry is asked
+ *   for. The honest answer is to ask, because we genuinely do not know.
+ * - `both`: `bilateral`, with both real scenes available, so nothing is invented and
+ *   nothing is withheld. Both are real source geometry, never one mirrored.
+ * - `none`: `midline`. Midline structures have no side, and inventing one would be a
+ *   fabrication. The 2D map and the interview still work; there is simply no
+ *   one-sided 3D scene to show.
+ */
+export type SceneSelection =
+  | { kind: 'scene'; side: 'left' | 'right'; scene: RendererSceneManifest }
+  | { kind: 'both'; sides: readonly ('left' | 'right')[]; scenes: RendererSceneManifest[] }
+  | { kind: 'needs-side'; reason: string }
+  | { kind: 'none'; reason: string };
+
+export function sceneFor(side: Side): SceneSelection {
+  if (side === 'left') return { kind: 'scene', side: 'left', scene: PRODUCTION_SCENES.left };
+  if (side === 'right') return { kind: 'scene', side: 'right', scene: PRODUCTION_SCENES.right };
+  if (side === 'bilateral')
+    return {
+      kind: 'both',
+      sides: ['left', 'right'],
+      scenes: [PRODUCTION_SCENES.left, PRODUCTION_SCENES.right],
+    };
+  if (side === 'midline')
+    return {
+      kind: 'none',
+      reason:
+        'Midline structures have no side, and the shoulder assets are one-sided, so there is no ' +
+        '3D scene to show. The map and the questions still work.',
+    };
+  return {
+    kind: 'needs-side',
+    reason:
+      'Which shoulder? The 3D viewer shows real anatomy for one side at a time, and picking a ' +
+        'side here is not a guess we can make for you.',
+  };
+}
+
+/**
+ * The single scene to render when only one is mountable.
+ *
+ * Kept for the many call sites that have no record side to work from (the library
+ * grid, the anatomy reference, tests that are not about laterality). It is the LEFT
+ * scene, named as a choice rather than hidden as a default, and callers that DO have
+ * a record side must use `sceneFor` instead.
+ */
+export const ACTIVE_SCENE: RendererSceneManifest = PRODUCTION_SCENES.left;
 
 /**
  * Regions the production scene actually covers.
@@ -110,13 +206,39 @@ export const ACTIVE_SCENE: RendererSceneManifest = buildProductionScene();
  * Read from the scene rather than declared, so the 2D fallback and the geometry
  * cannot disagree about which body areas have real assets.
  */
-export function activeRegions(): BodyRegion[] {
-  return [...new Set(ACTIVE_SCENE.entries.map((e) => e.region))];
+export function activeRegions(side: Side = 'left'): BodyRegion[] {
+  return [...new Set(scenesFor(side).flatMap((s) => s.entries.map((e) => e.region)))];
 }
 
-/** `asi:` ids the production scene can render in 3D. */
-export function activeStructureIds(): string[] {
-  return ACTIVE_SCENE.entries
-    .filter((e) => e.kind === 'structure' && e.structureId)
-    .map((e) => e.structureId!);
+/** `asi:` ids the production scene for `side` can render in 3D. */
+export function activeStructureIds(side: Side = 'left'): string[] {
+  return [
+    ...new Set(
+      scenesFor(side).flatMap((s) =>
+        s.entries.filter((e) => e.kind === 'structure' && e.structureId).map((e) => e.structureId!),
+      ),
+    ),
+  ];
+}
+
+/** The real scenes a record side may be shown, always at least one for left/right. */
+export function scenesFor(side: Side): RendererSceneManifest[] {
+  const selection = sceneFor(side);
+  if (selection.kind === 'scene') return [selection.scene];
+  if (selection.kind === 'both') return selection.scenes;
+  return [];
+}
+
+/**
+ * The sides the app can actually show real geometry for.
+ *
+ * Read from the built scenes rather than declared as `['left', 'right']`, so a side
+ * whose build failed to load cannot be advertised. `assertProductionSceneIsReal` has
+ * already run on each by the time this is called.
+ */
+export function availableProductionSides(): ('left' | 'right')[] {
+  return (['left', 'right'] as const).filter((side) => {
+    const scenes = scenesFor(side);
+    return scenes.length > 0 && scenes.every((s) => s.entries.length > 0);
+  });
 }

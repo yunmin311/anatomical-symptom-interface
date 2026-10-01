@@ -32,6 +32,7 @@ import type { BodyRegion } from './anatomy.ts';
 import {
   BODYPARTS3D_LICENCE,
   BODYPARTS3D_SOURCE,
+  BODYPARTS3D_UNITS,
   PIPELINE_SIDES,
   UNMAPPABLE_SHOULDER,
   mappingFor,
@@ -491,7 +492,19 @@ export function runPipeline(
         triangles,
         sourceTriangles,
         reduction: sourceTriangles > 0 ? Number((1 - triangles / sourceTriangles).toFixed(4)) : null,
-        units: 'unitless',
+        // MILLIMETRES, from a measurement of the archive rather than from how the
+        // numbers look.
+        //
+        // The archive carries no unit field and its README never states one, so
+        // `unitless` was honest and unhelpful at the same time. What settles it is
+        // extent: across all 2234 source meshes the body spans 1729.74 units
+        // vertically, and BodyParts3D is documented as an adult human male model.
+        // 1729.74 units reads as 1.73 m if the unit is the millimetre; the same
+        // number would be a 17.3 m or 1730 m figure for cm or m, which is not a
+        // human being. Recorded as a constant with that reasoning attached, because
+        // the claim has to stay auditable and the next person to touch this should
+        // be able to check it rather than trust it.
+        units: BODYPARTS3D_UNITS,
       },
       bounds: meshBounds(reduced),
       file,

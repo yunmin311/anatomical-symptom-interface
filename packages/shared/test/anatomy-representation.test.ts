@@ -214,15 +214,22 @@ test('a structure with 3D claims a side, and only one', () => {
 /* ================================================================== */
 
 test('a build that produced the wrong side is refused', () => {
-  const deltoidPart = deltoidPartIds()[0]!;
-  const rep = representationFor(deltoidPart);
-  if (rep.threeD.status !== 'available') throw new Error('expected available');
-  // Declares left, build produced left: fine.
-  assert.doesNotThrow(() => assertSidesMatch(deltoidPart, rep.threeD, ['left']));
-  // Declares left, build produced right only: a lie, and now a thrown error.
-  assert.throws(() => assertSidesMatch(deltoidPart, rep.threeD, ['right']), /declares 3D for left/);
-  assert.throws(() => assertSidesMatch(deltoidPart, rep.threeD, []), /produced only nothing/);
-});
+    const deltoidPart = deltoidPartIds()[0]!;
+    const rep = representationFor(deltoidPart);
+    if (rep.threeD.status !== 'available') throw new Error('expected available');
+    // Declares both sides, build produced both: fine.
+    assert.doesNotThrow(() => assertSidesMatch(deltoidPart, rep.threeD, ['left', 'right']));
+    // Declares both sides, build produced one: a lie, and a thrown error.
+    assert.throws(
+      () => assertSidesMatch(deltoidPart, rep.threeD, ['left']),
+      /declares 3D for left and right but the build produced only left/,
+    );
+    assert.throws(
+      () => assertSidesMatch(deltoidPart, rep.threeD, ['right']),
+      /declares 3D for left and right but the build produced only right/,
+    );
+    assert.throws(() => assertSidesMatch(deltoidPart, rep.threeD, []), /produced only nothing/);
+  });
 
 /* ================================================================== */
 /* schema                                                              */

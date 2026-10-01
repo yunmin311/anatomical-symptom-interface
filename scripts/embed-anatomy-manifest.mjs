@@ -41,19 +41,28 @@ import { basename, dirname, join, relative } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
-const GENERATED = join(ROOT, 'assets/anatomy/generated');
-const WEB_PUBLIC = join(ROOT, 'apps/web/public/anatomy');
-const WEB_MODULE_DIR = join(ROOT, 'apps/web/src/anatomy/generated');
-
 const argv = process.argv.slice(2);
 const flag = (name, fallback) => {
   const i = argv.indexOf(`--${name}`);
   return i === -1 ? fallback : argv[i + 1];
 };
 
+const SIDE = flag('side', 'left');
+// Per-side output. One shared directory was workable while only the left side
+// existed; with two sides it silently overwrote one with the other, which is the
+// kind of collision that produces a left manifest pointing at right GLBs.
+const GENERATED = join(ROOT, 'assets/anatomy/generated', SIDE);
+const WEB_PUBLIC = join(ROOT, 'apps/web/public/anatomy', SIDE);
+const WEB_MODULE_DIR = join(ROOT, 'apps/web/src/anatomy/generated');
+
 const ALLOW_SYNTHETIC = argv.includes('--allow-synthetic');
 
 async function main() {
+  if (!['left', 'right'].includes(SIDE)) {
+    console.error(`[anatomy] --side must be left or right, got ${SIDE}`);
+    process.exitCode = 1;
+    return;
+  }
   const manifestPath = join(GENERATED, 'manifest.json');
   if (!existsSync(manifestPath)) {
     console.error(`[anatomy] no generated manifest at ${relative(ROOT, manifestPath)}.`);
@@ -94,7 +103,20 @@ async function main() {
     return;
   }
 
+  console.log(`[anatomy] side              ${SIDE}`);
   console.log(`[anatomy] manifest           ${manifest.entries.length} entries`);
+  const laterals = [...new Set(manifest.entries.map((e) => e.laterality))].sort();
+  const units = [...new Set(manifest.entries.map((e) => e.geometry.units))].sort();
+  if (laterals.length !== 1 || laterals[0] !== SIDE) {
+    console.error(
+      `[anatomy] REFUSING a ${SIDE} build whose manifest says laterality ${laterals.join('/')}.`,
+    );
+    console.error('[anatomy] the side is a fact from the source mapping, not a build flag.');
+    process.exitCode = 1;
+    return;
+  }
+  console.log(`[anatomy] laterality         ${laterals.join(', ')} (verified)`);
+  console.log(`[anatomy] units             ${units.join(', ')}`);
   console.log(`[anatomy] dataset            ${manifest.licence.id}`);
   console.log(`[anatomy] synthetic          ${synthetic ? 'YES (test path)' : 'no'}`);
 
@@ -119,7 +141,7 @@ async function main() {
 
   // --- the manifest as a module ---
   mkdirSync(WEB_MODULE_DIR, { recursive: true });
-  const modulePath = join(WEB_MODULE_DIR, 'canonical-manifest.ts');
+  const modulePath = join(WEB_MODULE_DIR, `canonical-manifest.${SIDE}.ts`);
   const body = `${JSON.stringify(manifest, null, 2)}\n`;
 
   writeFileSync(
@@ -128,7 +150,7 @@ async function main() {
  * GENERATED FILE. DO NOT EDIT.
  *
  * Produced by scripts/embed-anatomy-manifest.mjs from
- * assets/anatomy/generated/manifest.json.
+ * assets/anatomy/generated/<side>/manifest.json.
  *
  * The canonical anatomy manifest, as data. The app parses it through
  * \`parseManifest\` and converts it with \`toRendererScene\` at startup, so the
@@ -139,6 +161,8 @@ async function main() {
  * Licence:    ${manifest.licence.name} (${manifest.licence.id}) -- ${manifest.licence.url}
  * Archive:    ${manifest.entries[0]?.source.archive ?? 'unknown'}
  * Dataset:    ${manifest.entries[0]?.source.dataset ?? 'unknown'} ${manifest.entries[0]?.source.release ?? ''}
+ * Side:       ${SIDE} -- every entry in this file carries \`laterality: '${SIDE}'\`.
+ * Units:      ${manifest.entries[0]?.geometry.units ?? 'unknown'}, from the source model, not inferred here.
  */
 
 import type { AssetManifest } from '@asi/shared';
@@ -148,12 +172,20 @@ const CANONICAL_MANIFEST_JSON = ${body};
 
 export const CANONICAL_ANATOMY_MANIFEST = CANONICAL_MANIFEST_JSON as unknown as AssetManifest;
 
-/** Where the generated geometry is served from, matching \`assetRoot\` in the adapter. */
-export const CANONICAL_ASSET_ROOT = '/anatomy/';
+/**
+ * Where this side's generated geometry is served from.
+ *
+ * Per side, so the two builds cannot collide on a path. The renderer does not
+ * hardcode this: it is read from the manifest and passed to the adapter.
+ */
+export const CANONICAL_ASSET_ROOT = '/anatomy/${SIDE}/';
+
+/** The side this build represents, as a fact carried in the manifest itself. */
+export const CANONICAL_SIDE = '${SIDE}' as const;
 `,
   );
   console.log(
-    `[anatomy] manifest module    apps/web/src/anatomy/generated/canonical-manifest.ts (${body.length} bytes)`,
+    `[anatomy] manifest module    apps/web/src/anatomy/generated/canonical-manifest.${SIDE}.ts (${body.length} bytes)`,
   );
 }
 

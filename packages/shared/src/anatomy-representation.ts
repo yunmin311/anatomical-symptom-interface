@@ -120,35 +120,39 @@ export type Representation = z.infer<typeof RepresentationSchema>;
  * representation nobody has checked, and a build cannot claim 3D for something
  * because a filename happened to match.
  */
-const REPRESENTATION_DECLARATIONS: Readonly<Record<string, Representation>> = {
+/**
+ * Exported so the gates can check every declaration against what was actually
+ * built, rather than trusting a list that only this module can see.
+ */
+export const REPRESENTATION_DECLARATIONS: Readonly<Record<string, Representation>> = {
   // --- Bound to real BodyParts3D 4.0 elements, verified against the archive ---
   'asi:shoulder.supraspinatus-tendon': {
     twoD: { available: true, placeholder: true },
-    threeD: { status: 'available', elementCount: 1, sides: ['left'] },
+    threeD: { status: 'available', elementCount: 1, sides: ['left', 'right'] },
   },
   'asi:shoulder.infraspinatus': {
     twoD: { available: true, placeholder: true },
-    threeD: { status: 'available', elementCount: 1, sides: ['left'] },
+    threeD: { status: 'available', elementCount: 1, sides: ['left', 'right'] },
   },
   'asi:shoulder.teres-minor': {
     twoD: { available: true, placeholder: true },
-    threeD: { status: 'available', elementCount: 1, sides: ['left'] },
+    threeD: { status: 'available', elementCount: 1, sides: ['left', 'right'] },
   },
   'asi:shoulder.subscapularis': {
     twoD: { available: true, placeholder: true },
-    threeD: { status: 'available', elementCount: 1, sides: ['left'] },
+    threeD: { status: 'available', elementCount: 1, sides: ['left', 'right'] },
   },
   'asi:shoulder.trapezius-upper': {
     twoD: { available: true, placeholder: true },
-    threeD: { status: 'available', elementCount: 1, sides: ['left'] },
+    threeD: { status: 'available', elementCount: 1, sides: ['left', 'right'] },
   },
   'asi:shoulder.scapula': {
     twoD: { available: true, placeholder: true },
-    threeD: { status: 'available', elementCount: 1, sides: ['left'] },
+    threeD: { status: 'available', elementCount: 1, sides: ['left', 'right'] },
   },
   'asi:shoulder.biceps-long-head-tendon': {
     twoD: { available: true, placeholder: true },
-    threeD: { status: 'available', elementCount: 1, sides: ['left'] },
+    threeD: { status: 'available', elementCount: 1, sides: ['left', 'right'] },
   },
 
   // --- Part-level deltoid, from the source's own terminology ---
@@ -161,15 +165,15 @@ const REPRESENTATION_DECLARATIONS: Readonly<Record<string, Representation>> = {
   // made once with invented filenames.
   'asi:shoulder.deltoid-clavicular-part': {
     twoD: { available: false, placeholder: false },
-    threeD: { status: 'available', elementCount: 1, sides: ['left'] },
+    threeD: { status: 'available', elementCount: 1, sides: ['left', 'right'] },
   },
   'asi:shoulder.deltoid-acromial-part': {
     twoD: { available: false, placeholder: false },
-    threeD: { status: 'available', elementCount: 1, sides: ['left'] },
+    threeD: { status: 'available', elementCount: 1, sides: ['left', 'right'] },
   },
   'asi:shoulder.deltoid-spinal-part': {
     twoD: { available: false, placeholder: false },
-    threeD: { status: 'available', elementCount: 1, sides: ['left'] },
+    threeD: { status: 'available', elementCount: 1, sides: ['left', 'right'] },
   },
 
   // --- Concepts that exist, with no valid 3D in the current source ---
@@ -298,12 +302,26 @@ export function declaredRepresentationGaps(): {
 }
 
 /**
- * Guard: a structure may not claim 3D without saying which sides it covers.
+ * Guard: a structure may not claim 3D without saying which sides it covers, and may
+ * not claim a side it did not produce.
  *
- * A build that reports `available` with `sides: ['left']` while the manifest
- * contains geometry for the right is claiming something false, and the failure is
- * invisible until a user looks at the wrong shoulder. `sides` is therefore
- * non-empty by schema, and callers compare it against the geometry they produced.
+ * A build that reports `available` with `sides: ['left']` while the manifest contains
+ * geometry for the right is claiming something false, and the failure is invisible
+ * until a user looks at the wrong shoulder. `sides` is therefore non-empty by schema,
+ * and callers compare it against the geometry they produced.
+ *
+ * ## Why this now also rejects the OVER-claim
+ *
+ * Checking only `declared.sides ⊆ produced` stops a structure from promising a side
+ * that is missing, but it happily allows promising `['left']` when both sides exist.
+ * That is the failure this project is most likely to make: the declarations were
+ * written when only the left build existed, so widening them to `['left', 'right']` is
+ * the tempting one-line fix, and it is also how an untested claim gets shipped.
+ *
+ * So both directions are checked. A side the source produced but the declaration omits
+ * is reported as well, because the honest declaration for a structure with real
+ * geometry on both sides is `['left', 'right']`, and leaving it at `['left']` tells a
+ * reader the right shoulder is unavailable when it is not.
  */
 export function assertSidesMatch(
   asiId: string,
@@ -317,6 +335,39 @@ export function assertSidesMatch(
       `${asiId} declares 3D for ${declared.sides.join(' and ')} but the build produced only ` +
         `${produced.join(' and ') || 'nothing'}. Missing: ${missing.join(', ')}.`,
     );
+  const unclaimed = produced.filter((s) => !declared.sides.includes(s));
+  if (unclaimed.length)
+    throw new Error(
+      `${asiId} has real geometry for ${unclaimed.join(' and ')} but declares only ` +
+        `${declared.sides.join(' and ')}. If the source really produced it, the declaration is ` +
+        `understating what exists.`,
+    );
+}
+
+/**
+ * The sides a declaration may claim, derived from what the pipeline actually built.
+ *
+ * Takes the manifests rather than a list of sides, because the manifests are the
+ * evidence: a side is only real if an entry with that `laterality` exists for the
+ * structure. Passing `['left', 'right']` by hand is exactly the shortcut this exists
+ * to close, so the caller cannot do it.
+ *
+ * This is what makes the declarations provable rather than aspirational: the test
+ * asserts `declared.sides` equals what these manifests contain, so widening a
+ * declaration to both sides without a right build fails the suite instead of
+ * shipping.
+ */
+export function producedSides(
+  asiId: string,
+  manifests: readonly { entries: readonly { asiId: string; laterality: string }[] }[],
+): ('left' | 'right')[] {
+  const sides: ('left' | 'right')[] = [];
+  for (const manifest of manifests) {
+    const match = manifest.entries.find((e) => e.asiId === asiId);
+    if (match && (match.laterality === 'left' || match.laterality === 'right'))
+      if (!sides.includes(match.laterality)) sides.push(match.laterality);
+  }
+  return sides.sort();
 }
 
 /**

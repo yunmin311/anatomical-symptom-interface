@@ -422,4 +422,34 @@ export const BODYPARTS3D_SOURCE = {
   conceptRelease: '4.3i',
   /** The one external file this pipeline needs. */
   archive: 'isa_BP3D_4.0_obj_99.zip',
+  /**
+   * Vertical extent of the whole source model, measured across all 2234 meshes in
+   * the archive rather than read from documentation: the archive ships no unit
+   * field, and its README does not state one.
+   */
+  verticalExtentUnits: 1729.74,
 } as const;
+
+/**
+ * The coordinate unit of BodyParts3D's meshes: MILLIMETRES.
+ *
+ * ## How this was established
+ *
+ * By measurement, not by appearance. BodyParts3D describes its model as a whole-body
+ * model of an ADULT HUMAN MALE, and the source meshes span 1729.74 units from the
+ * soles of the feet to the top of the head. Read as millimetres that is 1.73 m, which
+ * is a human height. Read as centimetres it is 17.3 m, and read as metres it is
+ * 1730 m — neither is a person. No other plausible unit produces a body.
+ *
+ * So the earlier `unitless` was not cautious, it was merely uninformative: it made
+ * the manifest refuse to state something that had been established, and left a
+ * consumer with no way to know what the numbers meant.
+ *
+ * ## What this must never become
+ *
+ * A licence to rescale. The unit is recorded so bounds, pins and measurements can be
+ * interpreted correctly. The renderer frames the camera from the MEASURED scene and
+ * stays unit-agnostic, because a camera that assumed millimetres would break the day
+ * a source arrives in centimetres.
+ */
+export const BODYPARTS3D_UNITS = 'mm' as const;

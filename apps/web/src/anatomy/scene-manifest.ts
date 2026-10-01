@@ -29,7 +29,7 @@
  * `assertNonMedical` refuses to let it be mistaken for an anatomy source, and the
  * UI surfaces `disclaimer` whenever a fixture is active.
  */
-import type { BodyRegion, Structure, SubRegion, TissueLayer } from '@asi/shared';
+import type { BodyRegion, Laterality, Structure, SubRegion, TissueLayer } from '@asi/shared';
 import type { CameraPreset, MapPoint } from './types.ts';
 
 /**
@@ -78,6 +78,24 @@ export interface RendererSceneEntry {
   structureId?: string;
   /** Tissue layer, used for layer visibility. Carried through unchanged. */
   layer: TissueLayer;
+  /**
+   * Which side of the body this geometry IS, carried from
+   * `AssetManifestEntry.laterality` unchanged.
+   *
+   * ## Why this is a fact and not a deduction
+   *
+   * The obvious way to learn the side is to look at the asset: the filename, the x
+   * coordinate, the mesh name, which half of the screen it lands on. Every one of
+   * those is a coincidence that happens to hold for BodyParts3D's naming
+   * convention, and a renderer that infers laterality this way cannot be told apart
+   * from one that mirrored its geometry. That matters because a mirrored mesh would
+   * look correct on screen while being the wrong anatomy.
+   *
+   * So the side is stated once, by the source mapping, where the real source files
+   * were chosen, and carried. Anything that needs to know the side reads this field.
+   * A renderer that cannot state it does not guess it.
+   */
+  laterality: Laterality;
   /** Which camera presets show this entry. */
   views: CameraPreset[];
   /**

@@ -303,6 +303,11 @@ export function toRendererSceneEntry(
     structureId: entry.asiId,
     // 7. layer carried through unchanged.
     layer: entry.layer,
+    // 8. laterality carried through unchanged. Copied, never derived: the source
+    //    mapping chose which real file this is, and a renderer that re-guessed the
+    //    side from the filename or the x coordinate could not tell a correct left
+    //    mesh from a mirrored one.
+    laterality: entry.laterality,
     views,
     geometry: {
       type: 'url',

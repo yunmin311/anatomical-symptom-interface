@@ -1,14 +1,26 @@
 /**
  * Three3dAnatomyAdapter — the 3D viewer behind the same contract as the 2D map.
  *
- * Scope, stated plainly: Phase 1A wires the RENDERER, not anatomy. It can load
- * real GLB assets — `geometry.type: 'url'` fetches a file, resolves a named node
- * and adopts the returned scene graph — but the only assets that exist today are
- * procedural fixture volumes and one two-quad non-medical test file. There is no
- * anatomical model here and the adapter never claims otherwise; a loaded file
- * must be named in `manifest.externalAssetNotice` and a fixture must carry a
- * `disclaimer`, both surfaced by the UI. When the canonical manifest lands it
- * adds a manifest and an adapter, not renderer code.
+ * ## What this renders
+ *
+ * Real, externally sourced anatomy. `geometry.type: 'url'` fetches a GLB and adopts
+ * the returned scene graph, and the production scenes are built from the canonical
+ * manifest, so what appears on screen is BodyParts3D shoulder geometry — currently
+ * one scene per side, chosen by the record's `location.side`.
+ *
+ * The synthetic fixture is still here and is still TEST-ONLY. It is what the picking,
+ * layer-visibility and fallback tests mount, because its geometry is known-good and a
+ * real asset's gaps would make those tests lie. A fixture must carry a `disclaimer`
+ * and must never become the production scene; `assertProductionSceneIsReal` is the
+ * guard, and it runs at scene build time rather than being a comment.
+ *
+ * Two consequences of rendering real anatomy that the code below has to respect:
+ *
+ *   - the mesh is in the source's own units and coordinate frame, not in the
+ *     fixture's. Camera framing is derived from the measured scene rather than
+ *     assumed, which is why `retargetCamera` computes its own near and far planes.
+ *   - the side of the geometry is STATED by the scene entry, never inferred from the
+ *     mesh name or the x coordinate. See `RendererSceneEntry.laterality`.
  *
  * Identity is the load-bearing rule. Engine objects are held in a private
  * `Map<asiId, Object3D>` and never returned, never stored in viewer state and
@@ -610,6 +622,10 @@ export class Three3dAnatomyAdapter implements RenderedViewer {
         subRegionIds: [...entry.subRegionIds],
         ...(entry.soleSubRegionId ? { subRegionId: entry.soleSubRegionId } : {}),
         structureId: entry.structureId,
+        // The side of the geometry that was actually hit, read off the scene entry
+        // the ray resolved to. A statement about which mesh was under the cursor --
+        // not a clinical side, and not something the renderer may write to a record.
+        laterality: entry.laterality,
         point: {
           x: clamp01(
             (hit.point.x + this.manifest.bounds.radius) / (this.manifest.bounds.radius * 2),

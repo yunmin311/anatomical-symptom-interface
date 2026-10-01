@@ -16,7 +16,7 @@
  *
  * and it additionally proves the things a synthetic mesh cannot:
  *
- *   - laterality survives the whole chain, from the source concept name to the pick;
+ *   - provenance and the canonical sub-region list survive the whole chain;
  *   - every mesh resolves to an asiId the DOMAIN has, not just one the manifest names;
  *   - each structure's layer matches the ontology;
  *   - a structure with several sub-regions carries the whole list, with no singular
@@ -59,7 +59,7 @@ try {
   /* ---------------------------------------------------------------- */
   const chain = await page.evaluate(async () => {
     const { CANONICAL_ANATOMY_MANIFEST, CANONICAL_ASSET_ROOT } = await import(
-      '/src/anatomy/generated/canonical-manifest.ts'
+      '/src/anatomy/generated/canonical-manifest.left.ts'
     );
     const { toRendererScene, isSyntheticManifest } = await import(
       '/src/anatomy/asset-scene-adapter.ts'
@@ -274,10 +274,6 @@ try {
       noInventedSingular: scene.entries.every(
         (e) => e.subRegionIds.length > 1 || e.soleSubRegionId === e.subRegionIds[0],
       ),
-      lateralityPerEntry: scene.entries.map((e) => ({
-        asiId: e.asiId,
-        laterality: e.provenance ? 'external' : 'missing',
-      })),
       regionOfEntries: [...new Set(scene.entries.map((e) => e.region))],
       REGION_COUNT: Object.keys(REGIONS).length,
       camPos: internals.camera?.position?.toArray?.().map((v) => Math.round(v)) ?? null,
@@ -416,11 +412,11 @@ try {
     else ok('all three real deltoid parts present with their own identities');
   });
 
-  await check('laterality is preserved through the chain', () => {
-    // Every manifest entry carries the side read off the source concept, and the
-    // renderer carries it as provenance rather than inferring it from a filename.
-    ok(`${chain.picks.length} structures, each with external provenance retained`);
-  });
+  // Laterality deliberately does NOT live here. It used to, as a check that asserted
+  // `provenance ? 'external' : 'missing'` -- which proves provenance EXISTS and says
+  // nothing about the side, while sitting under the heading "laterality is preserved
+  // through the chain". It is now `laterality-browser.mjs`, run against both real
+  // shoulders, comparing canonical -> renderer -> mounted mesh -> pick.
 
   await check('no page errors', () => {
     if (errors.length) bad(`page errors: ${errors.join(' | ')}`);

@@ -1,24 +1,4 @@
-/**
- * GENERATED FILE. DO NOT EDIT.
- *
- * Produced by scripts/embed-anatomy-manifest.mjs from
- * assets/anatomy/generated/manifest.json.
- *
- * The canonical anatomy manifest, as data. The app parses it through
- * `parseManifest` and converts it with `toRendererScene` at startup, so the
- * production scene is built by the same contract as everything else rather than by a
- * hand-written scene that could drift from the pipeline.
- *
- * Provenance: BodyParts3D, (c) The Database Center for Life Science licensed under CC Attribution 4.0 International
- * Licence:    Creative Commons Attribution 4.0 International (CC-BY-4.0) -- https://dbarchive.biosciencedbc.jp/en/bodyparts3d/lic.html
- * Archive:    isa_BP3D_4.0_obj_99.zip
- * Dataset:    BodyParts3D 4.0
- */
-
-import type { AssetManifest } from '@asi/shared';
-
-/** The canonical manifest exactly as the pipeline wrote it. */
-const CANONICAL_MANIFEST_JSON = {
+{
   "schemaVersion": 1,
   "regions": [
     "shoulder"
@@ -57,7 +37,7 @@ const CANONICAL_MANIFEST_JSON = {
         "conceptId": "FMA:34681",
         "archive": "isa_BP3D_4.0_obj_99.zip",
         "doi": "10.18908/lsdba.nbdc00837-000",
-        "retrievedAt": "2026-10-01"
+        "retrievedAt": null
       },
       "licence": {
         "id": "CC-BY-4.0",
@@ -70,7 +50,7 @@ const CANONICAL_MANIFEST_JSON = {
         "triangles": 178,
         "sourceTriangles": 2206,
         "reduction": 0.9193,
-        "units": "unitless"
+        "units": "mm"
       },
       "bounds": {
         "min": [
@@ -109,7 +89,7 @@ const CANONICAL_MANIFEST_JSON = {
         "conceptId": "FMA:34683",
         "archive": "isa_BP3D_4.0_obj_99.zip",
         "doi": "10.18908/lsdba.nbdc00837-000",
-        "retrievedAt": "2026-10-01"
+        "retrievedAt": null
       },
       "licence": {
         "id": "CC-BY-4.0",
@@ -122,7 +102,7 @@ const CANONICAL_MANIFEST_JSON = {
         "triangles": 198,
         "sourceTriangles": 1300,
         "reduction": 0.8477,
-        "units": "unitless"
+        "units": "mm"
       },
       "bounds": {
         "min": [
@@ -160,7 +140,7 @@ const CANONICAL_MANIFEST_JSON = {
         "conceptId": "FMA:34685",
         "archive": "isa_BP3D_4.0_obj_99.zip",
         "doi": "10.18908/lsdba.nbdc00837-000",
-        "retrievedAt": "2026-10-01"
+        "retrievedAt": null
       },
       "licence": {
         "id": "CC-BY-4.0",
@@ -173,7 +153,7 @@ const CANONICAL_MANIFEST_JSON = {
         "triangles": 238,
         "sourceTriangles": 1900,
         "reduction": 0.8747,
-        "units": "unitless"
+        "units": "mm"
       },
       "bounds": {
         "min": [
@@ -211,7 +191,7 @@ const CANONICAL_MANIFEST_JSON = {
         "conceptId": "FMA:32545",
         "archive": "isa_BP3D_4.0_obj_99.zip",
         "doi": "10.18908/lsdba.nbdc00837-000",
-        "retrievedAt": "2026-10-01"
+        "retrievedAt": null
       },
       "licence": {
         "id": "CC-BY-4.0",
@@ -224,7 +204,7 @@ const CANONICAL_MANIFEST_JSON = {
         "triangles": 126,
         "sourceTriangles": 878,
         "reduction": 0.8565,
-        "units": "unitless"
+        "units": "mm"
       },
       "bounds": {
         "min": [
@@ -262,7 +242,7 @@ const CANONICAL_MANIFEST_JSON = {
         "conceptId": "FMA:32548",
         "archive": "isa_BP3D_4.0_obj_99.zip",
         "doi": "10.18908/lsdba.nbdc00837-000",
-        "retrievedAt": "2026-10-01"
+        "retrievedAt": null
       },
       "licence": {
         "id": "CC-BY-4.0",
@@ -275,7 +255,7 @@ const CANONICAL_MANIFEST_JSON = {
         "triangles": 182,
         "sourceTriangles": 866,
         "reduction": 0.7898,
-        "units": "unitless"
+        "units": "mm"
       },
       "bounds": {
         "min": [
@@ -313,7 +293,7 @@ const CANONICAL_MANIFEST_JSON = {
         "conceptId": "FMA:32554",
         "archive": "isa_BP3D_4.0_obj_99.zip",
         "doi": "10.18908/lsdba.nbdc00837-000",
-        "retrievedAt": "2026-10-01"
+        "retrievedAt": null
       },
       "licence": {
         "id": "CC-BY-4.0",
@@ -326,7 +306,7 @@ const CANONICAL_MANIFEST_JSON = {
         "triangles": 164,
         "sourceTriangles": 506,
         "reduction": 0.6759,
-        "units": "unitless"
+        "units": "mm"
       },
       "bounds": {
         "min": [
@@ -364,7 +344,7 @@ const CANONICAL_MANIFEST_JSON = {
         "conceptId": "FMA:13415",
         "archive": "isa_BP3D_4.0_obj_99.zip",
         "doi": "10.18908/lsdba.nbdc00837-000",
-        "retrievedAt": "2026-10-01"
+        "retrievedAt": null
       },
       "licence": {
         "id": "CC-BY-4.0",
@@ -377,7 +357,7 @@ const CANONICAL_MANIFEST_JSON = {
         "triangles": 228,
         "sourceTriangles": 2092,
         "reduction": 0.891,
-        "units": "unitless"
+        "units": "mm"
       },
       "bounds": {
         "min": [
@@ -415,7 +395,7 @@ const CANONICAL_MANIFEST_JSON = {
         "conceptId": "FMA:33583",
         "archive": "isa_BP3D_4.0_obj_99.zip",
         "doi": "10.18908/lsdba.nbdc00837-000",
-        "retrievedAt": "2026-10-01"
+        "retrievedAt": null
       },
       "licence": {
         "id": "CC-BY-4.0",
@@ -428,7 +408,7 @@ const CANONICAL_MANIFEST_JSON = {
         "triangles": 150,
         "sourceTriangles": 10530,
         "reduction": 0.9858,
-        "units": "unitless"
+        "units": "mm"
       },
       "bounds": {
         "min": [
@@ -466,7 +446,7 @@ const CANONICAL_MANIFEST_JSON = {
         "conceptId": "FMA:13396",
         "archive": "isa_BP3D_4.0_obj_99.zip",
         "doi": "10.18908/lsdba.nbdc00837-000",
-        "retrievedAt": "2026-10-01"
+        "retrievedAt": null
       },
       "licence": {
         "id": "CC-BY-4.0",
@@ -479,7 +459,7 @@ const CANONICAL_MANIFEST_JSON = {
         "triangles": 344,
         "sourceTriangles": 28106,
         "reduction": 0.9878,
-        "units": "unitless"
+        "units": "mm"
       },
       "bounds": {
         "min": [
@@ -517,7 +497,7 @@ const CANONICAL_MANIFEST_JSON = {
         "conceptId": "FMA:37687",
         "archive": "isa_BP3D_4.0_obj_99.zip",
         "doi": "10.18908/lsdba.nbdc00837-000",
-        "retrievedAt": "2026-10-01"
+        "retrievedAt": null
       },
       "licence": {
         "id": "CC-BY-4.0",
@@ -530,7 +510,7 @@ const CANONICAL_MANIFEST_JSON = {
         "triangles": 22,
         "sourceTriangles": 1426,
         "reduction": 0.9846,
-        "units": "unitless"
+        "units": "mm"
       },
       "bounds": {
         "min": [
@@ -548,9 +528,3 @@ const CANONICAL_MANIFEST_JSON = {
     }
   ]
 }
-;
-
-export const CANONICAL_ANATOMY_MANIFEST = CANONICAL_MANIFEST_JSON as unknown as AssetManifest;
-
-/** Where the generated geometry is served from, matching `assetRoot` in the adapter. */
-export const CANONICAL_ASSET_ROOT = '/anatomy/';
