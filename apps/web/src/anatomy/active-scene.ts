@@ -75,7 +75,9 @@ function buildProductionScene(): RendererSceneManifest {
         'production scene. Run scripts/embed-anatomy-manifest.mjs on a real generated manifest.',
     );
 
-  return toRendererScene(canonical, { assetRoot: CANONICAL_ASSET_ROOT });
+  const scene = toRendererScene(canonical, { assetRoot: CANONICAL_ASSET_ROOT });
+  assertProductionSceneIsReal(scene);
+  return scene;
 }
 
 /**
