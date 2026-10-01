@@ -1,6 +1,6 @@
 import { REGIONS } from '@asi/shared';
 import type { BodyRegion } from '@asi/shared';
-import { BODY_SILHOUETTE } from './svg2d.ts';
+import { VIEW_H, VIEW_W, silhouetteFor } from './svg-geometry.ts';
 
 const POSITION: Record<BodyRegion, number> = {
   neck: 28,
@@ -21,12 +21,12 @@ export function BodyIndex({
   return (
     <div className="body-index">
       <svg
-        viewBox="0 0 100 186"
+        viewBox={`0 0 ${VIEW_W} ${VIEW_H}`}
         aria-hidden="true"
         className="body-index__figure"
       >
         <g className="bodymap__body">
-          {Object.entries(BODY_SILHOUETTE).map(([key, d]) => (
+          {Object.entries(silhouetteFor('anterior')).map(([key, d]) => (
             <path key={key} d={d} />
           ))}
         </g>
