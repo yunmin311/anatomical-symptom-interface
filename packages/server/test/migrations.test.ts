@@ -346,6 +346,163 @@ test('a failed migration leaves the connection usable', () => {
 });
 
 /* ================================================================== */
+/* Adoption must be stable across repeated starts                      */
+/* ================================================================== */
+
+/**
+ * Adoption was writing a single row with the sentinel checksum 'adopted'. That
+ * works exactly once: on the next start the checksum guard compares 'adopted'
+ * against the real hash of that migration and refuses to open the file. A legacy
+ * database became unopenable by being opened.
+ *
+ * These cases pin the whole lifecycle, not just the first call.
+ */
+test('A: a legacy current file adopts, then opens again twice', () => {
+  const db = freshDb();
+  db.exec(BASELINE_SQL);
+  db.exec(EPISODE_GROUNDING_SQL);
+  db.exec('PRAGMA user_version = 2');
+  seedEpisode(db, 'legacy v2');
+
+  for (const attempt of [1, 2, 3]) {
+    const report = migrate(db);
+    assert.equal(report.applied.length, 0, `start ${attempt} applied something it should not have`);
+    assert.equal(userVersion(db), LATEST_VERSION);
+    assert.equal(count(db, 'episodes'), 1, `start ${attempt} lost the episode`);
+  }
+});
+
+test('B: a legacy current file with no version stamp adopts and reopens', () => {
+  const db = freshDb();
+  db.exec(BASELINE_SQL);
+  db.exec(EPISODE_GROUNDING_SQL);
+  db.exec('PRAGMA user_version = 0');
+  seedEpisode(db, 'legacy no stamp');
+
+  migrate(db);
+  assert.equal(userVersion(db), LATEST_VERSION, 'adoption should stamp the real version');
+  const second = migrate(db);
+  assert.equal(second.applied.length, 0);
+  assert.equal(count(db, 'episodes'), 1);
+});
+
+test('C: a stale version number must not skip a migration the shape still needs', () => {
+  // The file is genuinely v1 -- no grounding columns -- but claims to be 2.
+  // Trusting the number would skip migration 002 and leave a file that cannot
+  // serve: createEpisode writes grounding_by, which would not exist.
+  const db = freshDb();
+  legacyV1(db);
+  db.exec('PRAGMA user_version = 2');
+  seedEpisode(db, 'lying version');
+
+  const report = migrate(db);
+  assert.equal(report.applied.length, 1, 'migration 002 was skipped because of a stale version number');
+  assert.ok(cols(db, 'episodes').includes('grounding_by'), 'the needed column is still missing');
+  assertSchemaReady(db);
+  assert.equal(count(db, 'episodes'), 1);
+  // And it must be stable from then on.
+  assert.equal(migrate(db).applied.length, 0);
+});
+
+test('D: a legacy v1 file with no version stamp migrates and reopens', () => {
+  const db = freshDb();
+  legacyV1(db);
+  db.exec('PRAGMA user_version = 0');
+  seedEpisode(db, 'v1 no stamp');
+
+  const report = migrate(db);
+  assert.equal(report.applied.length, 1);
+  assertSchemaReady(db);
+  assert.equal(migrate(db).applied.length, 0);
+  assert.equal(count(db, 'episodes'), 1);
+});
+
+test('E: an unknown shape is refused every time, never destructively', () => {
+  const db = freshDb();
+  db.exec('CREATE TABLE unrelated (id TEXT PRIMARY KEY)');
+  db.prepare('INSERT INTO unrelated (id) VALUES (?)').run('precious');
+
+  for (const attempt of [1, 2]) {
+    assert.throws(() => migrate(db), MigrationError, `start ${attempt} did not refuse`);
+  }
+  assert.equal(count(db, 'unrelated'), 1, 'a refused file was modified');
+  // Refusing must not have left a migration table behind either.
+  assert.equal(tables(db).has('schema_migrations'), false, 'a refused file was written to');
+});
+
+test('F: a tampered checksum on a genuinely applied migration is still refused', () => {
+  // Adoption must not weaken this. Real protection for a migration that really
+  // ran has to beat the shape probe, because the shape looks fine either way.
+  const db = freshDb();
+  migrate(db);
+  db.prepare('UPDATE schema_migrations SET checksum = ? WHERE version = 1').run('deadbeef');
+  assert.throws(() => migrate(db), MigrationError);
+  // Still refused on a second attempt, so it is not a one-shot.
+  assert.throws(() => migrate(db), MigrationError);
+});
+
+test('an adopted file records REAL checksums, not a sentinel', () => {
+  // The representation matters: 'adopted' is a value that can never match a real
+  // checksum, so it is a landmine on the next start. An adopted migration is
+  // recorded as itself.
+  const db = freshDb();
+  db.exec(BASELINE_SQL);
+  db.exec(EPISODE_GROUNDING_SQL);
+  db.exec('PRAGMA user_version = 2');
+  migrate(db);
+
+  const rows = db.prepare('SELECT version, name, checksum FROM schema_migrations ORDER BY version').all() as
+    { version: number; name: string; checksum: string }[];
+  assert.equal(rows.length, 2, 'both satisfied migrations should be recorded');
+  assert.deepEqual(rows.map((r) => r.version), [1, 2]);
+  assert.deepEqual(rows.map((r) => r.name), ['baseline-schema', 'episode-grounding-columns']);
+  for (const r of rows) {
+    assert.notEqual(r.checksum, 'adopted', 'a sentinel checksum would break the next start');
+    assert.match(r.checksum, /^[0-9a-f]{64}$/, 'not a real checksum');
+  }
+});
+
+test('the shape is authoritative: a migration the shape needs runs even if recorded', () => {
+  // A file that genuinely ran migration 002, and then lost the columns: the
+  // recorded row and the checksum are both self-consistent and true, the file was
+  // only damaged afterwards. The shape is what says the work is needed.
+  const db = freshDb();
+  migrate(db);
+  const hadRecord = db.prepare('SELECT COUNT(*) AS c FROM schema_migrations WHERE version = 2').get() as { c: number };
+  assert.equal(hadRecord.c, 1, 'precondition: migration 2 was recorded');
+
+  // Rebuild `episodes` at the v1 shape. Dropping columns cannot be done in place,
+  // so the table is recreated without them.
+  db.exec('PRAGMA foreign_keys = OFF');
+  db.exec('ALTER TABLE episodes RENAME TO episodes_damaged');
+  db.exec(BASELINE_SQL);
+  db.exec('DROP TABLE episodes_damaged');
+  db.exec('PRAGMA foreign_keys = ON');
+  assert.equal(cols(db, 'episodes').includes('grounding_by'), false, 'precondition: columns are gone');
+
+  const report = migrate(db);
+  assert.equal(report.applied.length, 1, 'the shape said migration 002 was needed and it was skipped');
+  assert.ok(cols(db, 'episodes').includes('grounding_by'), 'the column was not restored');
+  assertSchemaReady(db);
+  // Still self-consistent afterwards.
+  assert.equal(migrate(db).applied.length, 0);
+});
+
+test('a recorded row with a bogus checksum is tampering, and is refused', () => {
+  // The counterpart to the test above: if the recorded history DISAGREES with
+  // itself, shape authority must not paper over it.
+  const db = freshDb();
+  legacyV1(db);
+  seedEpisode(db, 'tampered claim');
+  db.exec(`CREATE TABLE IF NOT EXISTS schema_migrations (
+    version INTEGER PRIMARY KEY, name TEXT NOT NULL, checksum TEXT NOT NULL, applied_at TEXT NOT NULL)`);
+  db.prepare('INSERT INTO schema_migrations (version, name, checksum, applied_at) VALUES (?,?,?,?)')
+    .run(2, 'episode-grounding-columns', 'not-the-real-checksum', '2026-01-01T00:00:00.000Z');
+
+  assert.throws(() => migrate(db), MigrationError);
+});
+
+/* ================================================================== */
 /* Refuse rather than destroy                                         */
 /* ================================================================== */
 

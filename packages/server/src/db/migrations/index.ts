@@ -254,9 +254,13 @@ export function migrate(db: Database, log: (msg: string) => void = () => {}): Mi
   });
 
   const recorded = recordedVersions(db);
-  const declared = Number((db.prepare('PRAGMA user_version').get() as { user_version: number }).user_version ?? 0);
   const probed = probeVersion(db);
+  const declared = Number(
+    (db.prepare('PRAGMA user_version').get() as { user_version: number }).user_version ?? 0,
+  );
 
+  // Refuse BEFORE writing anything, so a file we cannot understand is not even
+  // given a migration table.
   if (probed.unrecognised) {
     throw new MigrationError(
       'This file has ASI tables but does not match any schema this build knows how to migrate. ' +
@@ -265,40 +269,55 @@ export function migrate(db: Database, log: (msg: string) => void = () => {}): Mi
     );
   }
 
-  // Verify an already-applied migration has not been edited since it shipped.
-  if (recorded.length) {
-    const byVersion = new Map(MIGRATIONS.map((m) => [m.version, m]));
-    for (const version of recorded) {
-      const m = byVersion.get(version);
-      if (!m) {
-        throw new MigrationError(
-          `this database was migrated by a newer build (version ${version} is unknown here)`,
-        );
-      }
-      const row = db
-        .prepare('SELECT checksum FROM schema_migrations WHERE version = ?')
-        .get(version) as { checksum?: string } | undefined;
-      if (row?.checksum && row.checksum !== checksum(m)) {
-        throw new MigrationError(
-          `migration ${version} (${m.name}) was edited after it had already been applied. ` +
-            'Add a new migration instead of changing an applied one.',
-        );
-      }
+  // CHECKSUM PROTECTION FIRST, and deliberately not weakened by adoption.
+  //
+  // Adoption exists for files this build did not migrate. It must not become a
+  // way for an edited migration to slip past: if a migration really ran and its
+  // SQL has since changed, that is a silent divergence between a fresh database
+  // and every existing one, and it fails here.
+  const byVersion = new Map(MIGRATIONS.map((m) => [m.version, m]));
+  for (const version of recorded) {
+    const m = byVersion.get(version);
+    if (!m) {
+      throw new MigrationError(
+        `this database was migrated by a newer build (version ${version} is unknown here)`,
+      );
+    }
+    const row = db
+      .prepare('SELECT checksum FROM schema_migrations WHERE version = ?')
+      .get(version) as { checksum?: string } | undefined;
+    if (row?.checksum && row.checksum !== checksum(m)) {
+      throw new MigrationError(
+        `migration ${version} (${m.name}) was edited after it had already been applied. ` +
+          'Add a new migration instead of changing an applied one.',
+      );
     }
   }
 
-  // A legacy file: believe its shape over its version number.
-  const from = Math.max(declared, probed.version, recorded.length ? Math.max(...recorded) : 0);
-  const adopted = recorded.length === 0 && (declared !== 0 || probed.version !== 0);
-
-  if (from > LATEST_VERSION) {
+  // THE SHAPE IS AUTHORITATIVE.
+  //
+  // Not `PRAGMA user_version`, and not the recorded table. Both are CLAIMS about
+  // the schema; the columns are the schema. A number can be stale -- a build can
+  // bump it without finishing the work -- and a recorded row can be absent, or
+  // wrong, for a file that predates the table entirely. Taking
+  // `Math.max(declared, probed, recorded)` meant a file that CLAIMED version 2
+  // while genuinely being v1 skipped the migration it needed, and then could not
+  // serve: `createEpisode` writes `grounding_by`, which would not exist.
+  //
+  // The one thing a declared version still decides is whether to touch the file
+  // at all. A number ABOVE ours means a future build wrote this, and its shape may
+  // contain things our probe does not check for, so downgrading it silently would
+  // be exactly the incoherence this framework exists to prevent. This is a
+  // refusal, not a "skip the pending work" rule, so a stale-but-not-future number
+  // still gets its migrations applied.
+  if (declared > LATEST_VERSION) {
     throw new MigrationError(
-      `this database is at schema version ${from}, newer than this build's ${LATEST_VERSION}`,
+      `this database is at schema version ${declared}, newer than this build's ${LATEST_VERSION}. ` +
+        'It has NOT been modified. Refusing to touch a file written by a newer build.',
     );
   }
 
-  const pending = MIGRATIONS.filter((m) => m.version > from);
-  const applied: { version: number; name: string }[] = [];
+  const from = probed.version;
 
   if (!tableNames(db).has('schema_migrations')) {
     db.exec(`CREATE TABLE IF NOT EXISTS schema_migrations (
@@ -309,23 +328,39 @@ export function migrate(db: Database, log: (msg: string) => void = () => {}): Mi
     )`);
   }
 
-  if (from > 0 && adopted) {
-    // Record where this file was found so the history is not a lie, but do not
-    // fabricate a row per skipped migration: those checksums describe SQL this
-    // file may never have run.
-    db.prepare('INSERT OR IGNORE INTO schema_migrations (version, name, checksum, applied_at) VALUES (?,?,?,?)')
-      .run(from, `adopted-at-v${from}`, 'adopted', new Date().toISOString());
-    log(`[asi] adopted an existing database at schema version ${from}`);
+  // ADOPT BY RECORDING EACH MIGRATION AS ITSELF.
+  //
+  // The previous representation wrote one row with the sentinel checksum
+  // 'adopted'. That works exactly once: on the next start the guard above
+  // compares 'adopted' against the real hash and refuses to open the file. A
+  // legacy database became unopenable by being opened.
+  //
+  // What is actually true of an adopted migration is that this file's schema is
+  // consistent with what that migration produces. Recording the migration's own
+  // name and checksum states exactly that, survives the next start, and needs no
+  // special case in the verifier.
+  const applied = applyPending(db, MIGRATIONS, from, log);
+  const to = from + applied.length;
+
+  const adopted: number[] = [];
+  for (const m of MIGRATIONS) {
+    if (m.version > from) continue;
+    if (recorded.includes(m.version)) continue;
+    db.prepare('INSERT OR REPLACE INTO schema_migrations (version, name, checksum, applied_at) VALUES (?,?,?,?)')
+      .run(m.version, m.name, checksum(m), new Date().toISOString());
+    adopted.push(m.version);
   }
 
-  if (!pending.length) {
-    return { from, to: from, applied, adopted };
+  if (adopted.length) {
+    log(`[asi] adopted an existing database: recorded migrations ${adopted.join(', ')}`);
   }
 
-  const justApplied = applyPending(db, pending, from, log);
-  applied.push(...justApplied);
+  // Stamp the version for anything inspecting the file with a plain SQLite tool.
+  // A legacy file with no stamp gets one, so the next start has a number that is
+  // true even though it is not what is trusted.
+  setUserVersion(db, to);
 
-  return { from, to: LATEST_VERSION, applied, adopted };
+  return { from, to, applied, adopted: adopted.length > 0 };
 }
 
 /**
