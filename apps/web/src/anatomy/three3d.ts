@@ -1,11 +1,14 @@
 /**
  * Three3dAnatomyAdapter — the 3D viewer behind the same contract as the 2D map.
  *
- * Scope, stated plainly: Phase 1A wires the RENDERER, not anatomy. The meshes
- * it loads come from a manifest, and the only manifest that exists today is a
- * procedural fixture of placeholder volumes. There is no anatomical model here
- * and the adapter never claims otherwise; `manifest.disclaimer` is surfaced by
- * the UI. When the BodyParts3D pipeline lands it adds a manifest, not code.
+ * Scope, stated plainly: Phase 1A wires the RENDERER, not anatomy. It can load
+ * real GLB assets — `geometry.type: 'url'` fetches a file, resolves a named node
+ * and adopts the returned scene graph — but the only assets that exist today are
+ * procedural fixture volumes and one two-quad non-medical test file. There is no
+ * anatomical model here and the adapter never claims otherwise; a loaded file
+ * must be named in `manifest.externalAssetNotice` and a fixture must carry a
+ * `disclaimer`, both surfaced by the UI. When the canonical manifest lands it
+ * adds a manifest and an adapter, not renderer code.
  *
  * Identity is the load-bearing rule. Engine objects are held in a private
  * `Map<asiId, Object3D>` and never returned, never stored in viewer state and
@@ -134,12 +137,45 @@ export interface Three3dOptions {
   /** Injected for tests; defaults to the real THREE renderer. */
   rendererFactory?: (host: HTMLElement) => THREE.WebGLRenderer;
   /**
+   * Transport for `url` geometry. Injected so a headless test can supply real
+   * GLB bytes without a browser `fetch`; everything downstream of this call —
+   * node resolution, scene-graph adoption, materials, picking, bounds — is the
+   * production path in both cases. Defaults to three's GLTFLoader.
+   */
+  loadGlb?: GlbLoader;
+  /**
+   * How long a single asset may take before mount gives up on it. Without a
+   * bound, one hung request holds the viewer in "not ready" forever, and the
+   * caller's only escape is a reload. A timeout turns that into the ordinary
+   * 2D fallback.
+   */
+  assetTimeoutMs?: number;
+  /**
    * Called when the GPU context is lost. The event is fired on the canvas and
    * does not bubble, so the adapter has to own the listener: a listener on the
    * host element would never see it.
    */
   onContextLost?: () => void;
 }
+
+/**
+ * Loads one GLB and hands back its root scene. Deliberately narrow: the adapter
+ * must not depend on three's GLTF types, because those are engine types and
+ * engine types are what must not leak past this seam.
+ */
+export type GlbLoader = (url: string) => Promise<{ scene: THREE.Object3D }>;
+
+const DEFAULT_ASSET_TIMEOUT_MS = 15_000;
+
+/**
+ * The production loader. The GLTFLoader import is dynamic so a manifest with no
+ * url geometry never pulls three's loader chunk into the bundle.
+ */
+const defaultGlbLoader: GlbLoader = async (url) => {
+  const { GLTFLoader } = await import('three/examples/jsm/loaders/GLTFLoader.js');
+  const gltf = await new GLTFLoader().loadAsync(url);
+  return { scene: gltf.scene };
+};
 
 export class Three3dAnatomyAdapter implements RenderedViewer {
   readonly kind = 'three3d';
@@ -159,6 +195,23 @@ export class Three3dAnatomyAdapter implements RenderedViewer {
 
   /** PRIVATE engine state. Nothing here is allowed to escape the adapter. */
   private objects = new Map<string, THREE.Object3D>();
+  /**
+   * asiId -> owning root, for every descendant of that root.
+   *
+   * A GLB is a scene graph, not a mesh: one manifest entry routinely owns a
+   * Group with meshes several levels down. Raycasting returns the leaf that was
+   * actually hit, so the hit object has to be resolvable back to the entry that
+   * owns it. This is that reverse index, and it is the ONLY bridge from an
+   * engine object to a business id — a three.js UUID, a mesh name or a node id
+   * is never itself the identity.
+   */
+  private ownerOf = new Map<THREE.Object3D, string>();
+  /**
+   * One load per distinct url, shared by every entry that points at it. A real
+   * asset pipeline ships many parts in one file, and `nodeName` is how a
+   * manifest says which part it wants.
+   */
+  private glbCache = new Map<string, Promise<{ scene: THREE.Object3D }>>();
   private pickables: THREE.Object3D[] = [];
   private renderer: THREE.WebGLRenderer | null = null;
   private scene: THREE.Scene | null = null;
@@ -166,6 +219,11 @@ export class Three3dAnatomyAdapter implements RenderedViewer {
   private host: HTMLElement | null = null;
   private frame = 0;
   private disposed = false;
+  /**
+   * Set while mount() is awaiting assets, so a dispose() that lands mid-load is
+   * observable by the loader and can refuse to add anything to the scene.
+   */
+  private mounting = false;
   private palette: Palette = FALLBACK_PALETTE;
   /** Normalised body-space centre of the focused region, for camera framing. */
   private focus: THREE.Vector3 = new THREE.Vector3(0, 0.1, 0);
@@ -261,8 +319,10 @@ export class Three3dAnatomyAdapter implements RenderedViewer {
       case 'reject': {
         const set = new Set(cmd.structureIds);
         s.rejectedStructureIds = [...new Set([...s.rejectedStructureIds, ...set])];
-        // Never both selected and rejected: that reads as a contradiction.
-        s.selectedStructureIds = s.selectedStructureIds.filter((id) => !set.has(id));
+        // Presentation only. This must not filter the selection: the canonical
+        // authority is location.userSelectedStructureIds, and a visual dismissal
+        // is not allowed to unselect something the record still says the user
+        // pointed at. See materialFor for how the conflict is displayed.
         s.highlightedStructureIds = s.highlightedStructureIds.filter((id) => !set.has(id));
         break;
       }
@@ -283,10 +343,10 @@ export class Three3dAnatomyAdapter implements RenderedViewer {
         );
         break;
       case 'setHighlighted':
+        // Replaces, and touches nothing else: a candidate list is presentation.
+        // It used to filter the selection out, so a re-localisation could
+        // silently drop an id the record still listed as user-selected.
         s.highlightedStructureIds = [...new Set(cmd.structureIds)];
-        s.selectedStructureIds = s.selectedStructureIds.filter(
-          (id) => !s.highlightedStructureIds.includes(id),
-        );
         break;
       case 'clearHighlight':
         s.highlightedStructureIds = [];
@@ -294,6 +354,9 @@ export class Three3dAnatomyAdapter implements RenderedViewer {
       case 'dropPin':
       case 'movePin':
         s.activePin = cmd.point;
+        break;
+      case 'clearPin':
+        s.activePin = null;
         break;
       case 'removePin':
         s.pins = s.pins.filter((p) => p.id !== cmd.pinId);
@@ -410,7 +473,21 @@ export class Three3dAnatomyAdapter implements RenderedViewer {
     rim.position.set(-1.6, 0.6, -1.8);
     this.scene.add(rim);
 
-    this.buildScene();
+    this.mounting = true;
+    try {
+      this.buildScene();
+      // Before this resolves the viewer is NOT ready. A 3D canvas that mounts,
+      // reports success and then quietly gains its geometry a second later is
+      // indistinguishable from a broken viewer, and a missing asset must land on
+      // the 2D fallback rather than on a half-drawn body.
+      await this.loadUrlGeometry();
+    } finally {
+      this.mounting = false;
+    }
+    // A dispose() that arrived while the loads were in flight wins: adopting the
+    // scene now would re-attach objects to a renderer nobody can stop.
+    if (this.disposed) throw new Error('Three3dAnatomyAdapter: disposed during mount');
+    this.scene.updateMatrixWorld(true);
     this.syncScene();
 
     const rect = host.getBoundingClientRect();
@@ -445,7 +522,11 @@ export class Three3dAnatomyAdapter implements RenderedViewer {
     );
     const ray = new THREE.Raycaster();
     ray.setFromCamera(ndc, this.camera);
-    const hits = ray.intersectObjects(this.pickables, false);
+    // Recursive, because an entry owns a scene graph and the raycaster reports
+    // the leaf mesh it actually struck. `ownerOf` maps that leaf back to the
+    // entry, which is what makes a hit on a 40-mesh GLB resolve to the same
+    // asiId as a hit on a single primitive.
+    const hits = ray.intersectObjects(this.pickables, true);
     for (const hit of hits) {
       // Straight out of engine space: the caller only ever sees an asiId and
       // domain ids. No UUID, no mesh, no engine-space coordinates.
@@ -453,6 +534,9 @@ export class Three3dAnatomyAdapter implements RenderedViewer {
       if (!asiId) continue;
       const entry = this.index.get(asiId);
       if (!entry) continue;
+      // A node with `visible = false` is not a hit target even if it is still in
+      // the graph, and neither is anything behind one.
+      if (!this.isActuallyVisible(hit.object)) continue;
       return {
         kind: entry.kind === 'structure' ? 'structure' : 'subregion',
         asiId,
@@ -467,6 +551,14 @@ export class Three3dAnatomyAdapter implements RenderedViewer {
       };
     }
     return { kind: 'none' };
+  }
+
+  /** Visible all the way up the chain, so a hidden parent hides its hits. */
+  private isActuallyVisible(object: THREE.Object3D): boolean {
+    for (let node: THREE.Object3D | null = object; node; node = node.parent) {
+      if (!node.visible) return false;
+    }
+    return true;
   }
 
   projectPin(point: MapPoint): MapPoint | null {
@@ -533,7 +625,20 @@ export class Three3dAnatomyAdapter implements RenderedViewer {
       });
       this.scene.clear();
     }
+    // Assets already loaded but possibly not yet adopted are released here, so a
+    // dispose between "fetch resolved" and "scene.add" cannot leave geometry
+    // alive with nothing left to reach it.
+    for (const pending of this.glbCache.values()) {
+      pending.then(
+        (loaded) => releaseObject(loaded.scene),
+        () => {
+          /* already rejected; nothing was allocated */
+        },
+      );
+    }
+    this.glbCache.clear();
     this.objects.clear();
+    this.ownerOf.clear();
     this.pickables = [];
     this.pinMesh = null;
     if (this.renderer) {
@@ -549,9 +654,125 @@ export class Three3dAnatomyAdapter implements RenderedViewer {
 
   /* ---------------- internals ---------------- */
 
+  /**
+   * Resolve an engine object to the asiId that owns it.
+   *
+   * Every node in an entry's subtree resolves to the same asiId, which is what
+   * lets a manifest bind a Group instead of a Mesh without anything downstream
+   * having to know a GLB is a tree.
+   */
   private asiIdOf(object: THREE.Object3D): string | undefined {
-    for (const [asiId, obj] of this.objects) if (obj === object) return asiId;
-    return undefined;
+    return this.ownerOf.get(object);
+  }
+
+  /** Index a freshly adopted root so all of its descendants resolve to one asiId. */
+  private indexDescendants(root: THREE.Object3D, asiId: string): void {
+    this.ownerOf.set(root, asiId);
+    root.traverse((node) => this.ownerOf.set(node, asiId));
+  }
+
+  /**
+   * Load and adopt every `url` entry.
+   *
+   * Three rules, all of them there because the alternative is a broken viewer
+   * rather than an absent one:
+   *
+   *  1. Await every asset before returning. Mount resolving early is what lets a
+   *     "ready" 3D view render an empty scene.
+   *  2. Fail loudly. A node that is not there, or a file that will not decode,
+   *     throws, so the workspace falls back to 2D. Skipping quietly would draw a
+   *     body with holes in it and report success.
+   *  3. Add nothing if the viewer was disposed while loading. The canvas, the
+   *     scene and the frame loop are already gone at that point, so adopting the
+   *     result would attach geometry to a renderer nobody can release.
+   */
+  private async loadUrlGeometry(): Promise<void> {
+    const scene = this.scene;
+    if (!scene) throw new Error('Three3dAnatomyAdapter: no scene to load into');
+    const urlEntries = this.manifest.entries.filter((entry) => entry.geometry.type === 'url');
+    if (urlEntries.length === 0) return;
+
+    const settled = await Promise.allSettled(
+      urlEntries.map(async (entry) => ({ entry, root: await this.buildUrlRoot(entry) })),
+    );
+
+    const adopted: Array<{ entry: ManifestEntry; root: THREE.Object3D }> = [];
+    const failures: string[] = [];
+    for (const outcome of settled) {
+      if (outcome.status === 'fulfilled') adopted.push(outcome.value);
+      else {
+        failures.push(outcome.reason instanceof Error ? outcome.reason.message : String(outcome.reason));
+      }
+    }
+
+    // Dispose-while-loading: release what did arrive and adopt nothing.
+    if (this.disposed || !this.scene) {
+      for (const { root } of adopted) releaseObject(root);
+      return;
+    }
+    if (failures.length) {
+      for (const { root } of adopted) releaseObject(root);
+      throw new Error(
+        `Three3dAnatomyAdapter: ${failures.length} asset(s) failed to load, so the 3D view is incomplete — ${failures[0]}`,
+      );
+    }
+
+    for (const { entry, root } of adopted) {
+      if (entry.geometry.type !== 'url') continue;
+      if (entry.geometry.position) root.position.set(...entry.geometry.position);
+      if (entry.geometry.scale) root.scale.set(...entry.geometry.scale);
+      if (entry.geometry.rotation) root.rotation.set(...entry.geometry.rotation);
+      this.scene.add(root);
+      this.objects.set(entry.asiId, root);
+      this.indexDescendants(root, entry.asiId);
+    }
+  }
+
+  /**
+   * Resolve one url entry to a root Object3D, or throw.
+   *
+   * A clone is taken rather than the loaded node itself: one file may back
+   * several entries, each with its own transform, and they must not share a
+   * parent or a transform. Geometry is shared by the clone, which is what three
+   * expects and what makes this cheap.
+   */
+  private async buildUrlRoot(entry: ManifestEntry): Promise<THREE.Object3D> {
+    if (entry.geometry.type !== 'url') throw new Error('buildUrlRoot called on a primitive entry');
+    const url = entry.geometry.url;
+    const loader = this.opts.loadGlb ?? defaultGlbLoader;
+    const timeoutMs = this.opts.assetTimeoutMs ?? DEFAULT_ASSET_TIMEOUT_MS;
+
+    let cached = this.glbCache.get(url);
+    if (!cached) {
+      // Cached by URL, and the cache entry is created before the await so two
+      // entries pointing at one file share a single load.
+      cached = loader(url);
+      this.glbCache.set(url, cached);
+    }
+    let loaded: { scene: THREE.Object3D };
+    try {
+      loaded = await withTimeout(cached, timeoutMs, url);
+    } catch (cause) {
+      // A rejected cache entry must not poison the next mount of this viewer.
+      this.glbCache.delete(url);
+      throw new Error(`asset ${url} failed to load (${describe(cause)})`);
+    }
+
+    const source = loaded.scene;
+    if (!source) throw new Error(`asset ${url} loaded with no scene`);
+
+    const nodeName = entry.geometry.nodeName;
+    const node = nodeName ? source.getObjectByName(nodeName) : source;
+    if (!node)
+      throw new Error(
+        `asset ${url} has no node named "${nodeName}" (required by ${entry.asiId})`,
+      );
+    // An entry with no mesh descendants would mount successfully and draw
+    // nothing, which is the one outcome worse than falling back.
+    if (!hasMesh(node))
+      throw new Error(`node "${node?.name || url}" contains no mesh for ${entry.asiId}`);
+
+    return node.clone(true);
   }
 
   private materialFor(entry: ManifestEntry): THREE.MeshStandardMaterial {
@@ -568,16 +789,24 @@ export class Three3dAnatomyAdapter implements RenderedViewer {
       return material;
     }
     const id = entry.structureId ?? '';
-    if (s.rejectedStructureIds.includes(id)) {
-      material.color.setHex(this.palette.rejected);
-      material.opacity = 0.35;
-      return material;
-    }
+    // Precedence, most authoritative first.
+    //
+    // `selected` outranks rejection and candidacy because
+    // location.userSelectedStructureIds is the canonical record: if the record
+    // says the user pointed here, a rejected suggestion cannot make the viewer
+    // disagree with it. The presentation-only sets are compared after, so a
+    // structure can be both selected and rejected without either command having
+    // to mutate the other.
     if (s.selectedStructureIds.includes(id)) {
       material.color.setHex(this.palette.selected);
       material.opacity = 1;
       material.emissive.setHex(this.palette.selected);
       material.emissiveIntensity = 0.28;
+      return material;
+    }
+    if (s.rejectedStructureIds.includes(id)) {
+      material.color.setHex(this.palette.rejected);
+      material.opacity = 0.35;
       return material;
     }
     if (s.highlightedStructureIds.includes(id)) {
@@ -596,7 +825,9 @@ export class Three3dAnatomyAdapter implements RenderedViewer {
     if (!this.scene) return;
     for (const entry of this.manifest.entries) {
       const geo = entry.geometry;
-      if (geo.type !== 'primitive') continue; // url geometry arrives with the real pipeline
+      // `url` entries are adopted by loadUrlGeometry, which is async; this pass
+      // is the synchronous primitive geometry only.
+      if (geo.type !== 'primitive') continue;
       const geometry = primitiveGeometry(geo.shape, geo.scale);
       const mesh = new THREE.Mesh(geometry, this.materialFor(entry));
       mesh.position.set(...geo.position);
@@ -604,6 +835,7 @@ export class Three3dAnatomyAdapter implements RenderedViewer {
       mesh.userData.asiId = entry.asiId;
       this.scene.add(mesh);
       this.objects.set(entry.asiId, mesh);
+      this.indexDescendants(mesh, entry.asiId);
     }
     // A crosshair marker for the active pin. Kept small and offset in z so it
     // reads as an overlay rather than covering the geometry under it.
@@ -635,10 +867,19 @@ export class Three3dAnatomyAdapter implements RenderedViewer {
       const layerVisible =
         entry.kind === 'subregion' ? true : visibleLayers.has(entry.layer);
       const inView = entry.views.includes(view);
+      // Visibility is set on the ROOT and inherited by every descendant, so a
+      // layer toggle hides a whole loaded asset rather than the one mesh the
+      // old code happened to be holding.
       object.visible = layerVisible && inView;
-      const mesh = object as THREE.Mesh;
+      // Materials are applied to every mesh under the root: the entry's
+      // candidate/selected/rejected appearance belongs to the asiId, and a
+      // twenty-mesh GLB must not end up with nineteen of its meshes left in the
+      // colour the asset shipped with.
       const material = this.materialFor(entry);
-      mesh.material = material;
+      object.traverse((node) => {
+        const mesh = node as THREE.Mesh;
+        if (mesh.isMesh) mesh.material = material;
+      });
       if (object.visible) this.pickables.push(object);
     }
     if (this.pinMesh) {
@@ -661,19 +902,35 @@ export class Three3dAnatomyAdapter implements RenderedViewer {
    * small region fills the field and a large one still fits. A fixed distance
    * makes every region look equally unimportant, which is the opposite of the
    * point of an anatomy workspace.
+   *
+   * Bounds come from the objects that are ACTUALLY in the scene. For a url entry
+   * that is a Box3 over the loaded graph, so a real GLB is framed on its own
+   * extent; only a primitive falls back to its declared centre. Sizing a loaded
+   * model from hardcoded primitive coordinates would frame the fixture and
+   * leave the actual asset off-screen or filling it.
    */
   private retargetCamera(immediate = false): void {
     const entries = entriesFor(this.manifest, this.state.region, this.view);
     let radius = this.manifest.bounds.radius;
     if (entries.length) {
+      // World matrices have to be current or nested transforms read as identity.
+      this.scene?.updateMatrixWorld(true);
       const box = new THREE.Box3();
       const v = new THREE.Vector3();
+      let measured = false;
       for (const entry of entries) {
+        const object = this.objects.get(entry.asiId);
+        if (object) {
+          box.expandByObject(object);
+          measured = true;
+          continue;
+        }
         if (entry.geometry.type !== 'primitive') continue;
         v.set(...entry.geometry.position);
         box.expandByPoint(v);
+        measured = true;
       }
-      if (!box.isEmpty()) {
+      if (measured && !box.isEmpty()) {
         box.getCenter(this.focus);
         const sphere = box.getBoundingSphere(new THREE.Sphere());
         radius = Math.max(0.08, sphere.radius);
@@ -712,6 +969,61 @@ export class Three3dAnatomyAdapter implements RenderedViewer {
 
 function clamp01(value: number): number {
   return Math.min(1, Math.max(0, value));
+}
+
+function describe(cause: unknown): string {
+  return cause instanceof Error ? cause.message : String(cause);
+}
+
+/**
+ * Bound a load so one slow asset cannot hold the viewer in "not ready".
+ *
+ * The timer is always cleared, including on the success path, so a normal load
+ * does not leave a pending timeout behind it.
+ */
+async function withTimeout<T>(
+  promise: Promise<T>,
+  ms: number,
+  label: string,
+): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([
+      promise,
+      new Promise<never>((_, reject) => {
+        timer = setTimeout(() => reject(new Error(`${label} timed out after ${ms}ms`)), ms);
+      }),
+    ]);
+  } finally {
+    if (timer !== undefined) clearTimeout(timer);
+  }
+}
+
+/**
+ * Release a loaded graph that was never adopted.
+ *
+ * Needed on both failure and dispose paths: without it, a GLB that finished
+ * loading after the viewer gave up would hold its geometry for the life of the
+ * page.
+ */
+function releaseObject(object: THREE.Object3D | null | undefined): void {
+  if (!object) return;
+  object.traverse((node) => {
+    const mesh = node as THREE.Mesh;
+    if (mesh.geometry) mesh.geometry.dispose();
+    const material = mesh.material;
+    if (Array.isArray(material)) material.forEach((m) => m.dispose());
+    else if (material) (material as THREE.Material).dispose();
+  });
+}
+
+/** True when the node has a Mesh somewhere beneath it, at any depth. */
+function hasMesh(node: THREE.Object3D): boolean {
+  let found = false;
+  node.traverse((child) => {
+    if ((child as THREE.Mesh).isMesh) found = true;
+  });
+  return found;
 }
 
 /**

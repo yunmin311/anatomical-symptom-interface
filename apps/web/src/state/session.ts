@@ -52,6 +52,47 @@ async function api<T>(path: string, init?: RequestInit): Promise<T> {
 
 export const anatomy = new Svg2dAnatomyAdapter();
 
+/**
+ * Make the viewer state match a record, by REPLACEMENT.
+ *
+ * `syncViewer` only projected depth, so every other visual field survived
+ * whatever happened last: a reset episode inherited the previous one's
+ * selection, candidates, rejections and pin, because none of the additive
+ * commands in the vocabulary can express removal. That is a state the record can
+ * no longer produce, so it could never be corrected — a new episode showing a
+ * selection the user made for a different complaint.
+ *
+ * So each field is set from the record with a replacing command, in dependency
+ * order: region first (it clears the sub-region and highlight sets), then the
+ * sub-region, then the three id sets, then depth, then the pin. `focusRegion`
+ * clearing the highlights is why the candidate set has to be applied after it.
+ *
+ * Rejections are deliberately NOT carried by a record — they are a
+ * presentation-local "not that one" — so they are cleared here rather than
+ * projected. Pin HISTORY also survives: it is evidence of past episodes, not
+ * state of this one. The active marker does not.
+ */
+function projectRecordToViewer(
+  record: SymptomRecord,
+  considered: ConsideredStructure[],
+): void {
+  anatomy.apply({ type: 'focusRegion', region: record.location.region });
+  if (record.location.subRegionId)
+    anatomy.apply({ type: 'focusSubRegion', subRegionId: record.location.subRegionId });
+  anatomy.apply({
+    type: 'setSelected',
+    structureIds: [...record.location.userSelectedStructureIds],
+  });
+  anatomy.apply({
+    type: 'setHighlighted',
+    structureIds: considered.map((c) => c.structureId),
+  });
+  anatomy.apply({ type: 'clearReject', structureIds: [...anatomy.getState().rejectedStructureIds] });
+  anatomy.apply({ type: 'setDepth', depth: record.location.depth });
+  if (record.location.point) anatomy.apply({ type: 'movePin', point: record.location.point });
+  else anatomy.apply({ type: 'clearPin' });
+}
+
 export type Stage = 'describe' | 'locate' | 'clarify' | 'interview' | 'review' | 'history' | 'unsupported';
 
 interface SessionState {
@@ -185,14 +226,12 @@ export const useSession = create<SessionState>((set, get) => {
           return;
         }
 
-        anatomy.apply({ type: 'focusRegion', region: record.location.region });
-        if (record.location.subRegionId) {
-          anatomy.apply({ type: 'focusSubRegion', subRegionId: record.location.subRegionId });
-        }
-        anatomy.apply({
-          type: 'setHighlighted',
-          structureIds: considered.map((c) => c.structureId),
-        });
+        // A re-localisation REPLACES the viewer, it does not add to it. Describing
+        // a second symptom in the same session used to leave the first episode's
+        // selection, candidates, rejections and pin on screen behind the new
+        // ones, because every command in the vocabulary is additive and none of
+        // them could take the old set back.
+        projectRecordToViewer(record, considered);
 
         const clarification =
           result.status === 'grounded' ? (result.clarificationQuestion ?? null) : null;
@@ -393,8 +432,12 @@ export const useSession = create<SessionState>((set, get) => {
     },
 
     reset: () => {
-      anatomy.apply({ type: 'focusRegion', region: 'shoulder' });
       const record = emptyRecord('shoulder');
+      // Reset the VIEWER too, not just the store. It used to only move the
+      // camera, so the previous episode's selection, candidates, rejections and
+      // pin stayed on screen and in adapter state, and the new episode started
+      // showing them as if they were the user's current answer.
+      projectRecordToViewer(record, []);
       set({
         stage: 'describe',
         utterance: '',
@@ -408,7 +451,7 @@ export const useSession = create<SessionState>((set, get) => {
         summary: null,
         error: null,
         viewer: anatomy.getState(),
-        viewerTick: 0,
+        viewerTick: get().viewerTick + 1,
       });
     },
   };

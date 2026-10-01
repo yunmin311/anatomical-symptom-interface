@@ -68,21 +68,39 @@ export type ViewerCommand =
   /**
    * REPLACE the candidate highlight set. Re-running localisation replaces the
    * suggestion list wholesale, so an additive highlight would accumulate
-   * candidates the current record no longer has.
+   * candidates the current record no longer has. Like `reject`, this is
+   * presentation only: it must never modify the canonical selection projection.
    */
   | { type: 'setHighlighted'; structureIds: string[] }
   | { type: 'clearHighlight' }
   /**
    * The user dismissed a suggestion: "not that one". Distinct from clearing a
    * highlight, because rejection survives re-rendering the candidate list and
-   * has to be re-applied whenever it comes back. Rejecting also withdraws any
-   * selection, so a structure is never both selected and rejected.
+   * has to be re-applied whenever it comes back.
+   *
+   * Rejecting is PRESENTATION state and must never touch
+   * `selectedStructureIds`. The canonical persisted authority is
+   * `location.userSelectedStructureIds`, and only `setSelected` — or a click,
+   * which session then persists — may change that projection. A rejection used
+   * to filter the selection out, which let a purely visual dismissal silently
+   * unselect something the record still said the user pointed at. If a
+   * structure ends up both selected and rejected, `selected` wins on state and
+   * the styling layer decides how to show the conflict.
    */
   | { type: 'reject'; structureIds: string[] }
   | { type: 'clearReject'; structureIds: string[] }
   | { type: 'dropPin'; point: MapPoint }
   | { type: 'movePin'; point: MapPoint }
   | { type: 'removePin'; pinId: string }
+  /**
+   * Drop the active pin marker while KEEPING the pin history.
+   *
+   * This exists because the vocabulary could not otherwise express "no pin",
+   * which is the entire reason a reset episode inherited the previous one's
+   * pin: `removePin` deletes a pin from history, and history is not what a new
+   * episode is supposed to erase.
+   */
+  | { type: 'clearPin' }
   | { type: 'setDepth'; depth: Depth };
 
 export interface AnatomyAdapter {

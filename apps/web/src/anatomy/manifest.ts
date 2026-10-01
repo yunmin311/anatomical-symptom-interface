@@ -15,10 +15,15 @@
  * shape; reconciliation between the two is integration work, deliberately out of
  * scope here.
  *
- * Phase 1A ships a fixture manifest only. It is procedurally generated,
- * deliberately non-medical geometry whose sole purpose is to prove the
- * renderer contract. `assertNonMedical` refuses to let it be mistaken for an
- * anatomy source, and the UI surfaces `disclaimer` whenever a fixture is active.
+ * Phase 1A ships a fixture manifest: procedurally generated, deliberately
+ * non-medical geometry whose sole purpose is to prove the renderer contract.
+ * `assertNonMedical` refuses to let it be mistaken for an anatomy source, and the
+ * UI surfaces `disclaimer` whenever a fixture is active.
+ *
+ * `url` geometry is real now — the renderer fetches and parses GLB, resolves a
+ * named node, and hands a scene graph to the adapter. What does NOT exist yet is
+ * the canonical Core manifest that would name real anatomy assets; that
+ * reconciliation is the next integration step, not this file.
  */
 import type { BodyRegion, Structure, SubRegion, TissueLayer } from '@asi/shared';
 import type { CameraPreset, MapPoint } from './types.ts';
@@ -43,8 +48,8 @@ export interface ManifestEntry {
   views: CameraPreset[];
   /**
    * How to build the geometry. `primitive` entries are generated in code and
-   * carry no external asset; `url` entries are fetched and are the path a real
-   * GLB pipeline will use.
+   * carry no external asset; `url` entries are fetched, and mount() does not
+   * report ready until they have all loaded.
    */
   geometry:
     | {
@@ -84,6 +89,17 @@ export interface AnatomyManifest {
    * never read as a finished anatomy product.
    */
   disclaimer?: string;
+  /**
+   * Required whenever any entry uses `url` geometry, whatever the source.
+   *
+   * A loaded file is the one thing in the renderer the product cannot vouch for
+   * on its own, so it has to be attributable out loud. This is deliberately a
+   * requirement rather than an optional nicety: it is the hook the canonical
+   * manifest will fill with real asset provenance, and a manifest that cannot
+   * name its assets has no business loading them. Empty on a manifest with no
+   * url geometry.
+   */
+  externalAssetNotice?: string;
   /** Overall height of the figure in manifest units, for camera framing. */
   bounds: { height: number; radius: number };
   entries: ManifestEntry[];
@@ -107,6 +123,16 @@ export function indexManifest(manifest: AnatomyManifest): Map<string, ManifestEn
       );
     if (entry.views.length === 0)
       throw new ManifestError(`entry ${entry.asiId} is visible in no view`);
+    if (entry.geometry.type === 'url') {
+      if (!entry.geometry.url.trim())
+        throw new ManifestError(`entry ${entry.asiId} has url geometry with no url`);
+      // A blank nodeName would silently mean "the whole file", which is the one
+      // reading an author almost never intends and cannot notice.
+      if (entry.geometry.nodeName !== undefined && !entry.geometry.nodeName.trim())
+        throw new ManifestError(
+          `entry ${entry.asiId} has a nodeName that is present but blank; omit it to use the whole asset`,
+        );
+    }
     index.set(entry.asiId, entry);
   }
   if (index.size === 0) throw new ManifestError('manifest has no entries');
@@ -114,16 +140,24 @@ export function indexManifest(manifest: AnatomyManifest): Map<string, ManifestEn
 }
 
 /**
- * Guard against a fixture being presented as anatomy. The Phase 1A fixture is
- * a set of primitives, not a body, and the product must say so out loud.
+ * Guard against a fixture being presented as anatomy.
+ *
+ * The Phase 1A fixture is a set of placeholder volumes, not a body, and the
+ * product must say so out loud. A fixture MAY now reference an external file —
+ * that is how the url geometry path gets tested at all, and it has nothing to
+ * do with whether the result is anatomy — but it must still declare itself a
+ * fixture, and the file it pulls in must still be named in
+ * `externalAssetNotice`. So the invariant is now "a fixture can never be
+ * mistaken for anatomy, and a loaded asset can never be unattributed", which
+ * is both enforceable and true of the real pipeline.
  */
 export function assertNonMedical(manifest: AnatomyManifest): void {
-  if (manifest.source !== 'fixture') return;
-  if (!manifest.disclaimer)
+  if (manifest.source === 'fixture' && !manifest.disclaimer)
     throw new ManifestError('a fixture manifest must carry a disclaimer');
-  if (manifest.entries.some((entry) => entry.geometry.type !== 'primitive'))
+  const usesUrl = manifest.entries.some((entry) => entry.geometry.type === 'url');
+  if (usesUrl && !manifest.externalAssetNotice?.trim())
     throw new ManifestError(
-      'a fixture manifest must not reference external assets: it would imply anatomy it does not have',
+      'a manifest that loads external assets must name them in externalAssetNotice',
     );
 }
 
