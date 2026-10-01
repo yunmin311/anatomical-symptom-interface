@@ -88,25 +88,129 @@ export interface AdapterOptions {
 }
 
 /**
+ * The licence that actually governs one entry.
+ *
+ * The canonical schema makes `entry.licence` REQUIRED, so an entry is not merely
+ * permitted to narrow the manifest-level licence — it states one. The top-level
+ * `manifest.licence` is the default the generator fills each entry from, and the
+ * documentation says it "applies unless an entry overrides it". Both readings lead
+ * to the same operational answer, and it is not `manifest.licence`: the value that
+ * governs an entry is the one ON that entry.
+ *
+ * Reading `manifest.licence` instead would be the dangerous choice precisely when it
+ * differs, because the whole point of an override is that the entry's licence is
+ * not the default. It would display a licence the entry is not actually under.
+ *
+ * This is deliberately NOT a schema change. The canonical manifest is right to
+ * allow per-entry overrides and to require a value on every entry; what is wrong
+ * is a renderer that silently drops some of them.
+ */
+export function effectiveLicence(entry: AssetManifestEntry): AssetManifestEntry['licence'] {
+  return entry.licence;
+}
+
+/**
+ * Fields that must agree across every entry for one scene to carry one attribution.
+ *
+ * `conceptId` is DELIBERATELY ABSENT: it identifies a concept inside the release, so
+ * two structures in the same file have different ones by design and requiring them
+ * to match would refuse every real manifest.
+ *
+ * Everything listed here is either part of the licence the user must be shown or a
+ * release-level fact the citation depends on. `archive` and `doi` are included
+ * because they appear in the provenance the panel prints; a scene whose entries
+ * disagree about which archive they came from cannot honestly be cited once.
+ */
+const HOMOGENEOUS_FIELDS = [
+  'licence.id',
+  'licence.name',
+  'licence.url',
+  'licence.attribution',
+  'licence.verifiedOn',
+  'source.dataset',
+  'source.release',
+  'source.archive',
+  'source.doi',
+] as const;
+
+function fieldOf(entry: AssetManifestEntry, field: (typeof HOMOGENEOUS_FIELDS)[number]): string {
+  if (field.startsWith('licence.')) {
+    return String(effectiveLicence(entry)[field.slice('licence.'.length) as 'id'] ?? '');
+  }
+  return String(entry.source[field.slice('source.'.length) as 'dataset'] ?? '');
+}
+
+/**
+ * Refuse a manifest whose entries do not share one attribution.
+ *
+ * A `RendererSceneManifest` has ONE `attribution`, because the panel can only show
+ * one and because "these assets" is what a user is being asked to trust. A manifest
+ * that mixes datasets, releases or licences cannot be represented by that, and the
+ * alternatives are both worse than failing:
+ *
+ *  - Take the first entry's provenance (what this did): every other entry is then
+ *    displayed under a licence or a dataset it is not under. For a CC BY asset shown
+ *    beside an MIT one, or a commercial dataset shown as BodyParts3D, that is a
+ *    licence misstatement — not a cosmetic bug.
+ *  - Union them into one string: a fabricated citation naming sources and terms
+ *    that were never issued together.
+ *
+ * So it throws. The canonical schema still ALLOWS per-entry overrides, because a
+ * future multi-dataset manifest is legitimate; the limit is that ONE scene carries
+ * ONE attribution. Mixed datasets become multiple scenes or explicit attribution
+ * groups, which is a renderer-contract change to be designed rather than guessed at
+ * here.
+ */
+export function assertProvenanceHomogeneous(manifest: AssetManifest): void {
+  const [first, ...rest] = manifest.entries;
+  if (!first) return;
+
+  const offenders: string[] = [];
+  for (const entry of rest) {
+    for (const field of HOMOGENEOUS_FIELDS) {
+      const a = fieldOf(first, field);
+      const b = fieldOf(entry, field);
+      // Empty-vs-empty is agreement; a value against an absent one is not, because
+      // the panel would print one and the other entry would print nothing.
+      if (a !== b)
+        offenders.push(
+          `${field}: ${first.asiId} says ${JSON.stringify(a)}, ${entry.asiId} says ${JSON.stringify(b)}`,
+        );
+    }
+  }
+
+  if (offenders.length)
+    throw new SceneManifestError(
+      `a renderer scene carries ONE attribution, so every entry must agree on licence and source provenance.\n` +
+        `  These entries disagree:\n${offenders.map((o) => `    - ${o}`).join('\n')}\n` +
+        `  Split a mixed manifest into multiple scenes or explicit attribution groups rather than ` +
+        `displaying one entry's licence for another.`,
+    );
+}
+
+/**
  * Build the attribution the renderer displays.
  *
- * Everything here comes from the canonical manifest; nothing is written by hand.
- * For a synthetic manifest the licence fields describe geometry this repository
- * generated, which is truthful, and `synthetic` is returned so the UI can be
- * explicit that it is a test asset rather than a source dataset.
+ * Everything here comes from the canonical manifest; nothing is written by hand, and
+ * nothing is taken from `entries[0]` as a representative. The caller must have run
+ * `assertProvenanceHomogeneous`, so every entry agrees and the first entry is a
+ * genuine value rather than a sample — the distinction matters, because "they all
+ * agree" and "I only read one" produce identical output until they do not.
+ *
+ * For a synthetic manifest the licence describes geometry this repository
+ * generated, which is truthful, and `synthetic` is set so the UI can be explicit
+ * that this is a test asset rather than a source dataset.
  */
 export function deriveAttribution(
   manifest: AssetManifest,
 ): RendererSceneAttribution & { synthetic: boolean } {
-  const licence = manifest.licence;
-  // An entry may narrow the licence; the narrowest declared licence for any entry
-  // is the one that has to be honoured, and in practice every entry inherits the
-  // manifest-level one. Taking the first override would be arbitrary, so the
-  // manifest-level licence is used and any differing entry is rejected below.
-  const notice = deriveAssetNotice(licence, {
-    dataset: manifest.entries[0]?.source.dataset ?? 'ASI',
-    release: manifest.entries[0]?.source.release ?? 'unknown',
-  });
+  assertProvenanceHomogeneous(manifest);
+
+  // Safe to read entry 0 AFTER the homogeneity check: every entry agrees.
+  const reference = manifest.entries[0]!;
+  const licence = effectiveLicence(reference);
+  const source = reference.source;
+
   return {
     licence: {
       id: licence.id,
@@ -116,13 +220,13 @@ export function deriveAttribution(
       verifiedOn: licence.verifiedOn,
     },
     source: {
-      dataset: manifest.entries[0]?.source.dataset ?? 'ASI',
-      release: manifest.entries[0]?.source.release ?? 'unknown',
-      doi: manifest.entries[0]?.source.doi ?? null,
-      conceptId: manifest.entries[0]?.source.conceptId ?? null,
-      archive: manifest.entries[0]?.source.archive ?? null,
+      dataset: source.dataset,
+      release: source.release,
+      doi: source.doi ?? null,
+      conceptId: source.conceptId ?? null,
+      archive: source.archive ?? null,
     },
-    notice,
+    notice: deriveAssetNotice(licence, source),
     synthetic: isSyntheticManifest(manifest),
   };
 }
@@ -261,11 +365,15 @@ export function toRendererScene(
 
   const scene: RendererSceneManifest = {
     version: `canonical-${manifest.schemaVersion}`,
-    // A synthetic generator may NOT be presented as a source dataset, whatever
-    // the caller asks for.
-    source: synthetic ? 'fixture' : 'bodyparts3d',
+    // Dataset-agnostic. `bodyparts3d` used to be the non-synthetic value, which meant
+    // EVERY external manifest was labelled BodyParts3D — a Z-Anatomy scene, one of
+    // our own, or a mixed one. The renderer must not name a supplier it was not
+    // told about; the real name is `attribution.source.dataset`.
+    source: synthetic ? 'fixture' : 'external',
     // 8. licence/source are NOT copied into a second authority; the renderer gets
     //    the DERIVED notice, and the structured fields it was computed from.
+    //    Deriving it is also what ENFORCES homogeneity: a mixed manifest throws
+    //    above rather than being reported under entries[0]'s provenance.
     externalAssetNotice: attribution.notice,
     attribution: {
       licence: attribution.licence,

@@ -32,8 +32,20 @@
 import type { BodyRegion, Structure, SubRegion, TissueLayer } from '@asi/shared';
 import type { CameraPreset, MapPoint } from './types.ts';
 
-/** Which body of geometry a scene is made of. */
-export type RendererSceneSource = 'fixture' | 'bodyparts3d';
+/**
+ * Which body of geometry a scene is made of.
+ *
+ * Dataset-AGNOSTIC on purpose. It used to be `'fixture' | 'bodyparts3d'`, which
+ * named one supplier in a contract the renderer should not know anything about:
+ * every non-synthetic manifest would be labelled BodyParts3D, including a Z-Anatomy
+ * scene, one of our own, or a mix — and the label would be a guess presented as a
+ * fact. The dataset name belongs in exactly one place, `attribution.source.dataset`,
+ * which comes from the canonical manifest.
+ *
+ * So the renderer contract says only what it can honestly tell: synthetic
+ * placeholder geometry, or real geometry from an external source it does not name.
+ */
+export type RendererSceneSource = 'fixture' | 'external';
 
 export interface RendererSceneEntry {
   /**
@@ -272,9 +284,9 @@ export function assertNonMedical(scene: RendererSceneManifest): void {
     );
   // And a production scene must not be synthetic either, whatever its generator
   // says, because a synthetic manifest cannot be a source dataset.
-  if (scene.source === 'bodyparts3d' && scene.attribution?.synthetic)
+  if (scene.source === 'external' && scene.attribution?.synthetic)
     throw new SceneManifestError(
-      'a production scene cannot carry synthetic provenance; the generator declared itself synthetic',
+      'an external scene cannot carry synthetic provenance; the generator declared itself synthetic',
     );
 }
 

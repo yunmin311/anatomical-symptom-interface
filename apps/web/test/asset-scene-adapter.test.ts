@@ -30,6 +30,7 @@ import {
 } from '@asi/shared';
 import {
   deriveAttribution,
+  effectiveLicence,
   isSyntheticManifest,
   sceneLicenceEvidence,
   toRendererScene,
@@ -37,6 +38,7 @@ import {
 import {
   assertNonMedical,
   assertSceneAttribution,
+  deriveAssetNotice,
   indexScene,
   resolveSubRegionForStructure,
   SceneManifestError,
@@ -48,6 +50,7 @@ import {
   SYNTHETIC_ASSET_ROOT,
   SYNTHETIC_CANONICAL_MANIFEST,
 } from './fixtures/synthetic-canonical-manifest.ts';
+import type { AssetManifestEntry } from '@asi/shared';
 import { buildFixtureGlb } from './fixtures/make-fixture-glb.mjs';
 import { asElement, fakeHost, stubRenderer } from './fixtures/fake-dom.ts';
 
@@ -289,7 +292,7 @@ test('a fixture may not claim a real dataset provenance', () => {
     () =>
       assertNonMedical({
         ...real,
-        source: 'bodyparts3d',
+        source: 'external',
         disclaimer: undefined,
         attribution: { ...real.attribution!, synthetic: true },
       }),
@@ -297,12 +300,12 @@ test('a fixture may not claim a real dataset provenance', () => {
   );
 });
 
-test('a production generator yields a bodyparts3d scene with licence evidence', () => {
+test('a production generator yields an external scene with licence evidence', () => {
   const real = toRendererScene({
     ...SYNTHETIC_CANONICAL_MANIFEST,
     generator: { name: 'bp3d-shoulder-pipeline', version: '1' },
   });
-  assert.equal(real.source, 'bodyparts3d');
+  assert.equal(real.source, 'external');
   assert.equal(real.disclaimer, undefined);
   assertSceneAttribution(real);
   assertNonMedical(real);
@@ -455,4 +458,170 @@ test('the fixture GLB really is the bytes the pipeline proof loads', () => {
   // Guards the proof itself: if the fixture were regenerated with different
   // geometry, the descendant-mesh assertions would be testing the wrong file.
   assert.equal(readFileSync(FIXTURE_GLB).byteLength, buildFixtureGlb().byteLength);
+});
+/* ================================================================== */
+/* 6. attribution: one scene, one attribution                          */
+/* ================================================================== */
+
+/**
+ * A copy of the fixture manifest with one field on `patch` changed.
+ *
+ * Written as a function rather than a table of literals because the point of these
+ * tests is that a SECOND entry disagrees, so each case has to leave the first
+ * entry alone. `conceptId` is deliberately not varied: it differs per structure by
+ * design and requiring it to match would refuse every real manifest.
+ */
+/** The same manifest, declared by a real pipeline rather than the test generator. */
+function productionManifest(patch: Partial<AssetManifestEntry> = {}): unknown {
+  return {
+    ...withSecondEntry(patch),
+    generator: { name: 'bp3d-shoulder-pipeline', version: '1' },
+  };
+}
+
+function withSecondEntry(patch: Partial<AssetManifestEntry>): unknown {
+  const [first, second] = SYNTHETIC_CANONICAL_MANIFEST.entries;
+  assert.ok(first && second, 'the fixture manifest needs two entries for these tests');
+  return {
+    ...SYNTHETIC_CANONICAL_MANIFEST,
+    entries: [first, { ...second, ...patch }],
+  };
+}
+
+test('A. a homogeneous production manifest derives its attribution', () => {
+  // Everything agrees, including the conceptId, which is allowed to differ.
+  const scene = toRendererScene(productionManifest(), { assetRoot: SYNTHETIC_ASSET_ROOT });
+  assert.equal(scene.source, 'external');
+  assertSceneAttribution(scene);
+  const licence = SYNTHETIC_CANONICAL_MANIFEST.licence;
+  assert.equal(scene.attribution?.licence.id, licence.id);
+  assert.equal(scene.attribution?.source.dataset, SYNTHETIC_CANONICAL_MANIFEST.entries[0]!.source.dataset);
+  assert.equal(scene.attribution?.source.release, SYNTHETIC_CANONICAL_MANIFEST.entries[0]!.source.release);
+});
+
+test('B. an entry with a different licence is REFUSED, not reported under the first', () => {
+  // This is the case the old code got wrong: it read manifest.licence and entries[0]
+  // and happily produced a scene claiming every mesh was CC0 when one is MIT.
+  const differing = {
+    id: 'MIT',
+    name: 'MIT License',
+    url: 'https://opensource.org/license/mit',
+    attribution: 'Some other dataset entirely.',
+    verifiedOn: '2026-10-01',
+  };
+  assert.throws(
+    () => toRendererScene(withSecondEntry({ licence: differing }), { assetRoot: SYNTHETIC_ASSET_ROOT }),
+    (error: unknown) =>
+      error instanceof SceneManifestError &&
+      /licence\.id/.test(String(error)) &&
+      /licence\.attribution/.test(String(error)) &&
+      /one attribution|ONE attribution/i.test(String(error)),
+  );
+});
+
+test('C. an entry from a different dataset is REFUSED', () => {
+  assert.throws(
+    () =>
+      toRendererScene(withSecondEntry({ source: { dataset: 'Some Other Anatomy Set', release: '1.0.0' } }), {
+        assetRoot: SYNTHETIC_ASSET_ROOT,
+      }),
+    (error: unknown) => error instanceof SceneManifestError && /source\.dataset/.test(String(error)),
+  );
+});
+
+test('D. the same dataset at a different release is REFUSED', () => {
+  // Same dataset name is not enough. A licence or a citation is versioned, so
+  // "BodyParts3D 4.0" and "BodyParts3D 4.3" are different provenance and reporting
+  // one for the other is the sort of thing that goes unnoticed for years.
+  assert.throws(
+    () =>
+      toRendererScene(withSecondEntry({ source: { dataset: SYNTHETIC_CANONICAL_MANIFEST.entries[0]!.source.dataset, release: '9.9.9' } }), {
+        assetRoot: SYNTHETIC_ASSET_ROOT,
+      }),
+    (error: unknown) => error instanceof SceneManifestError && /source\.release/.test(String(error)),
+  );
+});
+
+test('D2. an entry disagreeing about its archive or DOI is REFUSED', () => {
+  // Both are printed in the provenance panel, so a scene cannot cite them once.
+  assert.throws(
+    () =>
+      toRendererScene(withSecondEntry({ source: { ...SYNTHETIC_CANONICAL_MANIFEST.entries[0]!.source, archive: 'other.zip' } }), {
+        assetRoot: SYNTHETIC_ASSET_ROOT,
+      }),
+    (error: unknown) => error instanceof SceneManifestError && /source\.archive/.test(String(error)),
+  );
+  assert.throws(
+    () =>
+      toRendererScene(withSecondEntry({ source: { ...SYNTHETIC_CANONICAL_MANIFEST.entries[0]!.source, doi: '10.9999/other' } }), {
+        assetRoot: SYNTHETIC_ASSET_ROOT,
+      }),
+    (error: unknown) => error instanceof SceneManifestError && /source\.doi/.test(String(error)),
+  );
+});
+
+test('the effective licence is the one ON the entry, not the manifest default', () => {
+  // The canonical schema requires `entry.licence`, so the entry states the licence
+  // that governs it. Reading `manifest.licence` instead would be wrong exactly when
+  // they differ, which is the only case that matters.
+  const entryLicence = {
+    id: 'CC-BY-4.0',
+    name: 'Creative Commons Attribution 4.0',
+    url: 'https://creativecommons.org/licenses/by/4.0/',
+    attribution: 'Entry-level attribution string.',
+    verifiedOn: '2026-02-02',
+  };
+  const single = {
+    ...SYNTHETIC_CANONICAL_MANIFEST,
+    entries: [{ ...SYNTHETIC_CANONICAL_MANIFEST.entries[0]!, licence: entryLicence }],
+  };
+  assert.equal(effectiveLicence(SYNTHETIC_CANONICAL_MANIFEST.entries[0]!).id, 'CC0-1.0');
+  const scene = toRendererScene(single, { assetRoot: SYNTHETIC_ASSET_ROOT });
+  // The manifest default was CC0 and the entry says CC-BY; the entry wins.
+  assert.equal(scene.attribution?.licence.id, 'CC-BY-4.0');
+  assert.equal(scene.attribution?.licence.verifiedOn, '2026-02-02');
+  assert.ok(scene.externalAssetNotice?.includes('Entry-level attribution string.'));
+  assertSceneAttribution(scene);
+});
+
+test('E. a synthetic fixture stays explicitly synthetic and shows no licence evidence', () => {
+  const scene = buildScene();
+  assert.equal(scene.source, 'fixture');
+  assert.equal(scene.attribution?.synthetic, true);
+  assert.match(scene.disclaimer ?? '', /synthetic/i);
+  assert.match(scene.disclaimer ?? '', /not anatomy/i);
+  // Nothing a UI could mistake for anatomy provenance.
+  assert.equal(sceneLicenceEvidence(scene), null);
+  assert.throws(() => assertNonMedical({
+    ...scene,
+    attribution: { ...scene.attribution!, synthetic: false },
+  }), SceneManifestError);
+});
+
+test('F. a production notice cannot be authored to differ from the canonical value', () => {
+  const scene = toRendererScene(productionManifest(), { assetRoot: SYNTHETIC_ASSET_ROOT });
+  const expected = deriveAssetNotice(scene.attribution!.licence, scene.attribution!.source);
+  // Hand-writing the notice is exactly what must not be possible.
+  assert.throws(
+    () => assertSceneAttribution({ ...scene, externalAssetNotice: 'Some other asset, MIT.' }),
+    SceneManifestError,
+  );
+  assert.throws(() => assertSceneAttribution({ ...scene, attribution: null }), SceneManifestError);
+  // And the value the adapter produces is that exact string.
+  assert.equal(scene.externalAssetNotice, expected);
+});
+
+test('the renderer source category is dataset-agnostic', () => {
+  // 'bodyparts3d' used to be the non-synthetic value, so a Z-Anatomy scene would
+  // have been labelled BodyParts3D. The category must not name a supplier.
+  const bp3d = toRendererScene(productionManifest(), { assetRoot: SYNTHETIC_ASSET_ROOT });
+  const zAnatomy = toRendererScene({
+    ...productionManifest(),
+    generator: { name: 'z-anatomy-pipeline', version: '1' },
+  }, { assetRoot: SYNTHETIC_ASSET_ROOT });
+  assert.equal(bp3d.source, 'external');
+  assert.equal(zAnatomy.source, 'external');
+  // Same category for both; the dataset name lives in exactly one place.
+  assert.equal(bp3d.source, zAnatomy.source);
+  assert.equal(bp3d.attribution?.source.dataset, SYNTHETIC_CANONICAL_MANIFEST.entries[0]!.source.dataset);
 });
