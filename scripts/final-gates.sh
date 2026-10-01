@@ -269,6 +269,10 @@ run urlglb      node apps/web/test/url-geometry-browser.mjs
 # mesh -> canonical asiId -> the session store. A pick that resolves to nothing, or
 # that invents a sub-region, is invisible to every other gate.
 run pickpath    node apps/web/test/structure-pick-browser.mjs
+# The SAME path against externally sourced anatomy rather than a fixture. Synthetic
+# geometry has no concepts, layers, laterality or sub-region lists, so it cannot
+# prove any of the properties a real asset has to satisfy.
+run realgeom    node apps/web/test/real-geometry-browser.mjs
 # The gate the old runner omitted from its own report.
 run evidence    node apps/web/test/evidence.mjs
 

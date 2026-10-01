@@ -1064,18 +1064,35 @@ export class Three3dAnatomyAdapter implements RenderedViewer {
         box.expandByPoint(v);
         measured = true;
       }
-      if (measured && !box.isEmpty()) {
-        box.getCenter(this.focus);
-        const sphere = box.getBoundingSphere(new THREE.Sphere());
-        radius = Math.max(0.08, sphere.radius);
+if (measured && !box.isEmpty()) {
+      box.getCenter(this.focus);
+      const sphere = box.getBoundingSphere(new THREE.Sphere());
+      radius = Math.max(0.08, sphere.radius);
+      // FRUSTUM FROM THE ACTUAL SCENE, NOT FROM A CONSTANT.
+      //
+      // The depth planes were a hardcoded 0.05..50, sized for the fixture, which is
+      // about 1.8 units tall and sits on the origin. Real anatomy is in
+      // MILLIMETRES: the BodyParts3D shoulder meshes span roughly 80-280 units and
+      // sit about 1300 units from the origin, so every ray left the frustum before
+      // it reached the geometry. Nothing crashed and nothing rendered as "no hit" in
+      // a way anyone would read as a picking bug -- the viewer simply showed real
+      // anatomy that could not be clicked.
+      //
+      // Derived from the measured sphere so it holds for any asset in any units: far
+      // clears the camera and the far side of the body with room to spare, near is a
+      // small fraction of the radius so precision survives at any scale.
+      const depthScale = Math.max(radius, 0.08);
+      if (this.camera) {
+        this.camera.near = Math.max(0.001, depthScale * 0.01);
+        this.camera.far = depthScale * 40 + distanceFor(radius, this.camera) * 4;
+        this.camera.updateProjectionMatrix();
       }
+    }
     }
     const station = CAMERA_PRESETS[this.view];
     const target = this.focus.clone();
     // Fit the sphere in the tighter of the two field axes, with headroom.
-    const vFov = (this.camera?.fov ?? 38) * (Math.PI / 180);
-    const hFov = 2 * Math.atan(Math.tan(vFov / 2) * Math.max(1, this.camera?.aspect ?? 1));
-    const distance = (radius / Math.sin(Math.min(vFov, hFov) / 2)) * 1.35;
+    const distance = this.camera ? distanceFor(radius, this.camera) : radius * 4;
     const direction = new THREE.Vector3(...station.position).normalize();
     const position = direction.multiplyScalar(distance).add(target);
     if (immediate || !this.camera) {
@@ -1099,6 +1116,19 @@ export class Three3dAnatomyAdapter implements RenderedViewer {
     }
     this.renderer.render(this.scene, this.camera);
   };
+}
+
+/**
+ * How far back the camera must sit to fit a sphere of `radius` in the frustum.
+ *
+ * Shared by `retargetCamera` and the depth-plane calculation, because a far plane
+ * derived from a different distance than the camera actually uses is exactly the kind
+ * of near-miss that only shows up on some assets.
+ */
+function distanceFor(radius: number, camera: THREE.PerspectiveCamera): number {
+  const vFov = camera.fov * (Math.PI / 180);
+  const hFov = 2 * Math.atan(Math.tan(vFov / 2) * Math.max(1, camera.aspect || 1));
+  return (radius / Math.sin(Math.min(vFov, hFov) / 2)) * 1.35;
 }
 
 function clamp01(value: number): number {
