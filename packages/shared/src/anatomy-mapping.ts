@@ -52,11 +52,15 @@
  *   our spelling"; searching the whole vocabulary finds no such concept. BodyParts3D
  *   4.0 carries muscle and whole-bone meshes, not the small bones and joint spaces
  *   these ids name.
- * - `subacromial-bursa`: a space, and BodyParts3D carries solid anatomy.
- * - `deltoid`: present, but ONLY as three parts (acromial, clavicular, spinal),
- *   each with left and right variants. Our id is the whole muscle, so binding one
- *   part to it would misrepresent coverage. The parts are recorded under
- *   `DELTOID_PARTS` for a decision to be made deliberately, not by a build script.
+ * - `subacromial-bursa`: a space, and BodyParts3D carries solid anatomy. A space is
+ *   still a real anatomical concept, so it stays in the model with 2D representation.
+ * - `deltoid` (the whole muscle): the source HAS deltoid geometry, as three parts.
+ *   The composite is therefore `composite-unsupported`, not `no-source-concept`, and
+ *   the three parts are bound above under their own `asi:` ids. Binding one part to
+ *   the composite would render a third of the muscle as all of it.
+ *
+ * Representation capability for all of these lives in `anatomy-representation.ts`,
+ * which is where \"the concept exists\" is kept distinct from \"we can draw it\".
  *
  * `fmaConceptId` is recorded as a claim, not a fact. Nothing here has been checked
  * against FMA Explorer, so every entry stays 'unverified' until a human verifies
@@ -127,6 +131,33 @@ export type PipelineSide = (typeof PIPELINE_SIDES)[number];
  * carry different sides and the mapping has to say which is which.
  */
 export const SHOULDER_MAPPING: readonly MappingEntry[] = [
+  // The three deltoid PARTS, each bound to the external element that IS that part.
+  //
+  // These are separate `asiId`s because each is a separate anatomical concept with
+  // its own FMA id, geometry and provenance. Naming them after the source is the
+  // point: `clavicular`/`acromial`/`spinal` are the dataset's terms, and renaming
+  // them to anterior/middle/posterior would impose our vocabulary on its data.
+  {
+    asiId: 'asi:shoulder.deltoid-clavicular-part',
+    candidates: [
+      { meshName: 'FJ1468', fmaConceptId: '34680', side: 'right', sourceLabel: 'clavicular part of right deltoid' },
+      { meshName: 'FJ1468M', fmaConceptId: '34681', side: 'left', sourceLabel: 'clavicular part of left deltoid' },
+    ],
+  },
+  {
+    asiId: 'asi:shoulder.deltoid-acromial-part',
+    candidates: [
+      { meshName: 'FJ1467', fmaConceptId: '34682', side: 'right', sourceLabel: 'acromial part of right deltoid' },
+      { meshName: 'FJ1467M', fmaConceptId: '34683', side: 'left', sourceLabel: 'acromial part of left deltoid' },
+    ],
+  },
+  {
+    asiId: 'asi:shoulder.deltoid-spinal-part',
+    candidates: [
+      { meshName: 'FJ1513', fmaConceptId: '34684', side: 'right', sourceLabel: 'spinal part of right deltoid' },
+      { meshName: 'FJ1513M', fmaConceptId: '34685', side: 'left', sourceLabel: 'spinal part of left deltoid' },
+    ],
+  },
   {
     asiId: 'asi:shoulder.supraspinatus-tendon',
     candidates: [
@@ -180,14 +211,26 @@ export const SHOULDER_MAPPING: readonly MappingEntry[] = [
     ],
   },
   {
-    // A bursal space. BodyParts3D carries solid anatomy, so this has no mesh.
+    // The whole-muscle deltoid, marked expected-absent.
     //
-    // The candidates are DELIBERATELY impossible names. `expectAbsent` documents an
-    // expectation; it does not skip the lookup, so a real-looking name here would
-    // be a live claim that the mesh exists. Naming the scapula, say, would bind the
-    // acromion to a whole bone the moment the archive contained it -- which is the
-    // specific lie this whole table exists to prevent. A name that cannot be in any
-    // archive fails closed instead.
+    // The source DOES have deltoid geometry — three parts of it — so this is not
+    // `no-source-concept`. It is a composite we do not yet join, and the parts above
+    // are bound in its place. Marking it absent is what stops the pipeline binding
+    // one part to the composite and rendering a third of the muscle as all of it.
+    //
+    // The candidate name is DELIBERATELY impossible: `expectAbsent` documents an
+    // expectation but does not skip the lookup, so a real-looking name would be a
+    // live claim that such a mesh exists. A name no archive can contain fails closed.
+    asiId: 'asi:shoulder.deltoid',
+    candidates: [
+      { meshName: 'UNAVAILABLE:deltoid-composite', fmaConceptId: null, side: 'not_applicable', sourceLabel: null },
+    ],
+    expectAbsent: true,
+  },
+  {
+    // A bursal space. BodyParts3D carries solid anatomy, so this has no mesh, and a
+    // space is a real anatomical concept anyway -- it stays in the model, 2D-capable,
+    // with no 3D. See anatomy-representation.ts.
     asiId: 'asi:shoulder.subacromial-bursa',
     candidates: [
       { meshName: 'UNAVAILABLE:subacromial-bursa', fmaConceptId: null, side: 'not_applicable', sourceLabel: null },
@@ -269,27 +312,69 @@ export const UNMAPPABLE_SHOULDER: readonly { asiId: string; reason: string }[] =
 ];
 
 /**
- * The deltoid exists in this archive ONLY as three parts, each per side.
+ * The three parts of the deltoid, and the composite they belong to.
  *
- * Our `asi:shoulder.deltoid` is the whole muscle, so binding any single part to it
- * would misrepresent coverage: a user selecting the deltoid would get one of three
- * regions rendered as if it were all of it. Recorded here so the choice is made
- * deliberately — bind the parts, extend the domain with part-level ids, or accept a
- * deltoid with no 3D geometry — rather than by a build script picking the first
- * candidate.
+ * BodyParts3D 4.0 has no whole-muscle deltoid; it carries these three parts, each a
+ * separate FMA concept with its own geometry per side. Each therefore has its own
+ * `asi:` id, named after the source's terminology, and each is bound in
+ * `SHOULDER_MAPPING` above.
+ *
+ * The composite `asi:shoulder.deltoid` stays a real anatomical concept — it is how a
+ * user and a clinician talk about the muscle — but its 3D representation is reported
+ * as `composite-unsupported` rather than being assembled from the three parts. Joining
+ * them is not implemented, and doing it badly would render a convincing lie.
+ *
+ * This table exists so the relationship is DATA rather than prose: the parts and their
+ * parent are queryable, which is what a future composite resolver needs, and what a
+ * test asserts against.
  */
-export const DELTOID_PARTS: readonly {
+export interface DeltoidPart {
+  /** The source's name for the part. Not ours to rename. */
   part: string;
-  asiId: string | null;
+  /** The canonical identity of THIS part. */
+  asiId: string;
+  /** The composite this part belongs to. */
+  parentAsiId: string;
   rightMesh: string;
   leftMesh: string;
   fmaRight: string;
   fmaLeft: string;
-}[] = [
-  { part: 'clavicular', asiId: null, rightMesh: 'FJ1468', leftMesh: 'FJ1468M', fmaRight: '34680', fmaLeft: '34681' },
-  { part: 'acromial', asiId: null, rightMesh: 'FJ1467', leftMesh: 'FJ1467M', fmaRight: '34682', fmaLeft: '34683' },
-  { part: 'spinal', asiId: null, rightMesh: 'FJ1513', leftMesh: 'FJ1513M', fmaRight: '34684', fmaLeft: '34685' },
+}
+
+export const DELTOID_PARTS: readonly DeltoidPart[] = [
+  {
+    part: 'clavicular',
+    asiId: 'asi:shoulder.deltoid-clavicular-part',
+    parentAsiId: 'asi:shoulder.deltoid',
+    rightMesh: 'FJ1468',
+    leftMesh: 'FJ1468M',
+    fmaRight: '34680',
+    fmaLeft: '34681',
+  },
+  {
+    part: 'acromial',
+    asiId: 'asi:shoulder.deltoid-acromial-part',
+    parentAsiId: 'asi:shoulder.deltoid',
+    rightMesh: 'FJ1467',
+    leftMesh: 'FJ1467M',
+    fmaRight: '34682',
+    fmaLeft: '34683',
+  },
+  {
+    part: 'spinal',
+    asiId: 'asi:shoulder.deltoid-spinal-part',
+    parentAsiId: 'asi:shoulder.deltoid',
+    rightMesh: 'FJ1513',
+    leftMesh: 'FJ1513M',
+    fmaRight: '34684',
+    fmaLeft: '34685',
+  },
 ];
+
+/** The canonical ids of the composite's parts, in the source's own order. */
+export function deltoidPartIds(): string[] {
+  return DELTOID_PARTS.map((p) => p.asiId);
+}
 /**
  * Which region's mapping to use. Phase 1 ships shoulder; the other three are
  * Phase 1B and are not guessed at here.

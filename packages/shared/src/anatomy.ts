@@ -195,6 +195,21 @@ const SHOULDER: RegionDefinition = {
       mapId: 'shoulder-anterior',
       structures: [
         structure('shoulder.deltoid', 'Deltoid', 'muscle', 'lateral', 'the rounded muscle on the outside'),
+        // Part-level deltoid, named after the SOURCE's terminology.
+        //
+        // BodyParts3D 4.0 has no whole-muscle deltoid: it carries three parts, each a
+        // separate FMA concept with its own geometry (FMA34677/8 clavicular, FMA34682/3
+        // acromial, FMA34684/5 spinal). Each gets its own `asi:` id because each can
+        // independently be mapped, sourced and attributed.
+        //
+        // The names are the SOURCE's, deliberately. They are not renamed to
+        // anterior/middle/posterior to line up with our sub-regions: imposing our
+        // vocabulary on its data is exactly what the first version of the mapping
+        // table did, and it bound nothing. See anatomy-representation.ts for how the
+        // composite deltoid is reported as unavailable in 3D rather than faked.
+        structure('shoulder.deltoid-clavicular-part', 'Clavicular part of deltoid', 'muscle', 'superior', 'the front part of the shoulder muscle, near the collarbone'),
+        structure('shoulder.deltoid-acromial-part', 'Acromial part of deltoid', 'muscle', 'lateral', 'the middle part of the shoulder muscle, over the shoulder blade'),
+        structure('shoulder.deltoid-spinal-part', 'Spinal part of deltoid', 'muscle', 'posterior', 'the back part of the shoulder muscle'),
         structure('shoulder.biceps-long-head-tendon', 'Long head of biceps tendon', 'tendon', 'deep', 'the tendon that runs down the front of the shoulder joint', ['biceps tendon', 'long head of biceps']),
         structure('shoulder.subscapularis', 'Subscapularis', 'muscle', 'anterior', 'a deep muscle right in front of the shoulder joint'),
         structure('shoulder.glenohumeral-joint', 'Glenohumeral joint', 'joint', 'deep', 'the ball-and-socket joint itself', ['shoulder joint', 'GH joint']),
@@ -208,6 +223,11 @@ const SHOULDER: RegionDefinition = {
       mapId: 'shoulder-lateral',
       structures: [
         structure('shoulder.deltoid', 'Deltoid', 'muscle', 'lateral', 'the rounded muscle on the outside'),
+        // The acromial part is the middle of the muscle and sits over the shoulder
+        // blade, which is what makes it selectable from this view. The parts are NOT
+        // mirrored into every sub-region the composite appears in: they are separate
+        // concepts with separate identities, and each is offered where it is.
+        structure('shoulder.deltoid-acromial-part', 'Acromial part of deltoid', 'muscle', 'lateral', 'the middle part of the shoulder muscle, over the shoulder blade'),
         structure('shoulder.acromion', 'Acromion', 'bone', 'lateral', 'the bony shelf on top of the shoulder', ['shoulder blade top', 'acromial spur']),
         structure('shoulder.subacromial-bursa', 'Subacromial bursa', 'fascia', 'deep', 'the cushion under the bony shelf', ['bursa', 'subacromial space']),
         structure('shoulder.supraspinatus-tendon', 'Supraspinatus tendon', 'tendon', 'superior', 'the tendon that runs over the top of the shoulder joint', ['rotator cuff', 'supraspinatus']),
