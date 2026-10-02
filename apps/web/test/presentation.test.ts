@@ -1,9 +1,20 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { renderPlainText } from '@asi/shared';
-import type { PreVisitSummary } from '@asi/shared';
+import {
+  buildAnswer,
+  emptyRecord,
+  INTERVIEW,
+  renderPlainText,
+} from '@asi/shared';
+import type { AnswerMap, PreVisitSummary } from '@asi/shared';
 import * as presentation from '../src/ui/presentation.ts';
-import { groupSummaryRows, readable } from '../src/ui/presentation.ts';
+import {
+  answersInSection,
+  answerSections,
+  groupSummaryRows,
+  readable,
+  sectionTitleFor,
+} from '../src/ui/presentation.ts';
 
 const base: PreVisitSummary = {
   episodeId: 'e1',
@@ -168,4 +179,56 @@ test('canonical blocked-safety output preserves severity, ruleId and reason', ()
   assert.match(text, /\[EMERGENCY\] msk\.cauda_equina: Not clinically reviewed/);
   for (const leaked of ['Leaked note', 'Leaked body', 'Leaked step'])
     assert.equal(text.includes(leaked), false, `withheld rule leaked: ${leaked}`);
+});
+
+test('every answer a section renders also has an edit control', () => {
+  // The grouping rule decides BOTH the rendered rows and the edit links. If they were
+  // separate copies of the rule, a section could show a row with no way to correct it,
+  // and the record would quietly keep a value the user has already disowned.
+  const record = emptyRecord('shoulder');
+  const answered: AnswerMap = {};
+  for (const q of INTERVIEW.shoulder)
+    answered[q.id] = buildAnswer({
+      questionId: q.id,
+      raw: q.type === 'boolean' ? 'yes' : (q.options?.[0]?.value ?? 'x'),
+      triState: 'yes',
+      provenance: { capturedAt: '2026-01-01T00:00:00.000Z', createdBy: 'user' },
+    });
+
+  const sections = answerSections(record, answered);
+  const covered = sections.flatMap((section) =>
+    answersInSection(record, answered, section.title).map((a) => a.questionId),
+  );
+
+  assert.deepEqual(
+    [...covered].sort(),
+    Object.keys(answered).sort(),
+    'some answers are in a rendered section with no edit control, or in no section at all',
+  );
+});
+
+test('answersInSection keeps question order and reports only what was asked', () => {
+  const record = emptyRecord('knee');
+  const answered: AnswerMap = {};
+  for (const id of ['knee.swelling', 'knee.locking'] as const)
+    answered[id] = buildAnswer({
+      questionId: id,
+      raw: 'yes',
+      triState: 'yes',
+      provenance: { capturedAt: '2026-01-01T00:00:00.000Z', createdBy: 'user' },
+    });
+
+  assert.deepEqual(
+    answersInSection(record, answered, sectionTitleFor('quality')).map(
+      (a) => a.questionId,
+    ),
+    // INTERVIEW order, not insertion order.
+    INTERVIEW.knee
+      .filter(
+        (q) =>
+          sectionTitleFor(q.field, q.safetyRuleId) === sectionTitleFor('quality') &&
+          answered[q.id] !== undefined,
+      )
+      .map((q) => q.id),
+  );
 });

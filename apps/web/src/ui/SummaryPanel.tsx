@@ -6,7 +6,7 @@ import { FactList, StatusTag } from './primitives.tsx';
 import { formatDate, groupSummaryRows } from './presentation.ts';
 
 export function SummaryPanel() {
-  const { summary, record, answers } = useSession();
+  const { summary, record, answers, startEditAnswer } = useSession();
   const [copyState, setCopyState] = useState<'idle' | 'copied' | 'error'>(
     'idle',
   );
@@ -25,7 +25,16 @@ export function SummaryPanel() {
             : 'Review what is recorded below.'}{' '}
           Missing information is not a negative answer.
         </p>
-        <RecordDetails record={record} answers={answers} />
+        {/*
+          The edit path is offered HERE and only here: the record is still in progress
+          and not yet saved. On the saved view below it is deliberately absent, because a
+          "change" control that cannot change anything is worse than no control.
+        */}
+        <RecordDetails
+          record={record}
+          answers={answers}
+          onEditAnswer={startEditAnswer}
+        />
       </section>
     );
   }
