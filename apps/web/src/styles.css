@@ -202,6 +202,40 @@ ol {
   border: 0;
   padding-inline: 0;
 }
+
+/*
+ * The correction affordances.
+ *
+ * The edit list is deliberately quiet -- it sits under a section the user is already
+ * reading, and a list of full-size buttons there competes with the record itself. The
+ * banner is louder because it changes what the next answer MEANS: without it, a user who
+ * clicks "Change" and answers differently has no way to know they replaced something.
+ */
+.answer-edits {
+  list-style: none;
+  margin: var(--space-2, 8px) 0 0;
+  padding: 0;
+  border-top: 1px solid var(--line, #ddd);
+}
+.answer-edits li {
+  padding-block: 2px;
+}
+.interview-edit-banner {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2, 8px);
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--space-2, 8px) var(--space-3, 12px);
+  margin-bottom: var(--space-3, 12px);
+  border-left: 3px solid var(--accent);
+  background: var(--surface-2, #f6f4f2);
+  font-size: 14px;
+}
+.interview-edit-banner .btn--quiet {
+  text-decoration: underline;
+}
+
 .link {
   background: none;
   border: 0;
@@ -867,6 +901,28 @@ details > p {
   position: sticky;
   top: 24px;
   align-self: start;
+}
+/* The open place: a heading over the episodes belonging to ONE server place. */
+.open-place {
+  margin-bottom: 24px;
+  padding: 14px 16px;
+  border: 1px solid var(--line, var(--candidate));
+  border-radius: 8px;
+  background: var(--workspace);
+}
+.open-place__heading {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+}
+.open-place__heading h2 {
+  margin: 0;
+  font-size: 17px;
+}
+.location-mark[aria-pressed='true'] {
+  border-color: var(--accent, var(--candidate));
+  background: var(--workspace);
 }
 .healthmap-index .body-index {
   height: 370px;

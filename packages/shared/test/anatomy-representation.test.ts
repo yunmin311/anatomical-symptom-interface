@@ -15,6 +15,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { getStructure, REGIONS } from '../src/anatomy.ts';
 import {
+  MAPPINGS,
   SHOULDER_MAPPING,
   DELTOID_PARTS,
   deltoidPartIds,
@@ -194,19 +195,33 @@ test('a structure declared unavailable in 3D is never marked available', () => {
   }
 });
 
-test('a structure with 3D claims a side, and only one', () => {
-  for (const entry of SHOULDER_MAPPING) {
-    if (entry.expectAbsent) continue;
-    const rep = representationFor(entry.asiId);
-    if (rep.threeD.status !== 'available') continue;
-    assert.ok(rep.threeD.sides.length > 0);
-    // The declared sides must exist as candidates in the mapping.
-    for (const side of rep.threeD.sides)
-      assert.ok(
-        entry.candidates.some((c) => c.side === side),
-        `${entry.asiId} declares ${side} but the mapping has no such candidate`,
-      );
+test('a structure with 3D names its laterality, and the mapping backs it', () => {
+  for (const region of Object.keys(MAPPINGS)) {
+    for (const entry of mappingFor(region)) {
+      if (entry.expectAbsent) continue;
+      const rep = representationFor(entry.asiId);
+      if (rep.threeD.status !== 'available') continue;
+      const declared = Object.entries(rep.threeD.sides);
+      assert.ok(declared.length > 0, `${entry.asiId} is available but names no laterality`);
+      for (const [side, capability] of declared) {
+        if (!capability.available) continue;
+        assert.ok(
+          entry.candidates.some((c) => c.side === side),
+          `${entry.asiId} declares ${side} available but the mapping has no ${side} candidate`,
+        );
+      }
+    }
   }
+});
+
+test('every laterality key is one the canonical vocabulary defines', () => {
+  // Guards against a second enum creeping in: the manifest's LateralitySchema is the
+  // only list of sides that means anything, so a typo like 'midline ' must not parse.
+  const parsed = RepresentationSchema.safeParse({
+    twoD: { available: true, placeholder: true },
+    threeD: { status: 'available', sides: { 'midline ': { available: true, componentCount: 1 } } },
+  });
+  assert.equal(parsed.success, false, 'a misspelled laterality was accepted');
 });
 
 /* ================================================================== */
@@ -214,34 +229,97 @@ test('a structure with 3D claims a side, and only one', () => {
 /* ================================================================== */
 
 test('a build that produced the wrong side is refused', () => {
-    const deltoidPart = deltoidPartIds()[0]!;
-    const rep = representationFor(deltoidPart);
-    if (rep.threeD.status !== 'available') throw new Error('expected available');
-    // Declares both sides, build produced both: fine.
-    assert.doesNotThrow(() => assertSidesMatch(deltoidPart, rep.threeD, ['left', 'right']));
-    // Declares both sides, build produced one: a lie, and a thrown error.
-    assert.throws(
-      () => assertSidesMatch(deltoidPart, rep.threeD, ['left']),
-      /declares 3D for left and right but the build produced only left/,
-    );
-    assert.throws(
-      () => assertSidesMatch(deltoidPart, rep.threeD, ['right']),
-      /declares 3D for left and right but the build produced only right/,
-    );
-    assert.throws(() => assertSidesMatch(deltoidPart, rep.threeD, []), /produced only nothing/);
-  });
+  const deltoidPart = deltoidPartIds()[0]!;
+  const rep = representationFor(deltoidPart);
+  if (rep.threeD.status !== 'available') throw new Error('expected available');
+  const both = [{ laterality: 'left', componentCount: 1 }, { laterality: 'right', componentCount: 1 }];
+  assert.doesNotThrow(() => assertSidesMatch(deltoidPart, rep.threeD, both));
+  // Declares both sides, only one built: a lie. Which side the message names depends on
+  // the record's key order, so assert the SHAPE of the complaint rather than one
+  // particular wording -- otherwise this test fails for a reason that has nothing to do
+  // with what it is checking.
+  assert.throws(
+    () => assertSidesMatch(deltoidPart, rep.threeD, [{ laterality: 'left', componentCount: 1 }]),
+    /declares 3D available for (left|right) but no (left|right) build contains it/,
+  );
+  assert.throws(
+    () => assertSidesMatch(deltoidPart, rep.threeD, []),
+    /declares 3D available for (left|right) but no (left|right) build contains it/,
+  );
+});
+
+test('a build with the wrong COMPONENT count is refused', () => {
+  // The case that only exists because composites do: "left is available" would pass
+  // for a left build that silently lost two of its seven vertebrae.
+  const cervical = representationFor('asi:neck.cervical-spine');
+  if (cervical.threeD.status !== 'available') throw new Error('expected available');
+  assert.throws(
+    () =>
+      assertSidesMatch('asi:neck.cervical-spine', cervical.threeD, [
+        { laterality: 'midline', componentCount: 4 },
+      ]),
+    /declares 7 midline component\(s\) but the midline build produced 4/,
+  );
+});
+
+test('a side that was built but not declared is refused', () => {
+  const cervical = representationFor('asi:neck.cervical-spine');
+  if (cervical.threeD.status !== 'available') throw new Error('expected available');
+  assert.throws(
+    () =>
+      assertSidesMatch('asi:neck.cervical-spine', cervical.threeD, [
+        { laterality: 'midline', componentCount: 7 },
+        { laterality: 'left', componentCount: 1 },
+      ]),
+    /has real left geometry but the declaration does not mention left/,
+  );
+});
+
+test('an asymmetric source is representable without claiming completeness', () => {
+  // The suboccipital case: six concepts on the left, four on the right, because rectus
+  // capitis posterior major and minor have no right-side mesh in the archive. The only
+  // honest declaration is left available and right explicitly unavailable with a reason.
+  const suboccipital = representationFor('asi:neck.suboccipital');
+  if (suboccipital.threeD.status !== 'available') throw new Error('expected available');
+  assert.equal(suboccipital.threeD.sides.left?.available, true);
+  assert.equal(suboccipital.threeD.sides.right?.available, false);
+  assert.ok(
+    suboccipital.threeD.sides.right && !suboccipital.threeD.sides.right.available
+      ? suboccipital.threeD.sides.right.reason
+      : false,
+    'the unavailable right side must carry its own reason',
+  );
+});
 
 /* ================================================================== */
 /* schema                                                              */
 /* ================================================================== */
 
-test('the schema refuses a representation with no sides', () => {
-  // A side is not optional: "available" without one is how a build ends up claiming
-  // geometry for a side it never loaded.
+test('the schema refuses a representation with nothing available', () => {
+  // "available" with no laterality available is a contradiction: it claims geometry
+  // and renders nothing. Checked in the schema so a declaration cannot ship it.
   assert.equal(
     RepresentationSchema.safeParse({
       twoD: { available: false },
-      threeD: { status: 'available', elementCount: 1, sides: [] },
+      threeD: {
+        status: 'available',
+        sides: { left: { available: false, reason: 'no source mesh' } },
+      },
+    }).success,
+    false,
+  );
+  assert.equal(
+    RepresentationSchema.safeParse({
+      twoD: { available: false },
+      threeD: { status: 'available', sides: {} },
+    }).success,
+    false,
+  );
+  // A componentCount of zero is the same lie in a subtler form.
+  assert.equal(
+    RepresentationSchema.safeParse({
+      twoD: { available: false },
+      threeD: { status: 'available', sides: { left: { available: true, componentCount: 0 } } },
     }).success,
     false,
   );
@@ -255,12 +333,32 @@ test('the schema refuses a representation with no sides', () => {
   );
 });
 
-test('a composite may declare more than one element', () => {
-  // One concept = one mesh is not true of real anatomy, and the schema must not
-  // pretend otherwise.
+test('a composite may declare more than one element per side', () => {
+  // One concept = one mesh is not true of real anatomy: the cervical spine is seven
+  // vertebrae and the scalenes are three muscles. The per-laterality shape says so --
+  // `componentCount` is per side, so a left suboccipital build is honestly "6" while the
+  // right is not represented at all.
   const parsed = RepresentationSchema.safeParse({
     twoD: { available: false },
-    threeD: { status: 'available', elementCount: 3, sides: ['left', 'right'] },
+    threeD: {
+      status: 'available',
+      sides: {
+        left: { available: true, componentCount: 6 },
+        midline: { available: true, componentCount: 7 },
+        right: { available: false, reason: 'no right-side mesh for two of the six concepts' },
+      },
+    },
+  });
+  assert.equal(parsed.success, true);
+});
+
+test('a MIDLINE representation parses, and it is not a side', () => {
+  // The cervical vertebrae are real midline geometry. Before the per-laterality schema
+  // there was no way to say that: `sides` was a left/right pair, so a midline concept
+  // could only be recorded as unavailable, which is a different and wrong claim.
+  const parsed = RepresentationSchema.safeParse({
+    twoD: { available: false },
+    threeD: { status: 'available', sides: { midline: { available: true, componentCount: 7 } } },
   });
   assert.equal(parsed.success, true);
 });

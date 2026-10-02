@@ -68,8 +68,10 @@ try {
     const THREE = await import('/node_modules/three/build/three.module.js');
 
     /** Mount one production scene through the real contract and probe it. */
+    const REGION = 'shoulder';
+
     async function probe(side) {
-      const selection = active.sceneFor(side);
+      const selection = active.sceneFor(REGION, side);
       if (selection.kind !== 'scene')
         return { side, kind: selection.kind, reason: selection.reason ?? null };
       const scene = selection.scene;
@@ -184,7 +186,7 @@ try {
     // --- scene selection behaviour, for every side the record can hold ---
     const selection = {};
     for (const s of ['left', 'right', 'unknown', 'bilateral', 'midline']) {
-      const sel = active.sceneFor(s);
+      const sel = active.sceneFor(REGION, s);
       selection[s] = {
         kind: sel.kind,
         sides: sel.kind === 'scene' ? [sel.side] : (sel.sides ?? []),
@@ -226,7 +228,7 @@ try {
       agreement,
       intentOnUnknown,
       intentOnContradiction,
-      availableSides: active.availableProductionSides(),
+      availableSides: active.availableProductionSides(REGION),
       noFixtureFallback: {
         leftIsExternal: left.sceneSource === 'external',
         rightIsExternal: right.sceneSource === 'external',

@@ -136,13 +136,21 @@ export function recordAnswer(
   questionId: string,
   raw: unknown,
   triState?: 'yes' | 'no' | 'unknown',
+  opts: { edited?: boolean } = {},
 ): AnswerResult {
+  // A correction is labelled at the moment it is made, not inferred later from the fact
+  // that an answer already existed. The store re-derives the same fact independently
+  // from the row, so a client that lies about it cannot change what is stored.
   const answer = buildAnswer({
     questionId,
     raw,
     triState,
     wroteFields: [],
-    provenance: { capturedAt: new Date().toISOString(), createdBy: 'user' },
+    provenance: {
+      capturedAt: new Date().toISOString(),
+      createdBy: 'user',
+      sourceType: opts.edited ? 'user_edited' : 'user_statement',
+    },
   });
   // applyAnswer is the only thing that mutates the record, and it is shared with
   // the server so the two can never diverge.

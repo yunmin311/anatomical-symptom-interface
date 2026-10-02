@@ -1,0 +1,313 @@
+/**
+ * GENERATED FILE. DO NOT EDIT.
+ *
+ * Produced by scripts/embed-anatomy-manifest.mjs from
+ * assets/anatomy/generated/<region>/<side>/manifest.json.
+ *
+ * The canonical anatomy manifest, as data. The app parses it through
+ * `parseManifest` and converts it with `toRendererScene` at startup, so the
+ * production scene is built by the same contract as everything else rather than by a
+ * hand-written scene that could drift from the pipeline.
+ *
+ * Provenance: BodyParts3D, (c) The Database Center for Life Science licensed under CC Attribution 4.0 International
+ * Licence:    Creative Commons Attribution 4.0 International (CC-BY-4.0) -- https://dbarchive.biosciencedbc.jp/en/bodyparts3d/lic.html
+ * Archive:    isa_BP3D_4.0_obj_99.zip
+ * Dataset:    BodyParts3D 4.0
+ * Side:       right -- every entry in this file carries `laterality: 'right'`.
+ * Units:      mm, from the source model, not inferred here.
+ */
+
+import type { AssetManifest } from '@asi/shared';
+
+/** The canonical manifest exactly as the pipeline wrote it. */
+const CANONICAL_MANIFEST_JSON = {
+  "schemaVersion": 1,
+  "regions": [
+    "knee"
+  ],
+  "licence": {
+    "id": "CC-BY-4.0",
+    "name": "Creative Commons Attribution 4.0 International",
+    "url": "https://dbarchive.biosciencedbc.jp/en/bodyparts3d/lic.html",
+    "attribution": "BodyParts3D, (c) The Database Center for Life Science licensed under CC Attribution 4.0 International",
+    "verifiedOn": "2025-02-27"
+  },
+  "generator": {
+    "name": "asi-anatomy-pipeline",
+    "version": "1.0.0"
+  },
+  "entries": [
+    {
+      "asiId": "asi:knee.patella",
+      "meshName": "FJ3381",
+      "region": "knee",
+      "subRegionIds": [
+        "knee.anterior"
+      ],
+      "layer": "bone",
+      "anatomicalLabel": "Patella",
+      "layTerm": "the kneecap",
+      "laterality": "right",
+      "fma": {
+        "conceptId": "24486",
+        "status": "unverified",
+        "note": "BodyParts3D 4.3i concept list; not yet checked against FMA Explorer"
+      },
+      "source": {
+        "dataset": "BodyParts3D",
+        "release": "4.0",
+        "conceptId": "FMA:24486",
+        "archive": "isa_BP3D_4.0_obj_99.zip",
+        "doi": "10.18908/lsdba.nbdc00837-000",
+        "retrievedAt": null
+      },
+      "licence": {
+        "id": "CC-BY-4.0",
+        "name": "Creative Commons Attribution 4.0 International",
+        "url": "https://dbarchive.biosciencedbc.jp/en/bodyparts3d/lic.html",
+        "attribution": "BodyParts3D, (c) The Database Center for Life Science licensed under CC Attribution 4.0 International",
+        "verifiedOn": "2025-02-27"
+      },
+      "geometry": {
+        "triangles": 204,
+        "sourceTriangles": 306,
+        "reduction": 0.3333,
+        "units": "mm"
+      },
+      "bounds": {
+        "min": [
+          -101.76666666666667,
+          -122.727,
+          361.82120000000003
+        ],
+        "max": [
+          -60.6208,
+          -100.992,
+          400.509
+        ]
+      },
+      "file": "knee/asi-knee-patella.glb"
+    },
+    {
+      "asiId": "asi:knee.popliteus",
+      "meshName": "FJ1430",
+      "region": "knee",
+      "subRegionIds": [
+        "knee.lateral"
+      ],
+      "layer": "muscle",
+      "anatomicalLabel": "Popliteus",
+      "layTerm": "the muscle at the back of the knee that unlocks it",
+      "laterality": "right",
+      "fma": {
+        "conceptId": "22591",
+        "status": "unverified",
+        "note": "BodyParts3D 4.3i concept list; not yet checked against FMA Explorer"
+      },
+      "source": {
+        "dataset": "BodyParts3D",
+        "release": "4.0",
+        "conceptId": "FMA:22591",
+        "archive": "isa_BP3D_4.0_obj_99.zip",
+        "doi": "10.18908/lsdba.nbdc00837-000",
+        "retrievedAt": null
+      },
+      "licence": {
+        "id": "CC-BY-4.0",
+        "name": "Creative Commons Attribution 4.0 International",
+        "url": "https://dbarchive.biosciencedbc.jp/en/bodyparts3d/lic.html",
+        "attribution": "BodyParts3D, (c) The Database Center for Life Science licensed under CC Attribution 4.0 International",
+        "verifiedOn": "2025-02-27"
+      },
+      "geometry": {
+        "triangles": 84,
+        "sourceTriangles": 858,
+        "reduction": 0.9021,
+        "units": "mm"
+      },
+      "bounds": {
+        "min": [
+          -107.85962500000002,
+          -90.51908297872342,
+          265.6171276595746
+        ],
+        "max": [
+          -57.987249999999996,
+          -48.494,
+          406.611
+        ]
+      },
+      "file": "knee/asi-knee-popliteus.glb"
+    },
+    {
+      "asiId": "asi:knee.iliotibial-band",
+      "meshName": "FJ1423",
+      "region": "knee",
+      "subRegionIds": [
+        "knee.lateral"
+      ],
+      "layer": "fascia",
+      "anatomicalLabel": "Iliotibial band",
+      "layTerm": "the thick band down the outside of the thigh to the shin",
+      "laterality": "right",
+      "fma": {
+        "conceptId": "58776",
+        "status": "unverified",
+        "note": "BodyParts3D 4.3i concept list; not yet checked against FMA Explorer"
+      },
+      "source": {
+        "dataset": "BodyParts3D",
+        "release": "4.0",
+        "conceptId": "FMA:58776",
+        "archive": "isa_BP3D_4.0_obj_99.zip",
+        "doi": "10.18908/lsdba.nbdc00837-000",
+        "retrievedAt": null
+      },
+      "licence": {
+        "id": "CC-BY-4.0",
+        "name": "Creative Commons Attribution 4.0 International",
+        "url": "https://dbarchive.biosciencedbc.jp/en/bodyparts3d/lic.html",
+        "attribution": "BodyParts3D, (c) The Database Center for Life Science licensed under CC Attribution 4.0 International",
+        "verifiedOn": "2025-02-27"
+      },
+      "geometry": {
+        "triangles": 16,
+        "sourceTriangles": 17172,
+        "reduction": 0.9991,
+        "units": "mm"
+      },
+      "bounds": {
+        "min": [
+          -155.23026143790852,
+          -104.38497150595889,
+          323.08624485373707
+        ],
+        "max": [
+          -95.54698309859147,
+          -41.47806261682244,
+          945.152
+        ]
+      },
+      "file": "knee/asi-knee-iliotibial-band.glb"
+    },
+    {
+      "asiId": "asi:knee.gastrocnemius-head",
+      "meshName": "FJ1397",
+      "region": "knee",
+      "subRegionIds": [
+        "knee.posterior"
+      ],
+      "layer": "muscle",
+      "anatomicalLabel": "Gastrocnemius (inner head)",
+      "layTerm": "the calf muscle just above the back of the knee",
+      "laterality": "right",
+      "fma": {
+        "conceptId": "45957",
+        "status": "unverified",
+        "note": "BodyParts3D 4.3i concept list; not yet checked against FMA Explorer"
+      },
+      "source": {
+        "dataset": "BodyParts3D",
+        "release": "4.0",
+        "conceptId": "FMA:45957",
+        "archive": "isa_BP3D_4.0_obj_99.zip",
+        "doi": "10.18908/lsdba.nbdc00837-000",
+        "retrievedAt": null
+      },
+      "licence": {
+        "id": "CC-BY-4.0",
+        "name": "Creative Commons Attribution 4.0 International",
+        "url": "https://dbarchive.biosciencedbc.jp/en/bodyparts3d/lic.html",
+        "attribution": "BodyParts3D, (c) The Database Center for Life Science licensed under CC Attribution 4.0 International",
+        "verifiedOn": "2025-02-27"
+      },
+      "geometry": {
+        "triangles": 116,
+        "sourceTriangles": 3842,
+        "reduction": 0.9698,
+        "units": "mm"
+      },
+      "bounds": {
+        "min": [
+          -64.52127714285716,
+          -86.42958918918917,
+          136.24607582938387
+        ],
+        "max": [
+          -25.097266666666666,
+          -17.450754999999994,
+          432.102
+        ]
+      },
+      "file": "knee/asi-knee-gastrocnemius-head.glb"
+    },
+    {
+      "asiId": "asi:knee.popliteal-artery",
+      "meshName": "FJ2170",
+      "region": "knee",
+      "subRegionIds": [
+        "knee.posterior"
+      ],
+      "layer": "vessel",
+      "anatomicalLabel": "Popliteal artery",
+      "layTerm": "the main artery at the back of the knee",
+      "laterality": "right",
+      "fma": {
+        "conceptId": "77380",
+        "status": "unverified",
+        "note": "BodyParts3D 4.3i concept list; not yet checked against FMA Explorer"
+      },
+      "source": {
+        "dataset": "BodyParts3D",
+        "release": "4.0",
+        "conceptId": "FMA:77380",
+        "archive": "isa_BP3D_4.0_obj_99.zip",
+        "doi": "10.18908/lsdba.nbdc00837-000",
+        "retrievedAt": null
+      },
+      "licence": {
+        "id": "CC-BY-4.0",
+        "name": "Creative Commons Attribution 4.0 International",
+        "url": "https://dbarchive.biosciencedbc.jp/en/bodyparts3d/lic.html",
+        "attribution": "BodyParts3D, (c) The Database Center for Life Science licensed under CC Attribution 4.0 International",
+        "verifiedOn": "2025-02-27"
+      },
+      "geometry": {
+        "triangles": 44,
+        "sourceTriangles": 16778,
+        "reduction": 0.9974,
+        "units": "mm"
+      },
+      "bounds": {
+        "min": [
+          -92.47931813304716,
+          -90.97502500000014,
+          286.1170373493978
+        ],
+        "max": [
+          -56.071641304347835,
+          -54.26927283464572,
+          480.778
+        ]
+      },
+      "file": "knee/asi-knee-popliteal-artery.glb"
+    }
+  ]
+}
+;
+
+export const CANONICAL_ANATOMY_MANIFEST = CANONICAL_MANIFEST_JSON as unknown as AssetManifest;
+
+/**
+ * Where this side's generated geometry is served from.
+ *
+ * Per side, so the two builds cannot collide on a path. The renderer does not
+ * hardcode this: it is read from the manifest and passed to the adapter.
+ */
+export const CANONICAL_ASSET_ROOT = '/anatomy/knee/right/';
+
+/** The side this build represents, as a fact carried in the manifest itself. */
+export const CANONICAL_SIDE = 'right' as const;
+
+/** The region this build represents, so a caller cannot mix scenes. */
+export const CANONICAL_REGION = 'knee' as const;

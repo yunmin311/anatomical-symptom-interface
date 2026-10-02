@@ -5,18 +5,40 @@ import {
   writablePaths,
 } from '@asi/shared';
 import type { SymptomRecord, AnswerMap, Episode } from '@asi/shared';
+import { INTERVIEW } from '@asi/shared';
 import { FactList } from './primitives.tsx';
-import { answerSections, groupSummaryRows, readable } from './presentation.ts';
+import {
+  answersInSection,
+  answerSections,
+  groupSummaryRows,
+  readable,
+} from './presentation.ts';
+
+/** The prompt for a question id, or the id itself if it is no longer in the engine. */
+function questionLabel(questionId: string): string {
+  for (const list of Object.values(INTERVIEW))
+    for (const question of list) if (question.id === questionId) return question.prompt;
+  return questionId;
+}
 
 /** Read raw session answers, or use the domain's coverage-aware saved renderer. */
 export function RecordDetails({
   record,
   answers,
   episode,
+  onEditAnswer,
 }: {
   record: SymptomRecord;
   answers?: AnswerMap;
   episode?: Episode;
+  /**
+   * Re-present an already-answered question so it can be corrected.
+   *
+   * Only supplied where a user can actually change something: inside an episode they
+   * are still editing. On a SAVED episode it is omitted, because offering a control that
+   * silently does nothing is worse than not offering it.
+   */
+  onEditAnswer?: (questionId: string) => void;
 }) {
   const region = REGIONS[record.location.region];
   const saved = episode
@@ -85,7 +107,9 @@ export function RecordDetails({
             Unanswered questions remain “Not asked”; uncertainty remains “Not
             established”.
           </p>
-          {answerSections(record, answers || {}).map((section) => (
+          {answerSections(record, answers || {}).map((section) => {
+            const sectionAnswers = answersInSection(record, answers || {}, section.title);
+            return (
             <section className="record-section" key={section.title}>
               <h3>{section.title}</h3>
               {section.title === 'Your own words' ? (
@@ -97,8 +121,30 @@ export function RecordDetails({
               ) : (
                 <FactList rows={section.rows} />
               )}
+              {onEditAnswer && sectionAnswers.length > 0 && (
+                <ul className="answer-edits">
+                  {sectionAnswers.map((a) => (
+                    <li key={a.questionId}>
+                      <button
+                        className="link"
+                        data-testid={`edit-answer-${a.questionId}`}
+                        onClick={() => onEditAnswer(a.questionId)}
+                      >
+                        Change: {questionLabel(a.questionId)}
+                      </button>
+                      {a.provenance.sourceType === 'user_edited' && (
+                        <span className="muted small">
+                          {' '}
+                          — you changed this answer
+                        </span>
+                      )}
+                    </li>
+                  ))}
+                </ul>
+              )}
             </section>
-          ))}
+            );
+          })}
         </>
       )}
       <section className="record-section">

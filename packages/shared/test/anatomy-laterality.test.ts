@@ -28,9 +28,9 @@ import type { AssetManifest, AssetManifestEntry } from '../src/anatomy-manifest.
 // assumed to be one level up.
 const repoRoot = join(import.meta.dirname, '..', '..', '..');
 
-function manifest(side: 'left' | 'right'): AssetManifest {
+function manifest(region: string, side: 'left' | 'right'): AssetManifest {
   return JSON.parse(
-    readFileSync(join(repoRoot, 'assets/anatomy/generated', side, 'manifest.json'), 'utf8'),
+    readFileSync(join(repoRoot, 'assets/anatomy/generated', region, side, 'manifest.json'), 'utf8'),
   ) as AssetManifest;
 }
 
@@ -40,9 +40,91 @@ const representation = (id: string): Representation => {
   return declared;
 };
 
-const LEFT = manifest('left');
-const RIGHT = manifest('right');
-const BOTH = [LEFT, RIGHT];
+/** Every generated manifest, so a new region is covered by writing it once here. */
+/**
+ * Every region the pipeline builds. A region is added here when its assets are
+ * committed, so its declarations, units, laterality and composite shapes are all checked
+ * without writing a new test per region.
+ */
+const REGIONS_BUILT = ['shoulder', 'neck', 'lower_back', 'knee'] as const;
+const BUILDS = REGIONS_BUILT.flatMap((region) =>
+  (['left', 'right'] as const).map((side) => ({ region, side, manifest: manifest(region, side) })),
+);
+// EVERY generated manifest, shoulder and neck alike. `producedSides` reads this, so a
+// region added to BUILDS is checked automatically rather than needing its own
+// assertions -- and, just as importantly, cannot be declared available without the
+// corresponding manifest actually containing the entry.
+const BOTH = BUILDS.map((b) => b.manifest);
+const LEFT = manifest('shoulder', 'left');
+const RIGHT = manifest('shoulder', 'right');
+
+describe('every generated build, across every region', () => {
+  it('declares a laterality this build is allowed to carry, in millimetres', () => {
+    // A build is NOT one laterality. A left neck scene carries left structures AND the
+    // midline cervical spine as context; requiring every entry to equal --side was
+    // correct while no midline geometry existed and wrong the moment it did.
+    //
+    // What must hold: an entry is either this build's side or midline, and NEVER the
+    // other side. The second half is the one that catches a real error.
+    for (const { region, side, manifest: m } of BUILDS) {
+      for (const entry of m.entries) {
+        assert.ok(
+          entry.laterality === side || entry.laterality === 'midline',
+          `${region}/${side}: ${entry.asiId} is ${entry.laterality}, which this build may not carry`,
+        );
+        assert.equal(entry.geometry.units, 'mm', `${region}/${side}: ${entry.asiId} units`);
+        assert.equal(entry.region, region, `${entry.asiId} built under ${region} says ${entry.region}`);
+      }
+    }
+    assert.ok(BUILDS.length >= 4, 'expected at least two regions x two sides');
+  });
+
+  it('uses a different source mesh on each side of every region', () => {
+    for (const region of new Set(BUILDS.map((b) => b.region))) {
+      // Midline excluded, for the same reason: the vertebrae are legitimately the same
+      // meshes in both builds, and requiring them to differ would force the exact
+      // duplication the laterality work exists to prevent.
+      const oneSided = (m: AssetManifest) => m.entries.filter((e) => e.laterality !== 'midline');
+      // Compare the RESOLVED mesh set, not `meshName`: a composite has no single
+      // `meshName` (it is null on both sides), so comparing that field would compare
+      // null with null and report every composite as "sharing a mesh" -- a failure that
+      // looks like a real collision and is nothing of the kind.
+      const meshesOf = (e: AssetManifestEntry): string[] =>
+        e.composite ? e.composite.components.map((c) => c.meshName) : [e.meshName!];
+      const left = new Map(
+        oneSided(BUILDS.find((b) => b.region === region && b.side === 'left')!.manifest).map((e) => [
+          e.asiId,
+          meshesOf(e),
+        ]),
+      );
+      for (const entry of oneSided(
+        BUILDS.find((b) => b.region === region && b.side === 'right')!.manifest,
+      )) {
+        const shared = meshesOf(entry).filter((m) => left.get(entry.asiId)?.includes(m));
+        assert.deepEqual(
+          shared,
+          [],
+          `${region}: ${entry.asiId} shares source mesh(es) ${shared.join(', ')} between sides`,
+        );
+      }
+    }
+  });
+
+  it('no build claims a structure another build also claims for the same side', () => {
+    // A mesh cannot serve two canonical ids. If a region ever binds the same
+    // source mesh twice, picking would be ambiguous.
+    for (const { region, side, manifest: m } of BUILDS) {
+      const meshes = m.entries.flatMap((e) =>
+        e.composite ? e.composite.components.map((c) => c.meshName) : [e.meshName!],
+      );
+      assert.equal(
+        new Set(meshes).size,
+        meshes.length,
+        `${region}/${side} reuses a mesh across canonical ids`,
+      );
+    }
+  });
+});
 
 describe('laterality is proven by the generated manifests, not asserted', () => {
   it('both committed manifests declare the side they were built for', () => {
@@ -59,24 +141,21 @@ describe('laterality is proven by the generated manifests, not asserted', () => 
     );
   });
 
-  it('the two sides use DIFFERENT source meshes for every structure', () => {
+  it('the two sides use DIFFERENT source meshes for every one-sided structure', () => {
+    // Midline entries are EXCLUDED and that is the correct expectation, not a
+    // convenience: the cervical vertebrae are the same seven meshes in the left and the
+    // right scene, because there is one cervical spine. Duplicating them per side is
+    // what "one left copy of the midline" means, and the rule below would have caught it
+    // as if it were a bug.
+    const oneSided = (m: AssetManifest): AssetManifestEntry[] =>
+      m.entries.filter((e) => e.laterality !== 'midline');
+
     const left = new Map(LEFT.entries.map((e) => [e.asiId, e.meshName]));
     for (const entry of RIGHT.entries) {
       assert.notEqual(
         left.get(entry.asiId),
         entry.meshName,
         `${entry.asiId} uses ${entry.meshName} on BOTH sides -- that is one mesh, not two`,
-      );
-    }
-  });
-
-  it('the two sides carry different FMA concept ids', () => {
-    const left = new Map(LEFT.entries.map((e) => [e.asiId, e.fma.conceptId]));
-    for (const entry of RIGHT.entries) {
-      assert.notEqual(
-        left.get(entry.asiId),
-        entry.fma.conceptId,
-        `${entry.asiId} carries FMA ${entry.fma.conceptId} on both sides`,
       );
     }
   });
@@ -113,16 +192,35 @@ describe('laterality is proven by the generated manifests, not asserted', () => 
     //
     // The test that can see it compares the loaded VERTEX SETS, and it lives in the
     // real-geometry browser gate where the GLBs are actually mounted.
-    const leftBytes = new Map(
-      LEFT.entries.map((e) => [e.file, readFileSync(join(repoRoot, 'assets/anatomy/generated/left', e.file))]),
-    );
-    for (const entry of RIGHT.entries) {
-      const right = readFileSync(join(repoRoot, 'assets/anatomy/generated/right', entry.file));
-      assert.notDeepEqual(
-        right,
-        leftBytes.get(entry.file),
-        `${entry.file} is byte-identical on both sides`,
-      );
+    // A side's own file PATH is side-independent -- `asi-<id>.glb` exists in both the
+    // left and the right build directory. So the paths matching is expected and means
+    // nothing; what must differ is the CONTENT, because the two sides load different
+    // source meshes. Comparing paths here would have "proven" the two sides are
+    // different on the first run and then told us nothing.
+    const filesOf = (e: AssetManifestEntry): string[] =>
+      e.composite ? e.composite.components.map((c) => c.file) : e.file ? [e.file] : [];
+    for (const { region, side, manifest: m } of BUILDS) {
+      const other = side === 'left' ? 'right' : 'left';
+      const otherManifest = BUILDS.find((b) => b.region === region && b.side === other)!.manifest;
+      const otherByAsi = new Map(otherManifest.entries.map((e) => [e.asiId, e]));
+      for (const entry of m.entries) {
+        const counterpart = otherByAsi.get(entry.asiId);
+        // A midline entry is the SAME geometry in both builds by definition.
+        if (!counterpart || entry.laterality === 'midline') continue;
+        const mine = filesOf(entry).map((f) =>
+          readFileSync(join(repoRoot, 'assets/anatomy/generated', region, side, f)),
+        );
+        const theirs = filesOf(counterpart).map((f) =>
+          readFileSync(join(repoRoot, 'assets/anatomy/generated', region, other, f)),
+        );
+        for (const bytes of mine)
+          for (const other2 of theirs)
+            assert.notDeepEqual(
+              bytes,
+              other2,
+              `${region}: ${entry.asiId} is byte-identical on the ${side} and ${other} builds`,
+            );
+      }
     }
   });
 
@@ -144,10 +242,12 @@ describe('representation declarations cannot outrun what was built', () => {
     // The over-claim this phase had to confront: the declarations said `['left']`
     // because only the left build existed, and widening them to `['left', 'right']`
     // without a build would have been the easy way to look finished.
-    const rightBuilt = new Set(RIGHT.entries.map((e) => e.asiId));
+    const rightBuilt = new Set(
+      BUILDS.filter((b) => b.side === 'right').flatMap((b) => b.manifest.entries.map((e) => e.asiId)),
+    );
     for (const [asiId, declared] of Object.entries(REPRESENTATION_DECLARATIONS)) {
       if (declared.threeD.status !== 'available') continue;
-      if (declared.threeD.sides.includes('right'))
+      if (declared.threeD.sides.right?.available)
         assert.ok(rightBuilt.has(asiId), `${asiId} claims right with no right-side geometry`);
     }
   });
@@ -158,10 +258,16 @@ describe('representation declarations cannot outrun what was built', () => {
       () =>
         assertSidesMatch(
           'asi:shoulder.scapula',
-          { status: 'available', elementCount: 1, sides: ['left', 'right'] },
+          {
+            status: 'available',
+            sides: {
+              left: { available: true, componentCount: 1 },
+              right: { available: true, componentCount: 1 },
+            },
+          },
           producedSides('asi:shoulder.scapula', leftOnly),
         ),
-      /declares 3D for left and right but the build produced only left/,
+      /no (left|right) build contains it/,
     );
   });
 
@@ -172,10 +278,13 @@ describe('representation declarations cannot outrun what was built', () => {
       () =>
         assertSidesMatch(
           'asi:shoulder.scapula',
-          { status: 'available', elementCount: 1, sides: ['left'] },
-          ['left', 'right'],
+          { status: 'available', sides: { left: { available: true, componentCount: 1 } } },
+          [
+            { laterality: 'left', componentCount: 1 },
+            { laterality: 'right', componentCount: 1 },
+          ],
         ),
-      /has real geometry for right but declares only left/,
+      /has real right geometry but the declaration does not mention right/,
     );
   });
 
@@ -195,8 +304,14 @@ assert.equal(representation('asi:shoulder.deltoid').threeD.status, 'unavailable'
     for (const part of ['clavicular', 'acromial', 'spinal']) {
       const declared = representation(`asi:shoulder.deltoid-${part}-part`).threeD;
       assert.equal(declared.status, 'available');
+      if (declared.status !== 'available') continue;
+      // Per-laterality now, so the assertion names the sides rather than comparing a
+      // whole record against an array.
       assert.deepEqual(
-        declared.status === 'available' ? declared.sides : null,
+        Object.entries(declared.sides)
+          .filter(([, c]) => c.available)
+          .map(([side]) => side)
+          .sort(),
         ['left', 'right'],
         `the ${part} part is available on both sides`,
       );

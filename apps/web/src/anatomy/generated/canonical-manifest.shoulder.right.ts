@@ -2,7 +2,7 @@
  * GENERATED FILE. DO NOT EDIT.
  *
  * Produced by scripts/embed-anatomy-manifest.mjs from
- * assets/anatomy/generated/<side>/manifest.json.
+ * assets/anatomy/generated/<region>/<side>/manifest.json.
  *
  * The canonical anatomy manifest, as data. The app parses it through
  * `parseManifest` and converts it with `toRendererScene` at startup, so the
@@ -13,7 +13,7 @@
  * Licence:    Creative Commons Attribution 4.0 International (CC-BY-4.0) -- https://dbarchive.biosciencedbc.jp/en/bodyparts3d/lic.html
  * Archive:    isa_BP3D_4.0_obj_99.zip
  * Dataset:    BodyParts3D 4.0
- * Side:       left -- every entry in this file carries `laterality: 'left'`.
+ * Side:       right -- every entry in this file carries `laterality: 'right'`.
  * Units:      mm, from the source model, not inferred here.
  */
 
@@ -39,7 +39,7 @@ const CANONICAL_MANIFEST_JSON = {
   "entries": [
     {
       "asiId": "asi:shoulder.deltoid-clavicular-part",
-      "meshName": "FJ1468M",
+      "meshName": "FJ1468",
       "region": "shoulder",
       "subRegionIds": [
         "shoulder.anterior"
@@ -47,16 +47,16 @@ const CANONICAL_MANIFEST_JSON = {
       "layer": "muscle",
       "anatomicalLabel": "Clavicular part of deltoid",
       "layTerm": "the front part of the shoulder muscle, near the collarbone",
-      "laterality": "left",
+      "laterality": "right",
       "fma": {
-        "conceptId": "34681",
+        "conceptId": "34680",
         "status": "unverified",
         "note": "BodyParts3D 4.3i concept list; not yet checked against FMA Explorer"
       },
       "source": {
         "dataset": "BodyParts3D",
         "release": "4.0",
-        "conceptId": "FMA:34681",
+        "conceptId": "FMA:34680",
         "archive": "isa_BP3D_4.0_obj_99.zip",
         "doi": "10.18908/lsdba.nbdc00837-000",
         "retrievedAt": null
@@ -69,20 +69,20 @@ const CANONICAL_MANIFEST_JSON = {
         "verifiedOn": "2025-02-27"
       },
       "geometry": {
-        "triangles": 178,
+        "triangles": 166,
         "sourceTriangles": 2206,
-        "reduction": 0.9193,
+        "reduction": 0.9248,
         "units": "mm"
       },
       "bounds": {
         "min": [
-          92.09425116279067,
-          -118.48878571428573,
-          1210.1771212121212
+          -201.4812,
+          -119.29046153846153,
+          1210.1778787878786
         ],
         "max": [
-          201.48139999999998,
-          -75.28415000000001,
+          -91.27122575757575,
+          -75.39473333333335,
           1355.39
         ]
       },
@@ -90,7 +90,7 @@ const CANONICAL_MANIFEST_JSON = {
     },
     {
       "asiId": "asi:shoulder.deltoid-acromial-part",
-      "meshName": "FJ1467M",
+      "meshName": "FJ1467",
       "region": "shoulder",
       "subRegionIds": [
         "shoulder.anterior",
@@ -99,16 +99,16 @@ const CANONICAL_MANIFEST_JSON = {
       "layer": "muscle",
       "anatomicalLabel": "Acromial part of deltoid",
       "layTerm": "the middle part of the shoulder muscle, over the shoulder blade",
-      "laterality": "left",
+      "laterality": "right",
       "fma": {
-        "conceptId": "34683",
+        "conceptId": "34682",
         "status": "unverified",
         "note": "BodyParts3D 4.3i concept list; not yet checked against FMA Explorer"
       },
       "source": {
         "dataset": "BodyParts3D",
         "release": "4.0",
-        "conceptId": "FMA:34683",
+        "conceptId": "FMA:34682",
         "archive": "isa_BP3D_4.0_obj_99.zip",
         "doi": "10.18908/lsdba.nbdc00837-000",
         "retrievedAt": null
@@ -128,13 +128,13 @@ const CANONICAL_MANIFEST_JSON = {
       },
       "bounds": {
         "min": [
-          149.80036781609198,
-          -103.18866666666666,
-          1207.668518518518
+          -224.8327083333334,
+          -102.568,
+          1208.4093548387095
         ],
         "max": [
-          226.53452380952388,
-          -41.7602,
+          -148.77969230769233,
+          -41.96295714285714,
           1349.22
         ]
       },
@@ -142,7 +142,7 @@ const CANONICAL_MANIFEST_JSON = {
     },
     {
       "asiId": "asi:shoulder.deltoid-spinal-part",
-      "meshName": "FJ1513M",
+      "meshName": "FJ1513",
       "region": "shoulder",
       "subRegionIds": [
         "shoulder.anterior"
@@ -150,16 +150,16 @@ const CANONICAL_MANIFEST_JSON = {
       "layer": "muscle",
       "anatomicalLabel": "Spinal part of deltoid",
       "layTerm": "the back part of the shoulder muscle",
-      "laterality": "left",
+      "laterality": "right",
       "fma": {
-        "conceptId": "34685",
+        "conceptId": "34684",
         "status": "unverified",
         "note": "BodyParts3D 4.3i concept list; not yet checked against FMA Explorer"
       },
       "source": {
         "dataset": "BodyParts3D",
         "release": "4.0",
-        "conceptId": "FMA:34685",
+        "conceptId": "FMA:34684",
         "archive": "isa_BP3D_4.0_obj_99.zip",
         "doi": "10.18908/lsdba.nbdc00837-000",
         "retrievedAt": null
@@ -172,19 +172,19 @@ const CANONICAL_MANIFEST_JSON = {
         "verifiedOn": "2025-02-27"
       },
       "geometry": {
-        "triangles": 238,
+        "triangles": 244,
         "sourceTriangles": 1900,
-        "reduction": 0.8747,
+        "reduction": 0.8716,
         "units": "mm"
       },
       "bounds": {
         "min": [
-          86.82131884057968,
-          -78.41628867924526,
-          1192.3386363636364
+          -218.2607142857143,
+          -78.41628301886792,
+          1192.306730769231
         ],
         "max": [
-          218.2607142857143,
+          -86.82120434782607,
           -2.72512,
           1339.84
         ]
@@ -193,7 +193,7 @@ const CANONICAL_MANIFEST_JSON = {
     },
     {
       "asiId": "asi:shoulder.supraspinatus-tendon",
-      "meshName": "FJ1506M",
+      "meshName": "FJ1506",
       "region": "shoulder",
       "subRegionIds": [
         "shoulder.lateral"
@@ -201,16 +201,16 @@ const CANONICAL_MANIFEST_JSON = {
       "layer": "tendon",
       "anatomicalLabel": "Supraspinatus tendon",
       "layTerm": "the tendon that runs over the top of the shoulder joint",
-      "laterality": "left",
+      "laterality": "right",
       "fma": {
-        "conceptId": "32545",
+        "conceptId": "32544",
         "status": "unverified",
         "note": "BodyParts3D 4.3i concept list; not yet checked against FMA Explorer"
       },
       "source": {
         "dataset": "BodyParts3D",
         "release": "4.0",
-        "conceptId": "FMA:32545",
+        "conceptId": "FMA:32544",
         "archive": "isa_BP3D_4.0_obj_99.zip",
         "doi": "10.18908/lsdba.nbdc00837-000",
         "retrievedAt": null
@@ -230,21 +230,21 @@ const CANONICAL_MANIFEST_JSON = {
       },
       "bounds": {
         "min": [
-          66.34561470588238,
+          -186.0728666666667,
           -89.88746249999998,
-          1308.5826000000002
+          1308.5866
         ],
         "max": [
-          188.443,
-          -15.113728723404265,
-          1340.2755555555555
+          -63.876,
+          -15.074999999999998,
+          1340.2766666666666
         ]
       },
       "file": "shoulder/asi-shoulder-supraspinatus-tendon.glb"
     },
     {
       "asiId": "asi:shoulder.infraspinatus",
-      "meshName": "FJ1500M",
+      "meshName": "FJ1500",
       "region": "shoulder",
       "subRegionIds": [
         "shoulder.posterior"
@@ -252,16 +252,16 @@ const CANONICAL_MANIFEST_JSON = {
       "layer": "muscle",
       "anatomicalLabel": "Infraspinatus",
       "layTerm": "the muscle on the shoulder blade below the spine of the blade",
-      "laterality": "left",
+      "laterality": "right",
       "fma": {
-        "conceptId": "32548",
+        "conceptId": "32547",
         "status": "unverified",
         "note": "BodyParts3D 4.3i concept list; not yet checked against FMA Explorer"
       },
       "source": {
         "dataset": "BodyParts3D",
         "release": "4.0",
-        "conceptId": "FMA:32548",
+        "conceptId": "FMA:32547",
         "archive": "isa_BP3D_4.0_obj_99.zip",
         "doi": "10.18908/lsdba.nbdc00837-000",
         "retrievedAt": null
@@ -281,12 +281,12 @@ const CANONICAL_MANIFEST_JSON = {
       },
       "bounds": {
         "min": [
-          60.798984090909066,
-          -75.8612,
+          -187.7897169811321,
+          -73.46691000000008,
           1207.24
         ],
         "max": [
-          189.05,
+          -60.2584,
           3.42368,
           1329.282222222222
         ]
@@ -295,7 +295,7 @@ const CANONICAL_MANIFEST_JSON = {
     },
     {
       "asiId": "asi:shoulder.teres-minor",
-      "meshName": "FJ1508M",
+      "meshName": "FJ1508",
       "region": "shoulder",
       "subRegionIds": [
         "shoulder.posterior"
@@ -303,16 +303,16 @@ const CANONICAL_MANIFEST_JSON = {
       "layer": "muscle",
       "anatomicalLabel": "Teres minor",
       "layTerm": "a small muscle at the outer edge of the shoulder blade",
-      "laterality": "left",
+      "laterality": "right",
       "fma": {
-        "conceptId": "32554",
+        "conceptId": "32553",
         "status": "unverified",
         "note": "BodyParts3D 4.3i concept list; not yet checked against FMA Explorer"
       },
       "source": {
         "dataset": "BodyParts3D",
         "release": "4.0",
-        "conceptId": "FMA:32554",
+        "conceptId": "FMA:32553",
         "archive": "isa_BP3D_4.0_obj_99.zip",
         "doi": "10.18908/lsdba.nbdc00837-000",
         "retrievedAt": null
@@ -325,19 +325,19 @@ const CANONICAL_MANIFEST_JSON = {
         "verifiedOn": "2025-02-27"
       },
       "geometry": {
-        "triangles": 164,
+        "triangles": 156,
         "sourceTriangles": 506,
-        "reduction": 0.6759,
+        "reduction": 0.6917,
         "units": "mm"
       },
       "bounds": {
         "min": [
-          108.67011475409838,
-          -76.83677647058825,
-          1222.9221311475414
+          -188.6731428571429,
+          -76.72517142857146,
+          1222.767966101695
         ],
         "max": [
-          188.68338235294124,
+          -108.50493220338984,
           -12.4567,
           1316.92
         ]
@@ -346,7 +346,7 @@ const CANONICAL_MANIFEST_JSON = {
     },
     {
       "asiId": "asi:shoulder.subscapularis",
-      "meshName": "FJ1504M",
+      "meshName": "FJ1504",
       "region": "shoulder",
       "subRegionIds": [
         "shoulder.anterior"
@@ -354,16 +354,16 @@ const CANONICAL_MANIFEST_JSON = {
       "layer": "muscle",
       "anatomicalLabel": "Subscapularis",
       "layTerm": "a deep muscle right in front of the shoulder joint",
-      "laterality": "left",
+      "laterality": "right",
       "fma": {
-        "conceptId": "13415",
+        "conceptId": "13414",
         "status": "unverified",
         "note": "BodyParts3D 4.3i concept list; not yet checked against FMA Explorer"
       },
       "source": {
         "dataset": "BodyParts3D",
         "release": "4.0",
-        "conceptId": "FMA:13415",
+        "conceptId": "FMA:13414",
         "archive": "isa_BP3D_4.0_obj_99.zip",
         "doi": "10.18908/lsdba.nbdc00837-000",
         "retrievedAt": null
@@ -376,20 +376,20 @@ const CANONICAL_MANIFEST_JSON = {
         "verifiedOn": "2025-02-27"
       },
       "geometry": {
-        "triangles": 228,
+        "triangles": 232,
         "sourceTriangles": 2092,
-        "reduction": 0.891,
+        "reduction": 0.8891,
         "units": "mm"
       },
       "bounds": {
         "min": [
-          64.58584901960785,
-          -96.37916228571423,
-          1199.0975213675222
+          -161.15677192982454,
+          -96.42367192982451,
+          1198.9314159292044
         ],
         "max": [
-          161.18292920353983,
-          -3.6494347200000026,
+          -64.58389612903225,
+          -3.6431627906976773,
           1324.8
         ]
       },
@@ -397,7 +397,7 @@ const CANONICAL_MANIFEST_JSON = {
     },
     {
       "asiId": "asi:shoulder.trapezius-upper",
-      "meshName": "FJ1520M",
+      "meshName": "FJ1520",
       "region": "shoulder",
       "subRegionIds": [
         "shoulder.posterior"
@@ -405,16 +405,16 @@ const CANONICAL_MANIFEST_JSON = {
       "layer": "muscle",
       "anatomicalLabel": "Upper trapezius",
       "layTerm": "the muscle from the neck to the top of the shoulder",
-      "laterality": "left",
+      "laterality": "right",
       "fma": {
-        "conceptId": "33583",
+        "conceptId": "33581",
         "status": "unverified",
         "note": "BodyParts3D 4.3i concept list; not yet checked against FMA Explorer"
       },
       "source": {
         "dataset": "BodyParts3D",
         "release": "4.0",
-        "conceptId": "FMA:33583",
+        "conceptId": "FMA:33581",
         "archive": "isa_BP3D_4.0_obj_99.zip",
         "doi": "10.18908/lsdba.nbdc00837-000",
         "retrievedAt": null
@@ -427,20 +427,20 @@ const CANONICAL_MANIFEST_JSON = {
         "verifiedOn": "2025-02-27"
       },
       "geometry": {
-        "triangles": 150,
+        "triangles": 208,
         "sourceTriangles": 10530,
-        "reduction": 0.9858,
+        "reduction": 0.9802,
         "units": "mm"
       },
       "bounds": {
         "min": [
-          -1.111120075757576,
-          -43.592502531645536,
-          1060.420984848485
+          -130.24252617079878,
+          -27.18524421487608,
+          1060.4209090909092
         ],
         "max": [
-          145.39043037974685,
-          19.971680000000003,
+          1.111120075757576,
+          20.399221276595743,
           1342.97
         ]
       },
@@ -448,7 +448,7 @@ const CANONICAL_MANIFEST_JSON = {
     },
     {
       "asiId": "asi:shoulder.scapula",
-      "meshName": "FJ3279",
+      "meshName": "FJ3384",
       "region": "shoulder",
       "subRegionIds": [
         "shoulder.posterior"
@@ -456,16 +456,16 @@ const CANONICAL_MANIFEST_JSON = {
       "layer": "bone",
       "anatomicalLabel": "Scapula",
       "layTerm": "the shoulder blade bone",
-      "laterality": "left",
+      "laterality": "right",
       "fma": {
-        "conceptId": "13396",
+        "conceptId": "13395",
         "status": "unverified",
         "note": "BodyParts3D 4.3i concept list; not yet checked against FMA Explorer"
       },
       "source": {
         "dataset": "BodyParts3D",
         "release": "4.0",
-        "conceptId": "FMA:13396",
+        "conceptId": "FMA:13395",
         "archive": "isa_BP3D_4.0_obj_99.zip",
         "doi": "10.18908/lsdba.nbdc00837-000",
         "retrievedAt": null
@@ -478,20 +478,20 @@ const CANONICAL_MANIFEST_JSON = {
         "verifiedOn": "2025-02-27"
       },
       "geometry": {
-        "triangles": 344,
-        "sourceTriangles": 28106,
-        "reduction": 0.9878,
+        "triangles": 348,
+        "sourceTriangles": 26172,
+        "reduction": 0.9867,
         "units": "mm"
       },
       "bounds": {
         "min": [
-          61.482157999999984,
-          -96.80690282542879,
-          1188.3917215189877
+          -162.07587869822484,
+          -96.9052031809145,
+          1186.6782894736841
         ],
         "max": [
-          163.43441595441584,
-          2.991317468918918,
+          -59.85935714285716,
+          3.19313551682243,
           1349.86
         ]
       },
@@ -499,7 +499,7 @@ const CANONICAL_MANIFEST_JSON = {
     },
     {
       "asiId": "asi:shoulder.biceps-long-head-tendon",
-      "meshName": "FJ1478M",
+      "meshName": "FJ1478",
       "region": "shoulder",
       "subRegionIds": [
         "shoulder.anterior"
@@ -507,16 +507,16 @@ const CANONICAL_MANIFEST_JSON = {
       "layer": "tendon",
       "anatomicalLabel": "Long head of biceps tendon",
       "layTerm": "the tendon that runs down the front of the shoulder joint",
-      "laterality": "left",
+      "laterality": "right",
       "fma": {
-        "conceptId": "37687",
+        "conceptId": "37686",
         "status": "unverified",
         "note": "BodyParts3D 4.3i concept list; not yet checked against FMA Explorer"
       },
       "source": {
         "dataset": "BodyParts3D",
         "release": "4.0",
-        "conceptId": "FMA:37687",
+        "conceptId": "FMA:37686",
         "archive": "isa_BP3D_4.0_obj_99.zip",
         "doi": "10.18908/lsdba.nbdc00837-000",
         "retrievedAt": null
@@ -529,19 +529,19 @@ const CANONICAL_MANIFEST_JSON = {
         "verifiedOn": "2025-02-27"
       },
       "geometry": {
-        "triangles": 22,
+        "triangles": 24,
         "sourceTriangles": 1426,
-        "reduction": 0.9846,
+        "reduction": 0.9832,
         "units": "mm"
       },
       "bounds": {
         "min": [
-          138.53315625,
-          -95.16774285714287,
-          1007.3197333333336
+          -224.0059999999999,
+          -95.64487027027027,
+          1006.7431061452519
         ],
         "max": [
-          223.97964242424246,
+          -138.53315625,
           -69.90318124999999,
           1339.42
         ]
@@ -560,7 +560,10 @@ export const CANONICAL_ANATOMY_MANIFEST = CANONICAL_MANIFEST_JSON as unknown as 
  * Per side, so the two builds cannot collide on a path. The renderer does not
  * hardcode this: it is read from the manifest and passed to the adapter.
  */
-export const CANONICAL_ASSET_ROOT = '/anatomy/left/';
+export const CANONICAL_ASSET_ROOT = '/anatomy/shoulder/right/';
 
 /** The side this build represents, as a fact carried in the manifest itself. */
-export const CANONICAL_SIDE = 'left' as const;
+export const CANONICAL_SIDE = 'right' as const;
+
+/** The region this build represents, so a caller cannot mix scenes. */
+export const CANONICAL_REGION = 'shoulder' as const;

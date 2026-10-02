@@ -12,6 +12,18 @@ export function HistoryPanel() {
   const { history, spatial, loadHistory, loadSpatialHistory, reopenEpisode } =
     useSession();
   const [filter, setFilter] = useState<BodyRegion | "all">("all");
+  /**
+   * The OPENED PLACE, by the server's `regionRowId`.
+   *
+   * Separate from `filter` on purpose. `filter` is a region, which is a display
+   * grouping; a PLACE is what the server decided, and two places can sit in the same
+   * sub-region a few millimetres apart. Clicking a mark used to set the region filter,
+   * which showed every episode in the region as though the mark were one place --
+   * precisely the client-side regrouping `spatial-history.ts` exists to forbid.
+   *
+   * Null means no place is open.
+   */
+  const [openPlaceId, setOpenPlaceId] = useState<string | null>(null);
   const [request, setRequest] = useState<"loading" | "ready" | "error">(
     "loading",
   );
@@ -89,6 +101,24 @@ export function HistoryPanel() {
   const regions = Object.values(REGIONS).filter(
     (region) => filter === "all" || filter === region.id,
   );
+
+  /**
+   * The open place, and the exact set of episode ids the SERVER says belong to it.
+   *
+   * Built from `place.episodes`, not from re-matching the episode list on region,
+   * side and sub-region. Those are three of the five fields that make a place; the
+   * other two are the quantised point cell and the row identity. Re-matching locally
+   * would merge two places the server deliberately kept apart -- the failure this panel
+   * exists to avoid.
+   *
+   * Null when no place is open, or when the place has been closed.
+   */
+  const openPlace = openPlaceId
+    ? places.regions.flatMap((r) => r.marks).find((m) => m.id === openPlaceId) ?? null
+    : null;
+  const openPlaceEpisodeIds = openPlace
+    ? new Set(openPlace.episodes.map((e) => e.id))
+    : null;
   return (
     <div className="healthmap-layout">
       <aside className="healthmap-index" aria-label="Filter by body area">
@@ -124,11 +154,28 @@ export function HistoryPanel() {
               {places.regions
                 .filter((r) => filter === 'all' || r.region === filter)
                 .flatMap((r) =>
-                  r.marks.slice(0, 3).map((mark) => (
+                  /*
+                    Every mark, not the first three. The list is already ordered by
+                    recency and capping it at three meant a person with more than three
+                    places could not reach the rest of their own history from the map --
+                    the counts were on screen and the way in was not.
+                  */
+                  r.marks.map((mark) => (
                     <li key={mark.id} data-testid={`mark-${mark.region}`}>
+                      {/*
+                        Opens the PLACE, not the region. This used to set the region
+                        filter, which showed every episode in the region as though one
+                        mark were one place -- exactly the client-side regrouping
+                        `spatial-history.ts` exists to forbid. Two places can share a
+                        sub-region and differ only by their point cell.
+                      */}
                       <button
                         className="location-mark"
-                        onClick={() => setFilter(r.region)}
+                        data-place-id={mark.id}
+                        aria-pressed={openPlaceId === mark.id}
+                        onClick={() =>
+                          setOpenPlaceId((current) => (current === mark.id ? null : mark.id))
+                        }
                       >
                         <span className="location-mark__label">{mark.label}</span>
                         <span className="location-mark__count">
@@ -151,10 +198,56 @@ export function HistoryPanel() {
           Refresh records
         </button>
       </aside>
+      {openPlace && (
+        /*
+          The open place, stated in the server's own terms.
+          
+          The aggregate point and each episode's own point are BOTH shown, and labelled
+          as different things. Collapsing them would mean every episode in this place
+          appears to have happened at the mean of all of them, which is precisely the
+          substitution the server contract exists to prevent.
+        */
+        <section
+          className="open-place"
+          data-testid="open-place"
+          aria-live="polite"
+          aria-label={`Selected place: ${openPlace.label}`}
+        >
+          <div className="open-place__heading">
+            <h2>{openPlace.label}</h2>
+            <button
+              className="link"
+              data-testid="close-place"
+              onClick={() => setOpenPlaceId(null)}
+            >
+              Close
+            </button>
+          </div>
+          <p className="small">
+            {openPlace.episodeCount} episode
+            {openPlace.episodeCount === 1 ? "" : "s"} in this place.
+            {openPlace.lastEpisodeAt
+              ? ` Most recent ${formatDate(openPlace.lastEpisodeAt)}: ${
+                  openPlace.episodes[0]?.title ?? ""
+                }`
+              : ""}
+          </p>
+          <p className="small muted">
+            {openPlace.point
+              ? "Area of this place on the body map (the average of the pins here)."
+              : "No episode in this place carried a point, so there is no position to show."}
+          </p>
+        </section>
+      )}
       <div className="history" aria-live="polite">
         {regions.map((region) => {
           const episodes = history
-            .filter((episode) => episode.region === region.id)
+            .filter(
+              (episode) =>
+                episode.region === region.id &&
+                // `null` means no place is open, so everything in the region shows.
+                (openPlaceEpisodeIds === null || openPlaceEpisodeIds.has(episode.id)),
+            )
             .sort((a, b) => b.startedAt.localeCompare(a.startedAt));
           if (!episodes.length && filter === "all") return null;
           return (
@@ -191,6 +284,17 @@ export function HistoryPanel() {
                           <StatusTag>{episode.status}</StatusTag>
                         </summary>
                         <div className="episode__detail">
+                          {(() => {
+                            const own = openPlace?.episodes.find((e) => e.id === episode.id);
+                            if (!openPlace) return null;
+                            return (
+                              <p className="small muted" data-testid="episode-own-point">
+                                {own?.point
+                                  ? "This episode's own position, which may differ from the place average."
+                                  : "This episode carried no point of its own."}
+                              </p>
+                            );
+                          })()}
                           <RecordDetails
                             record={episode.record}
                             episode={episode}

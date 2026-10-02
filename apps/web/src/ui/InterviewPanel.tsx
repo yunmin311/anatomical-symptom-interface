@@ -1,14 +1,25 @@
 import { useEffect, useRef, useState } from "react";
-import { nextQuestion, questionProgress, REGIONS } from "@asi/shared";
+import { nextQuestion, questionProgress, REGIONS, INTERVIEW } from "@asi/shared";
 import type { InterviewQuestion } from "@asi/shared";
 import { anatomy, useSession } from "../state/session.ts";
 import { EmptyState, StatusTag } from "./primitives.tsx";
 
 export function InterviewPanel() {
-  const { record, answers, answer } = useSession();
+  const { record, answers, answer, editingQuestionId, cancelEditAnswer } = useSession();
   const context = { record, answers };
-  const question = nextQuestion(context);
+  const next = nextQuestion(context);
   const progress = questionProgress(context);
+
+  // An edit overrides the next question. It must, because the next question is derived
+  // from what is UNANSWERED: after a correction the question is still answered, so the
+  // panel would otherwise walk straight past the thing being corrected.
+  const editing =
+    editingQuestionId === null
+      ? null
+      : (INTERVIEW[record.location.region] ?? []).find(
+          (q) => q.id === editingQuestionId,
+        ) ?? null;
+  const question = editing ?? next;
 
   if (!question)
     return (
@@ -28,6 +39,22 @@ export function InterviewPanel() {
 
   return (
     <section className="panel interview-panel" aria-label="Current question">
+      {editing && (
+        <div className="interview-edit-banner" role="status">
+          <span>
+            <strong>Changing an answer you already gave.</strong> Your previous
+            answer is replaced, not kept.
+          </span>
+          <button
+            className="btn btn--quiet"
+            onClick={() => {
+              cancelEditAnswer();
+            }}
+          >
+            Cancel
+          </button>
+        </div>
+      )}
       <div className="interview-progress">
         <span>{REGIONS[record.location.region].label} details</span>
         <span>

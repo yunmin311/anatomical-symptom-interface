@@ -206,6 +206,39 @@ PR → merge. Do not open a PR mid-phase and then add more to it.
 branch → implementation → tests → commits → push → handoff. Main agent does the
 final integration, and only after the group is finished.
 
+### Git commit attribution
+
+**Never add an AI/model/vendor co-author trailer automatically.** This applies to
+every agent, human or otherwise, on every branch, forever.
+
+Do not add:
+
+- `Co-Authored-By: Claude ...`
+- `Co-Authored-By: ChatGPT ...`
+- `Co-Authored-By: Codex ...`
+- `Co-Authored-By: OpenAI ...`
+- or any other AI/model/tool attribution
+
+…unless the user explicitly asks for it in that commit.
+
+Why this is a rule and not a preference: some tools insert a trailer silently. The
+user did not use those models for this project, and an automatic trailer puts a vendor
+account into the contributor graph and into every `git shortlog` output as though a
+person had done the work. That is a claim about authorship, and it should never be
+made by a tool on the user's behalf.
+
+Two obligations that follow:
+
+- **Commits use the repository's configured human Git author only.** Do not pass
+  `--author`, and do not set `GIT_AUTHOR_*` to anything but the configured user.
+- **Before every commit, read the final message and remove any automatically
+  injected AI co-author trailer.** Read `git diff --cached` and the message text, not
+  the intent you had when you wrote it — the injection happens after writing.
+
+Already-merged history keeps whatever trailers it has. Do not rewrite published
+history solely to strip old trailers: that rewrites hashes for everyone and the
+trailers are inert. The rule governs forward from the commit that records it.
+
 **Branches.** Do not create a throwaway branch per small fix; stay on the current
 task branch. Sweep merged branches at the end of a phase, not after every task:
 confirm with `git branch --merged main` and check the remote is contained in

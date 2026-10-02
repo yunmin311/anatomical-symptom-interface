@@ -1,0 +1,625 @@
+/**
+ * GENERATED FILE. DO NOT EDIT.
+ *
+ * Produced by scripts/embed-anatomy-manifest.mjs from
+ * assets/anatomy/generated/<region>/<side>/manifest.json.
+ *
+ * The canonical anatomy manifest, as data. The app parses it through
+ * `parseManifest` and converts it with `toRendererScene` at startup, so the
+ * production scene is built by the same contract as everything else rather than by a
+ * hand-written scene that could drift from the pipeline.
+ *
+ * Provenance: BodyParts3D, (c) The Database Center for Life Science licensed under CC Attribution 4.0 International
+ * Licence:    Creative Commons Attribution 4.0 International (CC-BY-4.0) -- https://dbarchive.biosciencedbc.jp/en/bodyparts3d/lic.html
+ * Archive:    isa_BP3D_4.0_obj_99.zip
+ * Dataset:    BodyParts3D 4.0
+ * Side:       right -- every entry in this file carries `laterality: 'right'`.
+ * Units:      mm, from the source model, not inferred here.
+ */
+
+import type { AssetManifest } from '@asi/shared';
+
+/** The canonical manifest exactly as the pipeline wrote it. */
+const CANONICAL_MANIFEST_JSON = {
+  "schemaVersion": 1,
+  "regions": [
+    "neck"
+  ],
+  "licence": {
+    "id": "CC-BY-4.0",
+    "name": "Creative Commons Attribution 4.0 International",
+    "url": "https://dbarchive.biosciencedbc.jp/en/bodyparts3d/lic.html",
+    "attribution": "BodyParts3D, (c) The Database Center for Life Science licensed under CC Attribution 4.0 International",
+    "verifiedOn": "2025-02-27"
+  },
+  "generator": {
+    "name": "asi-anatomy-pipeline",
+    "version": "1.0.0"
+  },
+  "entries": [
+    {
+      "asiId": "asi:neck.sternocleidomastoid",
+      "meshName": "FJ1595",
+      "region": "neck",
+      "subRegionIds": [
+        "neck.anterior",
+        "neck.lateral"
+      ],
+      "layer": "muscle",
+      "anatomicalLabel": "Sternocleidomastoid",
+      "layTerm": "the band running from behind the ear to the collarbone",
+      "laterality": "right",
+      "fma": {
+        "conceptId": "13408",
+        "status": "unverified",
+        "note": "BodyParts3D 4.3i concept list; not yet checked against FMA Explorer"
+      },
+      "source": {
+        "dataset": "BodyParts3D",
+        "release": "4.0",
+        "conceptId": "FMA:13408",
+        "archive": "isa_BP3D_4.0_obj_99.zip",
+        "doi": "10.18908/lsdba.nbdc00837-000",
+        "retrievedAt": null
+      },
+      "licence": {
+        "id": "CC-BY-4.0",
+        "name": "Creative Commons Attribution 4.0 International",
+        "url": "https://dbarchive.biosciencedbc.jp/en/bodyparts3d/lic.html",
+        "attribution": "BodyParts3D, (c) The Database Center for Life Science licensed under CC Attribution 4.0 International",
+        "verifiedOn": "2025-02-27"
+      },
+      "geometry": {
+        "triangles": 198,
+        "sourceTriangles": 10344,
+        "reduction": 0.9809,
+        "units": "mm"
+      },
+      "bounds": {
+        "min": [
+          -59.59071620915026,
+          -150.57871339563857,
+          1309.4404049844245
+        ],
+        "max": [
+          61.34296153846155,
+          -37.65269333333335,
+          1503.19
+        ]
+      },
+      "file": "neck/asi-neck-sternocleidomastoid.glb"
+    },
+    {
+      "asiId": "asi:neck.levator-scapulae",
+      "meshName": "FJ1532",
+      "region": "neck",
+      "subRegionIds": [
+        "neck.posterior"
+      ],
+      "layer": "muscle",
+      "anatomicalLabel": "Levator scapulae",
+      "layTerm": "the muscle from the neck to the shoulder blade",
+      "laterality": "right",
+      "fma": {
+        "conceptId": "32540",
+        "status": "unverified",
+        "note": "BodyParts3D 4.3i concept list; not yet checked against FMA Explorer"
+      },
+      "source": {
+        "dataset": "BodyParts3D",
+        "release": "4.0",
+        "conceptId": "FMA:32540",
+        "archive": "isa_BP3D_4.0_obj_99.zip",
+        "doi": "10.18908/lsdba.nbdc00837-000",
+        "retrievedAt": null
+      },
+      "licence": {
+        "id": "CC-BY-4.0",
+        "name": "Creative Commons Attribution 4.0 International",
+        "url": "https://dbarchive.biosciencedbc.jp/en/bodyparts3d/lic.html",
+        "attribution": "BodyParts3D, (c) The Database Center for Life Science licensed under CC Attribution 4.0 International",
+        "verifiedOn": "2025-02-27"
+      },
+      "geometry": {
+        "triangles": 136,
+        "sourceTriangles": 4718,
+        "reduction": 0.9712,
+        "units": "mm"
+      },
+      "bounds": {
+        "min": [
+          -72.99564728096685,
+          -78.91388194444451,
+          1315.2367804878054
+        ],
+        "max": [
+          -26.339029861111126,
+          -15.703753170731709,
+          1468.5600000000002
+        ]
+      },
+      "file": "neck/asi-neck-levator-scapulae.glb"
+    },
+    {
+      "asiId": "asi:neck.scalenes",
+      "meshName": null,
+      "region": "neck",
+      "subRegionIds": [
+        "neck.lateral"
+      ],
+      "layer": "muscle",
+      "anatomicalLabel": "Scalene muscles",
+      "layTerm": "the muscles along the side of the neck down to the ribs",
+      "laterality": "right",
+      "fma": null,
+      "source": null,
+      "licence": {
+        "id": "CC-BY-4.0",
+        "name": "Creative Commons Attribution 4.0 International",
+        "url": "https://dbarchive.biosciencedbc.jp/en/bodyparts3d/lic.html",
+        "attribution": "BodyParts3D, (c) The Database Center for Life Science licensed under CC Attribution 4.0 International",
+        "verifiedOn": "2025-02-27"
+      },
+      "geometry": {
+        "triangles": 440,
+        "sourceTriangles": 9512,
+        "reduction": 0.9537,
+        "units": "mm"
+      },
+      "bounds": {
+        "min": [
+          -71.89138590604033,
+          -95.65997777777777,
+          1337.475
+        ],
+        "max": [
+          -22.824317910447775,
+          -56.25669411764705,
+          1448.61
+        ]
+      },
+      "file": null,
+      "composite": {
+        "selectable": false,
+        "reason": "the source models anterior, medius and posterior scalenes as three separate concepts per side, so one canonical id resolves to three sourced meshes",
+        "components": [
+          {
+            "meshName": "FJ1592",
+            "fma": {
+              "conceptId": "13392",
+              "status": "unverified",
+              "note": "BodyParts3D 4.3i concept list; not yet checked against FMA Explorer"
+            },
+            "source": {
+              "dataset": "BodyParts3D",
+              "release": "4.0",
+              "conceptId": "FMA:13392",
+              "archive": "isa_BP3D_4.0_obj_99.zip",
+              "doi": "10.18908/lsdba.nbdc00837-000",
+              "retrievedAt": null
+            },
+            "laterality": "right",
+            "geometry": {
+              "triangles": 94,
+              "sourceTriangles": 2632,
+              "reduction": 0.9643,
+              "units": "mm"
+            },
+            "bounds": {
+              "min": [
+                -53.234480000000026,
+                -95.65997777777777,
+                1337.475
+              ],
+              "max": [
+                -23.1895,
+                -79.09110909090903,
+                1420.99
+              ]
+            },
+            "file": "neck/asi-neck-scalenes-FJ1592.glb",
+            "sourceLabel": "right scalenus anterior"
+          },
+          {
+            "meshName": "FJ1593",
+            "fma": {
+              "conceptId": "13390",
+              "status": "unverified",
+              "note": "BodyParts3D 4.3i concept list; not yet checked against FMA Explorer"
+            },
+            "source": {
+              "dataset": "BodyParts3D",
+              "release": "4.0",
+              "conceptId": "FMA:13390",
+              "archive": "isa_BP3D_4.0_obj_99.zip",
+              "doi": "10.18908/lsdba.nbdc00837-000",
+              "retrievedAt": null
+            },
+            "laterality": "right",
+            "geometry": {
+              "triangles": 98,
+              "sourceTriangles": 4102,
+              "reduction": 0.9761,
+              "units": "mm"
+            },
+            "bounds": {
+              "min": [
+                -52.62421984732827,
+                -81.58810212765958,
+                1348.458269720102
+              ],
+              "max": [
+                -22.824317910447775,
+                -71.7835,
+                1448.61
+              ]
+            },
+            "file": "neck/asi-neck-scalenes-FJ1593.glb",
+            "sourceLabel": "right scalenus medius"
+          },
+          {
+            "meshName": "FJ1594",
+            "fma": {
+              "conceptId": "13388",
+              "status": "unverified",
+              "note": "BodyParts3D 4.3i concept list; not yet checked against FMA Explorer"
+            },
+            "source": {
+              "dataset": "BodyParts3D",
+              "release": "4.0",
+              "conceptId": "FMA:13388",
+              "archive": "isa_BP3D_4.0_obj_99.zip",
+              "doi": "10.18908/lsdba.nbdc00837-000",
+              "retrievedAt": null
+            },
+            "laterality": "right",
+            "geometry": {
+              "triangles": 248,
+              "sourceTriangles": 2778,
+              "reduction": 0.9107,
+              "units": "mm"
+            },
+            "bounds": {
+              "min": [
+                -71.89138590604033,
+                -80.2018,
+                1342.0752348993285
+              ],
+              "max": [
+                -26.3027,
+                -56.25669411764705,
+                1402.9399999999998
+              ]
+            },
+            "file": "neck/asi-neck-scalenes-FJ1594.glb",
+            "sourceLabel": "right scalenus posterior"
+          }
+        ]
+      }
+    },
+    {
+      "asiId": "asi:neck.cervical-spine",
+      "meshName": null,
+      "region": "neck",
+      "subRegionIds": [
+        "neck.anterior",
+        "neck.lateral",
+        "neck.posterior"
+      ],
+      "layer": "bone",
+      "anatomicalLabel": "Cervical spine",
+      "layTerm": "the neck bones",
+      "laterality": "midline",
+      "fma": null,
+      "source": null,
+      "licence": {
+        "id": "CC-BY-4.0",
+        "name": "Creative Commons Attribution 4.0 International",
+        "url": "https://dbarchive.biosciencedbc.jp/en/bodyparts3d/lic.html",
+        "attribution": "BodyParts3D, (c) The Database Center for Life Science licensed under CC Attribution 4.0 International",
+        "verifiedOn": "2025-02-27"
+      },
+      "geometry": {
+        "triangles": 2232,
+        "sourceTriangles": 15212,
+        "reduction": 0.8533,
+        "units": "mm"
+      },
+      "bounds": {
+        "min": [
+          -39.40745,
+          -91.10480000000001,
+          1366.468695652174
+        ],
+        "max": [
+          40.2307,
+          -21.2664,
+          1480.995
+        ]
+      },
+      "file": null,
+      "composite": {
+        "selectable": false,
+        "reason": "the source models each cervical vertebra separately (atlas, axis, C3-C7); one canonical selection covers all seven",
+        "components": [
+          {
+            "meshName": "FJ3176",
+            "fma": {
+              "conceptId": "12519",
+              "status": "unverified",
+              "note": "BodyParts3D 4.3i concept list; not yet checked against FMA Explorer"
+            },
+            "source": {
+              "dataset": "BodyParts3D",
+              "release": "4.0",
+              "conceptId": "FMA:12519",
+              "archive": "isa_BP3D_4.0_obj_99.zip",
+              "doi": "10.18908/lsdba.nbdc00837-000",
+              "retrievedAt": null
+            },
+            "laterality": "midline",
+            "geometry": {
+              "triangles": 200,
+              "sourceTriangles": 2094,
+              "reduction": 0.9045,
+              "units": "mm"
+            },
+            "bounds": {
+              "min": [
+                -39.40745,
+                -83.51466111111112,
+                1464.5002564102567
+              ],
+              "max": [
+                40.2307,
+                -42.04531481481482,
+                1480.995
+              ]
+            },
+            "file": "neck/asi-neck-cervical-spine-FJ3176.glb",
+            "sourceLabel": "atlas"
+          },
+          {
+            "meshName": "FJ3177",
+            "fma": {
+              "conceptId": "12520",
+              "status": "unverified",
+              "note": "BodyParts3D 4.3i concept list; not yet checked against FMA Explorer"
+            },
+            "source": {
+              "dataset": "BodyParts3D",
+              "release": "4.0",
+              "conceptId": "FMA:12520",
+              "archive": "isa_BP3D_4.0_obj_99.zip",
+              "doi": "10.18908/lsdba.nbdc00837-000",
+              "retrievedAt": null
+            },
+            "laterality": "midline",
+            "geometry": {
+              "triangles": 470,
+              "sourceTriangles": 2288,
+              "reduction": 0.7946,
+              "units": "mm"
+            },
+            "bounds": {
+              "min": [
+                -24.962933333333325,
+                -86.17096666666667,
+                1434.7185185185183
+              ],
+              "max": [
+                24.5742,
+                -38.2568,
+                1477.1881818181819
+              ]
+            },
+            "file": "neck/asi-neck-cervical-spine-FJ3177.glb",
+            "sourceLabel": "axis"
+          },
+          {
+            "meshName": "FJ3161",
+            "fma": {
+              "conceptId": "12521",
+              "status": "unverified",
+              "note": "BodyParts3D 4.3i concept list; not yet checked against FMA Explorer"
+            },
+            "source": {
+              "dataset": "BodyParts3D",
+              "release": "4.0",
+              "conceptId": "FMA:12521",
+              "archive": "isa_BP3D_4.0_obj_99.zip",
+              "doi": "10.18908/lsdba.nbdc00837-000",
+              "retrievedAt": null
+            },
+            "laterality": "midline",
+            "geometry": {
+              "triangles": 286,
+              "sourceTriangles": 2030,
+              "reduction": 0.8591,
+              "units": "mm"
+            },
+            "bounds": {
+              "min": [
+                -28.48646875,
+                -87.306,
+                1418.6606451612902
+              ],
+              "max": [
+                28.5393,
+                -39.3444725,
+                1444.9
+              ]
+            },
+            "file": "neck/asi-neck-cervical-spine-FJ3161.glb",
+            "sourceLabel": "third cervical vertebra"
+          },
+          {
+            "meshName": "FJ3164",
+            "fma": {
+              "conceptId": "12522",
+              "status": "unverified",
+              "note": "BodyParts3D 4.3i concept list; not yet checked against FMA Explorer"
+            },
+            "source": {
+              "dataset": "BodyParts3D",
+              "release": "4.0",
+              "conceptId": "FMA:12522",
+              "archive": "isa_BP3D_4.0_obj_99.zip",
+              "doi": "10.18908/lsdba.nbdc00837-000",
+              "retrievedAt": null
+            },
+            "laterality": "midline",
+            "geometry": {
+              "triangles": 326,
+              "sourceTriangles": 2410,
+              "reduction": 0.8647,
+              "units": "mm"
+            },
+            "bounds": {
+              "min": [
+                -25.88891111111111,
+                -88.80769999999998,
+                1406.0572727272727
+              ],
+              "max": [
+                26.3775,
+                -41.751000000000005,
+                1432.045
+              ]
+            },
+            "file": "neck/asi-neck-cervical-spine-FJ3164.glb",
+            "sourceLabel": "fourth cervical vertebra"
+          },
+          {
+            "meshName": "FJ3167",
+            "fma": {
+              "conceptId": "12523",
+              "status": "unverified",
+              "note": "BodyParts3D 4.3i concept list; not yet checked against FMA Explorer"
+            },
+            "source": {
+              "dataset": "BodyParts3D",
+              "release": "4.0",
+              "conceptId": "FMA:12523",
+              "archive": "isa_BP3D_4.0_obj_99.zip",
+              "doi": "10.18908/lsdba.nbdc00837-000",
+              "retrievedAt": null
+            },
+            "laterality": "midline",
+            "geometry": {
+              "triangles": 352,
+              "sourceTriangles": 2196,
+              "reduction": 0.8397,
+              "units": "mm"
+            },
+            "bounds": {
+              "min": [
+                -28.4733,
+                -89.9258,
+                1395.4231578947367
+              ],
+              "max": [
+                28.3332,
+                -37.288061290322574,
+                1417.6844444444444
+              ]
+            },
+            "file": "neck/asi-neck-cervical-spine-FJ3167.glb",
+            "sourceLabel": "fifth cervical vertebra"
+          },
+          {
+            "meshName": "FJ3170",
+            "fma": {
+              "conceptId": "12524",
+              "status": "unverified",
+              "note": "BodyParts3D 4.3i concept list; not yet checked against FMA Explorer"
+            },
+            "source": {
+              "dataset": "BodyParts3D",
+              "release": "4.0",
+              "conceptId": "FMA:12524",
+              "archive": "isa_BP3D_4.0_obj_99.zip",
+              "doi": "10.18908/lsdba.nbdc00837-000",
+              "retrievedAt": null
+            },
+            "laterality": "midline",
+            "geometry": {
+              "triangles": 318,
+              "sourceTriangles": 2374,
+              "reduction": 0.866,
+              "units": "mm"
+            },
+            "bounds": {
+              "min": [
+                -29.499972727272723,
+                -91.10480000000001,
+                1383.8380000000002
+              ],
+              "max": [
+                28.689241025641024,
+                -29.1794,
+                1403.8462499999998
+              ]
+            },
+            "file": "neck/asi-neck-cervical-spine-FJ3170.glb",
+            "sourceLabel": "sixth cervical vertebra"
+          },
+          {
+            "meshName": "FJ3172",
+            "fma": {
+              "conceptId": "12525",
+              "status": "unverified",
+              "note": "BodyParts3D 4.3i concept list; not yet checked against FMA Explorer"
+            },
+            "source": {
+              "dataset": "BodyParts3D",
+              "release": "4.0",
+              "conceptId": "FMA:12525",
+              "archive": "isa_BP3D_4.0_obj_99.zip",
+              "doi": "10.18908/lsdba.nbdc00837-000",
+              "retrievedAt": null
+            },
+            "laterality": "midline",
+            "geometry": {
+              "triangles": 280,
+              "sourceTriangles": 1820,
+              "reduction": 0.8462,
+              "units": "mm"
+            },
+            "bounds": {
+              "min": [
+                -31.829473684210527,
+                -89.3702625,
+                1366.468695652174
+              ],
+              "max": [
+                31.1332,
+                -21.2664,
+                1390.6026666666667
+              ]
+            },
+            "file": "neck/asi-neck-cervical-spine-FJ3172.glb",
+            "sourceLabel": "seventh cervical vertebra"
+          }
+        ]
+      }
+    }
+  ]
+}
+;
+
+export const CANONICAL_ANATOMY_MANIFEST = CANONICAL_MANIFEST_JSON as unknown as AssetManifest;
+
+/**
+ * Where this side's generated geometry is served from.
+ *
+ * Per side, so the two builds cannot collide on a path. The renderer does not
+ * hardcode this: it is read from the manifest and passed to the adapter.
+ */
+export const CANONICAL_ASSET_ROOT = '/anatomy/neck/right/';
+
+/** The side this build represents, as a fact carried in the manifest itself. */
+export const CANONICAL_SIDE = 'right' as const;
+
+/** The region this build represents, so a caller cannot mix scenes. */
+export const CANONICAL_REGION = 'neck' as const;

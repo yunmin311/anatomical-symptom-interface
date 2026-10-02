@@ -97,17 +97,7 @@ export function answerSections(
 ) {
   const groups = new Map<string, { label: string; value: string }[]>();
   for (const question of INTERVIEW[record.location.region]) {
-    const title = question.safetyRuleId
-      ? "Safety questions"
-      : question.field.startsWith("temporal.")
-        ? "Timeline"
-        : question.field.startsWith("function.")
-          ? "Functional impact"
-          : question.field.startsWith("location.")
-            ? "Location details"
-            : question.field.startsWith("context.")
-              ? "Additional context"
-              : "Symptom characteristics";
+      const title = sectionTitleFor(question.field, question.safetyRuleId);
     const answer = answers[question.id];
     const raw = answer
       ? Array.isArray(answer.raw)
@@ -133,4 +123,45 @@ export function answerSections(
     ]);
   }
   return [...groups].map(([title, rows]) => ({ title, rows }));
+}
+
+/**
+ * Which section a question is grouped under.
+ *
+ * Exported because the grouping drives BOTH the rendered rows and the edit controls in
+ * RecordDetails. Duplicating this rule in the two places is how "Safety questions" ends
+ * up with rows but no edit links: both copies look right right up to the day one changes.
+ */
+export function sectionTitleFor(field: string, safetyRuleId?: string): string {
+  return safetyRuleId
+    ? "Safety questions"
+    : field.startsWith("temporal.")
+      ? "Timeline"
+      : field.startsWith("function.")
+        ? "Functional impact"
+        : field.startsWith("location.")
+          ? "Location details"
+          : field.startsWith("context.")
+            ? "Additional context"
+            : "Symptom characteristics";
+}
+
+/**
+ * The answers belonging to one section, in question order.
+ *
+ * The edit controls are driven from this rather than from the row labels, because the
+ * rows are strings built for reading while an edit needs the question id.
+ */
+export function answersInSection(
+  record: import("@asi/shared").SymptomRecord,
+  answers: import("@asi/shared").AnswerMap,
+  title: string,
+): import("@asi/shared").QuestionAnswer[] {
+  return INTERVIEW[record.location.region]
+    .filter(
+      (q) =>
+        sectionTitleFor(q.field, q.safetyRuleId) === title && answers[q.id] !== undefined,
+    )
+    .map((q) => answers[q.id])
+    .filter((a): a is NonNullable<typeof a> => a !== undefined);
 }

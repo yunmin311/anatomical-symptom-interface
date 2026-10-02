@@ -8,6 +8,7 @@
  */
 import { z } from 'zod';
 import { BodyRegionSchema, ConsideredStructureSchema, SideSchema, DepthSchema } from './anatomy.ts';
+import { canonicalStructureIdList } from './anatomy-mapping-neck.ts';
 import { ProvenanceSchema } from './provenance.ts';
 
 /* ---------------- Symptom attributes (§3.2) ---------------- */
@@ -240,9 +241,18 @@ export function projectUserSelection(record: SymptomRecord): SymptomRecord {
   //
   // First-occurrence-wins also makes the operation idempotent, which is what
   // lets this run on every read without the record drifting.
+  //
+  // `canonicalStructureIdList` resolves RETIRED ids as well as duplicates, and it runs
+  // HERE rather than in the field-store validator on purpose: the raw store is a
+  // faithful log of what arrived, and rewriting a retired id on the way in would
+  // destroy the evidence that one was ever written. Running on every read also makes it
+  // idempotent, so a record written before a retirement keeps resolving without a
+  // migration -- and a retired id can never persist as a second truth about one
+  // structure.
+  const canonical = canonicalStructureIdList(record.location.userSelectedStructureIds);
   const ordered: string[] = [];
   const seen = new Set<string>();
-  for (const id of record.location.userSelectedStructureIds) {
+  for (const id of canonical) {
     if (seen.has(id)) continue;
     seen.add(id);
     ordered.push(id);
@@ -257,7 +267,9 @@ export function projectUserSelection(record: SymptomRecord): SymptomRecord {
   // projecting an already-canonical record allocates nothing. This runs on every
   // read, and a fresh `location` object on each one would break identity checks
   // for callers watching `record.location` in the client.
-  const unchanged = ordered.length === record.location.userSelectedStructureIds.length;
+  const unchanged =
+    ordered.length === record.location.userSelectedStructureIds.length &&
+    record.location.userSelectedStructureIds.every((id, i) => id === ordered[i]);
   const location = unchanged
     ? record.location
     : { ...record.location, userSelectedStructureIds: ordered };

@@ -120,12 +120,45 @@ export interface RendererSceneEntry {
       }
     | {
         type: 'url';
+        /**
+         * For a plain entry. A COMPOSITE sets this to '' and lists `components`
+         * instead -- one selectable structure may be several sourced meshes (a cervical
+         * spine is seven vertebrae), and a single url here would let the renderer load
+         * one of them and silently drop the rest.
+         */
         url: string;
         /** Sub-range of the asset to use, when one file holds many parts. */
         nodeName?: string;
         position?: [number, number, number];
         scale?: [number, number, number];
         rotation?: [number, number, number];
+        /**
+         * Several sourced meshes that together ARE this one canonical structure.
+         *
+         * Every component keeps its own mesh id, source concept, laterality and URL.
+         * The renderer mounts all of them and indexes them so a raycast on any of them
+         * resolves to the PARENT `asiId` -- which is the whole point: one canonical
+         * identity, several pieces of real anatomy.
+         *
+         * Never inferred from filenames or matching labels. A composite is stated by
+         * the manifest, which got it from the mapping, which read the source.
+         */
+        components?: readonly {
+          url: string;
+          meshName: string;
+          conceptId: string | null;
+          laterality: Laterality;
+          label?: string | null;
+        }[];
+        /**
+         * Whether the components are ALSO separately selectable canonical structures.
+         *
+         * True for the deltoid, whose parts each have their own `asi:` id. False for
+         * cervical vertebrae, which are parts of one thing a user pointed at. It is
+         * what stops composite support from turning every source mesh into a
+         * user-facing concept.
+         */
+        selectable?: boolean;
       };
   /**
    * Camera-framing metadata CONVERTED from the canonical `bounds`.
@@ -156,7 +189,28 @@ export interface RendererSceneEntry {
    * `asiId`: third-party terminologies get re-numbered and renamed, and an
    * upstream rename must not repoint a saved selection.
    */
-  provenance?: { meshName: string; dataset: string; release: string; conceptId?: string | null };
+  provenance?: {
+    /**
+     * The single source mesh, PROVENANCE ONLY. Null on a composite, which has no mesh
+     * of its own -- claiming one would be a lie about seven vertebrae.
+     */
+    meshName: string | null;
+    dataset: string;
+    release: string;
+    conceptId?: string | null;
+    /**
+     * One entry per sourced component, each with its own claim.
+     *
+     * Present only when `geometry.components` is. Keeping these per-component is the
+     * point: a clinician citing the atlas is not citing C7, and a provenance field
+     * that could hold only one would force a fabricated merged claim.
+     */
+    components?: readonly {
+      meshName: string;
+      conceptId: string | null;
+      laterality: Laterality;
+    }[];
+  };
 }
 
 /**
@@ -269,15 +323,44 @@ export function indexScene(manifest: RendererSceneManifest): Map<string, Rendere
       );
 
     if (entry.geometry.type === 'url') {
-      if (!entry.geometry.url.trim())
-        throw new SceneManifestError(`entry ${entry.asiId} has url geometry with no url`);
-      // A blank nodeName would silently mean "the whole file", which is the one
-      // reading an author almost never intends and cannot notice.
-      if (entry.geometry.nodeName !== undefined && !entry.geometry.nodeName.trim())
+if (entry.geometry.components && entry.geometry.components.length) {
+    // A composite MUST carry components and MUST NOT also carry a usable url: the
+    // renderer mounts `components`, so a populated url alongside them would be a second
+    // answer nobody reads, and an empty one with no components is an entry that loads
+    // nothing.
+    if (entry.geometry.url.trim())
+      throw new SceneManifestError(
+        `entry ${entry.asiId} declares composite components AND a url; a composite is mounted from its components`,
+      );
+    const names = new Set<string>();
+    for (const component of entry.geometry.components) {
+      if (!component.url.trim())
         throw new SceneManifestError(
-          `entry ${entry.asiId} has a nodeName that is present but blank; omit it to use the whole asset`,
+          `entry ${entry.asiId} has a component with no url: ${component.meshName}`,
         );
+      if (!component.meshName.trim())
+        throw new SceneManifestError(
+          `entry ${entry.asiId} has a component with no source mesh id`,
+        );
+      if (names.has(component.meshName))
+        throw new SceneManifestError(
+          `entry ${entry.asiId} lists component ${component.meshName} twice`,
+        );
+      names.add(component.meshName);
     }
+  } else {
+    if (!entry.geometry.url.trim())
+      throw new SceneManifestError(
+        `entry ${entry.asiId} has url geometry with neither a url nor composite components`,
+      );
+  }
+  // A blank nodeName would silently mean "the whole file", which is the one
+  // reading an author almost never intends and cannot notice.
+  if (entry.geometry.nodeName !== undefined && !entry.geometry.nodeName.trim())
+    throw new SceneManifestError(
+      `entry ${entry.asiId} has a nodeName that is present but blank; omit it to use the whole asset`,
+    );
+  }
     index.set(entry.asiId, entry);
   }
   if (index.size === 0) throw new SceneManifestError('scene has no entries');

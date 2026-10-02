@@ -107,11 +107,14 @@ test('two meshes cannot claim the same asiId', () => {
 });
 
 test('two meshes cannot share a source mesh name', () => {
+  // Two canonical ids naming the same source mesh is how one anatomical element
+  // becomes two identities, so it is an error whether they are plain entries or a
+  // plain entry plus a composite component.
   const m = manifest([
     entry(),
     entry({ asiId: 'asi:shoulder.infraspinatus', layer: 'muscle', subRegionIds: ['shoulder.posterior'] }),
   ]);
-  assert.match(errors(m).map((e) => e.message).join(' '), /duplicate meshName/);
+  assert.match(errors(m).map((e) => e.message).join(' '), /mesh is used more than once/);
 });
 
 test('renaming a mesh in the source does not change the asiId', () => {
@@ -133,10 +136,40 @@ test('a layer that disagrees with anatomy.ts is an error', () => {
   assert.match(errors(m)[0]!.message, /layer disagrees with the domain/);
 });
 
-test('an asiId whose prefix does not match the declared region is an error', () => {
+test('an asiId that is not a member of the declared region is an error', () => {
+  // ONTOLOGY membership, not id prefixes. It used to be a prefix test, and it was
+  // wrong twice over: it rejected four correct lower-back entries (the region is
+  // `lower_back` while its structures are prefixed `asi:lower-back.`), and it could not
+  // express the real case of a structure that legitimately belongs to two regions.
   const m = manifest([entry({ region: 'knee' })]);
   const msgs = errors(m).map((e) => e.message).join(' ');
-  assert.match(msgs, /prefix does not match|does not exist/);
+  assert.match(msgs, /is not a member of the declared region knee/);
+  assert.match(msgs, /it belongs to shoulder/, 'the error should say where it does belong');
+});
+
+test('a structure may be an entry for any region it belongs to', () => {
+  // The upper trapezius is the worked example: ONE canonical id, listed in the shoulder
+  // sub-regions AND the neck sub-regions, with one mesh and one provenance. A neck
+  // manifest carrying it must validate, which the old prefix rule could not do -- it
+  // would have read `asi:shoulder.` and rejected a correct entry.
+  //
+  // It appears ONCE per manifest. Two regions means two manifests, each with one
+  // entry; a single manifest listing it twice is the duplicate-as-two-truths error the
+  // alias work exists to prevent, and it is checked below.
+  const neckEntry = entry({
+    asiId: 'asi:shoulder.trapezius-upper',
+    region: 'neck',
+    subRegionIds: ['neck.posterior'],
+    layer: 'muscle',
+    file: 'neck/asi-shoulder-trapezius-upper.glb',
+  });
+  assert.deepEqual(
+    errors(manifest([neckEntry], { regions: ['neck'] })),
+    [],
+  );
+
+  const twice = manifest([neckEntry, { ...neckEntry, file: 'neck/other.glb' }]);
+  assert.match(errors(twice).map((e) => e.message).join(' '), /duplicate asiId/);
 });
 
 test('an unknown sub-region is an error', () => {
@@ -217,9 +250,11 @@ test('a tight budget reports the mesh that broke it', () => {
 
 test('a manifest file size budget is enforced when sizes are supplied', () => {
   const m = manifest([entry()]);
-  const good = validateManifest(m, { fileSizes: new Map([[entry().file, 1024]]) });
+  const file = entry().file;
+  assert.ok(file, 'the plain fixture entry must name a file');
+  const good = validateManifest(m, { fileSizes: new Map([[file, 1024]]) });
   assert.deepEqual(good.filter((i) => i.severity === 'error'), []);
-  const over = validateManifest(m, { budget: { ...DEFAULT_GEOMETRY_BUDGET, maxTotalBytes: 10 }, fileSizes: new Map([[entry().file, 9999]]) });
+  const over = validateManifest(m, { budget: { ...DEFAULT_GEOMETRY_BUDGET, maxTotalBytes: 10 }, fileSizes: new Map([[file, 9999]]) });
   assert.ok(over.some((i) => i.severity === 'error' && /bytes, over the budget/.test(i.message)));
 });
 

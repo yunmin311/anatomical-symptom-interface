@@ -678,7 +678,50 @@ test('an empty url is rejected', () => {
   ]);
   assert.throws(
     () => new Three3dAnatomyAdapter({ manifest }),
-    (error: unknown) => error instanceof SceneManifestError && /no url/.test(String(error)),
+    // The wording changed when composites arrived: a blank url is no longer
+    // necessarily a mistake (a composite carries its geometry in `components`), so the
+    // error now says what is actually missing rather than blaming the url alone.
+    (error: unknown) =>
+      error instanceof SceneManifestError &&
+      /neither a url nor composite components/.test(String(error)),
+  );
+});
+
+test('a composite needs components, and must not also carry a url', () => {
+  // Both halves of the contract, because either alone is exploitable: a composite with
+  // a populated url has a second answer nobody reads, and an entry with neither loads
+  // nothing while claiming to be a structure.
+  const withBoth = urlManifest([
+    structureEntry({
+      asiId: 'asi:neck.cervical-spine',
+      geometry: {
+        type: 'url',
+        url: '/anatomy/neck/left/asi-neck-cervical-spine.glb',
+        components: [{ url: '/a.glb', meshName: 'FJ3176', conceptId: '12519', laterality: 'midline' }],
+      },
+    }),
+  ]);
+  assert.throws(
+    () => new Three3dAnatomyAdapter({ manifest: withBoth }),
+    (error: unknown) => error instanceof SceneManifestError && /composite components AND a url/.test(String(error)),
+  );
+
+  const duplicate = urlManifest([
+    structureEntry({
+      asiId: 'asi:neck.cervical-spine',
+      geometry: {
+        type: 'url',
+        url: '',
+        components: [
+          { url: '/a.glb', meshName: 'FJ3176', conceptId: '12519', laterality: 'midline' },
+          { url: '/b.glb', meshName: 'FJ3176', conceptId: '12519', laterality: 'midline' },
+        ],
+      },
+    }),
+  ]);
+  assert.throws(
+    () => new Three3dAnatomyAdapter({ manifest: duplicate }),
+    (error: unknown) => error instanceof SceneManifestError && /twice/.test(String(error)),
   );
 });
 

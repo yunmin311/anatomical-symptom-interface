@@ -99,6 +99,16 @@ export type Stage = 'describe' | 'locate' | 'clarify' | 'interview' | 'review' |
 
 interface SessionState {
   stage: Stage;
+  /**
+   * The question the user is correcting, or null.
+   *
+   * Held as an explicit target rather than by rewinding a cursor, because "which
+   * question is next" is derived from which questions are unanswered and an edit does
+   * not change that -- it only changes what is on screen.
+   */
+  editingQuestionId: string | null;
+  startEditAnswer: (questionId: string) => void;
+  cancelEditAnswer: () => void;
   utterance: string;
   busy: boolean;
   error: string | null;
@@ -182,6 +192,13 @@ export const useSession = create<SessionState>((set, get) => {
 
   return {
     stage: 'describe',
+    editingQuestionId: null,
+
+    startEditAnswer: (questionId) => {
+      set({ editingQuestionId: questionId, stage: 'interview' });
+    },
+
+    cancelEditAnswer: () => set({ editingQuestionId: null }),
     utterance: '',
     busy: false,
     error: null,
@@ -358,14 +375,18 @@ export const useSession = create<SessionState>((set, get) => {
     },
 
     answer: (questionId, raw, triState) => {
+      // Whether this is an edit is read BEFORE the state is written, because writing the
+      // answer clears the edit target.
+      const editing = get().editingQuestionId === questionId;
       const { record, answers, wroteFields, answer } = recordAnswer(
         get().record,
         get().answers,
         questionId,
         raw,
         triState,
+        { edited: editing },
       );
-      set({ record, answers, error: null });
+      set({ record, answers, error: null, editingQuestionId: null });
       reevaluate(record, answers);
 
       // Persist asynchronously. A failure here must not desynchronise the UI,

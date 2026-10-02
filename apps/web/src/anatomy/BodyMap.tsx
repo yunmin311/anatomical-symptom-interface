@@ -251,6 +251,7 @@ export function BodyMap() {
 <Body3d
             active={surface === '3d'}
             side={location.side}
+            region={location.region}
             onPick={handlePick}
               onStatus={(next) => {
                 setThreeDReady(next.mode === '3d');

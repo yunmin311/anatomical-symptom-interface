@@ -170,6 +170,60 @@ test('re-answering a question replaces the previous answer rather than adding', 
   assert.equal(triStateOf(second.answers, 'knee.locking'), 'no');
 });
 
+test('a first answer is a statement and a correction is marked as an edit', () => {
+  const first = recordAnswer(emptyRecord('knee'), {}, 'knee.locking', 'yes', 'yes');
+  assert.equal(
+    first.answers['knee.locking']?.provenance.sourceType,
+    'user_statement',
+  );
+
+  // Re-answering WITHOUT the flag stays a statement, because the flag is what says
+  // "this replaces something you already told us". Inferring it here would mean a
+  // correction and a duplicate answer were indistinguishable, which is exactly the
+  // distinction a clinician reads the record for.
+  const silent = recordAnswer(first.record, first.answers, 'knee.locking', 'no', 'no');
+  assert.equal(
+    silent.answers['knee.locking']?.provenance.sourceType,
+    'user_statement',
+  );
+
+  const edited = recordAnswer(
+    first.record,
+    first.answers,
+    'knee.locking',
+    'no',
+    'no',
+    { edited: true },
+  );
+  assert.equal(
+    edited.answers['knee.locking']?.provenance.sourceType,
+    'user_edited',
+  );
+});
+
+test('an edit recomputes the record from the corrected answer, not the original', () => {
+  const first = recordAnswer(emptyRecord('knee'), {}, 'knee.swelling', 'rapid', 'yes');
+  assert.equal(first.record.quality.includes('swelling'), true);
+
+  const corrected = recordAnswer(
+    first.record,
+    first.answers,
+    'knee.swelling',
+    'none',
+    'yes',
+    { edited: true },
+  );
+  assert.equal(
+    corrected.record.quality.includes('swelling'),
+    false,
+    'the withdrawn answer still drove the record after a correction',
+  );
+  assert.equal(
+    corrected.answers['knee.swelling']?.provenance.sourceType,
+    'user_edited',
+  );
+});
+
 test('the question queue advances and reports outstanding items', () => {
   const start = run('lower_back', []);
   const first = peekNextQuestion(start.record, start.answers)!;

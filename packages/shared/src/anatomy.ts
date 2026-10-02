@@ -166,6 +166,28 @@ const structure = (
   coding: { status: 'unverified' },
 });
 
+/**
+ * Canonical anatomical identity is NOT region membership.
+ *
+ * One structure can belong to several regions and sub-regions, and then it has exactly
+ * ONE id and ONE source provenance. The first case this actually bit was the upper
+ * trapezius: the shoulder and the neck both declared it, under two different ids, with
+ * the same label, and the source audit showed both resolved to the SAME source concept
+ * (ascending part of trapezius). Two ids for one structure is not a modelling
+ * convenience -- it is two persisted truths about one thing, and a record could name
+ * either and be "right".
+ *
+ * So `shoulder.trapezius-upper` is now listed in the neck sub-regions as well. The
+ * `shoulder` prefix records where the user first meets the structure, not exclusive
+ * ownership of it. The retired id and the reason are in
+ * `anatomy-mapping-neck.ts` (`RETIRED_CANONICAL_IDS`), and `canonicalStructureId`
+ * resolves it, so anything holding the old value still lands on the one canonical
+ * identity.
+ *
+ * The consequence for storage: `location.userSelectedStructureIds` holds canonical
+ * structure identities, and one structure selected from two regions is still ONE entry.
+ *
+
 /* ------------------------------------------------------------------ */
 /* Region definitions — V1 scope: shoulder, neck, lower back, knee      */
 /* ------------------------------------------------------------------ */
@@ -283,7 +305,7 @@ const NECK: RegionDefinition = {
       mapId: 'neck-lateral',
       structures: [
         structure('neck.scalenes', 'Scalene muscles', 'muscle', 'lateral', 'the muscles along the side of the neck down to the ribs'),
-        structure('neck.upper-trapezius', 'Upper trapezius', 'muscle', 'lateral', 'the muscle from the neck to the top of the shoulder'),
+        structure('shoulder.trapezius-upper', 'Upper trapezius', 'muscle', 'lateral', 'the muscle from the neck to the top of the shoulder'),
         structure('neck.brachial-plexus', 'Brachial plexus', 'nerve', 'deep', 'the network of nerves from the neck into the arm', ['nerve root', 'cervical nerve root']),
         structure('neck.cervical-spine', 'Cervical spine', 'bone', 'deep', 'the neck bones'),
         structure('neck.sternocleidomastoid', 'Sternocleidomastoid', 'muscle', 'lateral', 'the band running from behind the ear to the collarbone', ['SCM']),
@@ -294,7 +316,7 @@ const NECK: RegionDefinition = {
       label: 'Back of neck',
       mapId: 'neck-posterior',
       structures: [
-        structure('neck.upper-trapezius', 'Upper trapezius', 'muscle', 'posterior', 'the muscle from the neck to the top of the shoulder'),
+        structure('shoulder.trapezius-upper', 'Upper trapezius', 'muscle', 'posterior', 'the muscle from the neck to the top of the shoulder'),
         structure('neck.levator-scapulae', 'Levator scapulae', 'muscle', 'posterior', 'the muscle from the neck to the shoulder blade'),
         structure('neck.suboccipital', 'Suboccipital muscles', 'muscle', 'posterior', 'the small muscles at the base of the skull'),
         structure('neck.cervical-spine', 'Cervical spine', 'bone', 'deep', 'the neck bones'),
@@ -485,6 +507,24 @@ export function structuresForRegion(region: BodyRegion, subRegionId?: string): S
   return def.subRegions.find((s) => s.id === subRegionId)?.structures ?? [];
 }
 
+/**
+ * Which regions a structure belongs to, read from the ONTOLOGY.
+ *
+ * Not from the id. The id prefix records where a user first meets a structure and is not
+ * authoritative: `shoulder.trapezius-upper` also belongs to the neck, and the lower back
+ * region's structures are prefixed `asi:lower-back.` while the region itself is spelled
+ * `lower_back` -- so a prefix check rejects four perfectly good lower-back entries.
+ *
+ * It failed in exactly that way, and the fix is not a longer prefix rule. Membership is
+ * declared where structures are declared, and this reads that.
+ */
+export function regionsForStructure(asiId: string): BodyRegion[] {
+  const out: BodyRegion[] = [];
+  for (const region of Object.keys(REGIONS) as BodyRegion[])
+    if (structuresForRegion(region).some((s) => s.id === asiId) && !out.includes(region)) out.push(region);
+  return out;
+}
+
 export function getSubRegion(region: BodyRegion, subRegionId: string): SubRegion | undefined {
   return REGIONS[region].subRegions.find((s) => s.id === subRegionId);
 }
@@ -501,7 +541,19 @@ export function structureIdPrefix(region: BodyRegion): string {
   return STRUCTURE_PREFIX[region];
 }
 
+/**
+ * Does this structure belong to this region?
+ *
+ * Read from the ONTOLOGY, not the id prefix. The prefix is not authoritative and this
+ * was a live bug: it answered `false` for `asi:shoulder.trapezius-upper` in the neck,
+ * because the prefix says `shoulder`. That structure IS in the neck -- a user who says
+ * "the muscle from my neck to my shoulder" is naming it -- and a prefix answer meant
+ * grounding could never propose it for a neck complaint.
+ *
+ * `structureIdPrefix` stays for callers that genuinely want the naming convention, such
+ * as a hint, and it is no longer load-bearing for membership anywhere.
+ */
 export function structureBelongsToRegion(id: string, region: BodyRegion): boolean {
-  return id.startsWith(STRUCTURE_PREFIX[region]);
+  return REGIONS[region].subRegions.some((s) => s.structures.some((st) => st.id === id));
 }
 

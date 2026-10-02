@@ -57,7 +57,21 @@ export const QuestionAnswerSchema = z.object({
   /** The record fields this answer is allowed to write. Used for validation. */
   wroteFields: z.array(z.string()).default([]),
   provenance: z.object({
-    sourceType: z.literal('user_statement'),
+    /**
+     * `user_statement` for a first answer, `user_edited` for a correction.
+     *
+     * This was `z.literal('user_statement')`, which made a correction
+     * UNREPRESENTABLE rather than merely unrecorded: the store could write
+     * `user_edited` and the reader would then fail to parse the row and drop the
+     * answer entirely. A user correcting a safety question would have lost the answer
+     * rather than marked it.
+     *
+     * The two values are the only ones an ANSWER may carry. Anything else -- an AI
+     * proposal, a clinician assertion -- describes who produced the statement, and
+     * answers are the user's by definition; a value from outside that set must fail
+     * loudly rather than be quietly accepted.
+     */
+    sourceType: z.enum(['user_statement', 'user_edited']),
     capturedAt: z.string().datetime(),
     verificationStatus: z.literal('unverified'),
     createdBy: z.string(),
@@ -142,7 +156,14 @@ export interface BuildAnswerInput {
   /** Only set for genuinely yes/no questions. */
   triState?: 'yes' | 'no' | 'unknown';
   wroteFields?: string[];
-  provenance: Pick<Provenance, 'capturedAt' | 'createdBy' | 'rawText'>;
+  provenance: Pick<Provenance, 'capturedAt' | 'createdBy' | 'rawText'> & {
+    /**
+     * Optional, because most answers ARE first answers and requiring it everywhere would
+     * push the common case to spell out the default. When present it must be one of the
+     * two values an answer may carry -- see QuestionAnswerSchema.
+     */
+    sourceType?: 'user_statement' | 'user_edited';
+  };
 }
 
 export function buildAnswer(input: BuildAnswerInput): QuestionAnswer {
@@ -152,7 +173,7 @@ export function buildAnswer(input: BuildAnswerInput): QuestionAnswer {
     triState: input.triState ?? normaliseYesNo(input.raw),
     wroteFields: input.wroteFields ?? [],
     provenance: {
-      sourceType: 'user_statement',
+      sourceType: input.provenance.sourceType ?? 'user_statement',
       capturedAt: input.provenance.capturedAt,
       verificationStatus: 'unverified',
       createdBy: input.provenance.createdBy,

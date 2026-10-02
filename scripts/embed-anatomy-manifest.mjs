@@ -47,19 +47,20 @@ const flag = (name, fallback) => {
   return i === -1 ? fallback : argv[i + 1];
 };
 
+const REGION = flag('region', 'shoulder');
 const SIDE = flag('side', 'left');
 // Per-side output. One shared directory was workable while only the left side
 // existed; with two sides it silently overwrote one with the other, which is the
 // kind of collision that produces a left manifest pointing at right GLBs.
-const GENERATED = join(ROOT, 'assets/anatomy/generated', SIDE);
-const WEB_PUBLIC = join(ROOT, 'apps/web/public/anatomy', SIDE);
+const GENERATED = join(ROOT, 'assets/anatomy/generated', REGION, SIDE);
+const WEB_PUBLIC = join(ROOT, 'apps/web/public/anatomy', REGION, SIDE);
 const WEB_MODULE_DIR = join(ROOT, 'apps/web/src/anatomy/generated');
 
 const ALLOW_SYNTHETIC = argv.includes('--allow-synthetic');
 
 async function main() {
-  if (!['left', 'right'].includes(SIDE)) {
-    console.error(`[anatomy] --side must be left or right, got ${SIDE}`);
+  if (!['left', 'right', 'midline'].includes(SIDE)) {
+    console.error(`[anatomy] --side must be left, right or midline, got ${SIDE}`);
     process.exitCode = 1;
     return;
   }
@@ -103,22 +104,71 @@ async function main() {
     return;
   }
 
+  console.log(`[anatomy] region            ${REGION}`);
   console.log(`[anatomy] side              ${SIDE}`);
   console.log(`[anatomy] manifest           ${manifest.entries.length} entries`);
-  const laterals = [...new Set(manifest.entries.map((e) => e.laterality))].sort();
-  const units = [...new Set(manifest.entries.map((e) => e.geometry.units))].sort();
-  if (laterals.length !== 1 || laterals[0] !== SIDE) {
+  // Per-ENTRY, not per-manifest. A build is not one laterality: a left neck scene
+  // legitimately contains left structures AND the midline cervical spine as context.
+  //
+  // The earlier check compared the SET of lateralities against --side and refused the
+  // build. That was correct while every entry really was one side, and became wrong the
+  // moment a midline composite existed -- the guard was right to fire and its rule was
+  // the thing that needed changing.
+  //
+  // A MIDLINE build is the opposite case and gets the opposite rule. Its whole claim is
+  // that it holds midline geometry and nothing else, so "or midline" would let every
+  // left and right entry through and embed a scene called midline that is a copy of the
+  // left shoulder. Midline means midline, exactly.
+  const wrongSide =
+    SIDE === 'midline'
+      ? manifest.entries.filter((e) => e.laterality !== 'midline')
+      : manifest.entries.filter((e) => e.laterality !== SIDE && e.laterality !== 'midline');
+  if (wrongSide.length) {
     console.error(
-      `[anatomy] REFUSING a ${SIDE} build whose manifest says laterality ${laterals.join('/')}.`,
+      `[anatomy] REFUSING a ${SIDE} build containing ${wrongSide.length} entr${
+        wrongSide.length === 1 ? 'y' : 'ies'
+      } of another side: ${wrongSide.map((e) => `${e.asiId}=${e.laterality}`).join(', ')}`,
     );
     console.error('[anatomy] the side is a fact from the source mapping, not a build flag.');
     process.exitCode = 1;
     return;
   }
-  console.log(`[anatomy] laterality         ${laterals.join(', ')} (verified)`);
+  const laterals = [...new Set(manifest.entries.map((e) => e.laterality))].sort();
+  const units = [...new Set(manifest.entries.map((e) => e.geometry.units))].sort();
+  const composites = manifest.entries.filter((e) => e.composite);
+  console.log(`[anatomy] laterality         ${laterals.join(', ')} (verified per entry)`);
+  console.log(
+    `[anatomy] composites          ${composites.length}` +
+      (composites.length
+        ? ` (${composites.map((e) => `${e.asiId.split(':')[1]} x${e.composite.components.length}`).join(', ')})`
+        : ''),
+  );
   console.log(`[anatomy] units             ${units.join(', ')}`);
   console.log(`[anatomy] dataset            ${manifest.licence.id}`);
   console.log(`[anatomy] synthetic          ${synthetic ? 'YES (test path)' : 'no'}`);
+
+  // --- the header claims, computed rather than assumed ---
+  //
+  // These used to be read off `entries[0]`, which crashed on a build whose first entry
+  // is a composite: a composite parent deliberately carries NO single `source`, because
+  // it does not have one. It also produced a comment that lied -- "every entry in this
+  // file carries laterality: left" is false for a left build, which legitimately carries
+  // the midline cervical spine as context, and true only for a midline build.
+  const sources = manifest.entries
+    .map((e) => e.source)
+    .filter((s) => s !== null);
+  const archiveName = sources[0]?.archive ?? 'unknown';
+  const datasetName = sources[0]
+    ? `${sources[0].dataset} ${sources[0].release}`
+    : 'unknown';
+  const lateralsInBuild = [...new Set(manifest.entries.map((e) => e.laterality))].sort();
+  const sideClaim =
+    lateralsInBuild.length === 1 && lateralsInBuild[0] === SIDE
+      ? `every entry in this file carries laterality: '${SIDE}'`
+      : `entries carry laterality ${lateralsInBuild.map((l) => `'${l}'`).join(' and ')} -- ` +
+        `this build represents ${SIDE}, and midline structures are context, not ${SIDE} anatomy`;
+  const unitsInBuild = [...new Set(manifest.entries.map((e) => e.geometry.units))].sort();
+  const unitsClaim = unitsInBuild.join(', ');
 
   // --- geometry: copy region directories, never anything else ---
   mkdirSync(WEB_PUBLIC, { recursive: true });
@@ -141,7 +191,7 @@ async function main() {
 
   // --- the manifest as a module ---
   mkdirSync(WEB_MODULE_DIR, { recursive: true });
-  const modulePath = join(WEB_MODULE_DIR, `canonical-manifest.${SIDE}.ts`);
+  const modulePath = join(WEB_MODULE_DIR, `canonical-manifest.${REGION}.${SIDE}.ts`);
   const body = `${JSON.stringify(manifest, null, 2)}\n`;
 
   writeFileSync(
@@ -150,7 +200,7 @@ async function main() {
  * GENERATED FILE. DO NOT EDIT.
  *
  * Produced by scripts/embed-anatomy-manifest.mjs from
- * assets/anatomy/generated/<side>/manifest.json.
+ * assets/anatomy/generated/<region>/<side>/manifest.json.
  *
  * The canonical anatomy manifest, as data. The app parses it through
  * \`parseManifest\` and converts it with \`toRendererScene\` at startup, so the
@@ -159,10 +209,10 @@ async function main() {
  *
  * Provenance: ${manifest.licence.attribution}
  * Licence:    ${manifest.licence.name} (${manifest.licence.id}) -- ${manifest.licence.url}
- * Archive:    ${manifest.entries[0]?.source.archive ?? 'unknown'}
- * Dataset:    ${manifest.entries[0]?.source.dataset ?? 'unknown'} ${manifest.entries[0]?.source.release ?? ''}
- * Side:       ${SIDE} -- every entry in this file carries \`laterality: '${SIDE}'\`.
- * Units:      ${manifest.entries[0]?.geometry.units ?? 'unknown'}, from the source model, not inferred here.
+ * Archive:    ${archiveName}
+ * Dataset:    ${datasetName}
+ * Side:       ${SIDE} -- ${sideClaim}
+ * Units:      ${unitsClaim}, from the source model, not inferred here.
  */
 
 import type { AssetManifest } from '@asi/shared';
@@ -178,14 +228,17 @@ export const CANONICAL_ANATOMY_MANIFEST = CANONICAL_MANIFEST_JSON as unknown as 
  * Per side, so the two builds cannot collide on a path. The renderer does not
  * hardcode this: it is read from the manifest and passed to the adapter.
  */
-export const CANONICAL_ASSET_ROOT = '/anatomy/${SIDE}/';
+export const CANONICAL_ASSET_ROOT = '/anatomy/${REGION}/${SIDE}/';
 
 /** The side this build represents, as a fact carried in the manifest itself. */
 export const CANONICAL_SIDE = '${SIDE}' as const;
+
+/** The region this build represents, so a caller cannot mix scenes. */
+export const CANONICAL_REGION = '${REGION}' as const;
 `,
   );
   console.log(
-    `[anatomy] manifest module    apps/web/src/anatomy/generated/canonical-manifest.${SIDE}.ts (${body.length} bytes)`,
+    `[anatomy] manifest module    canonical-manifest.${REGION}.${SIDE}.ts (${body.length} bytes)`,
   );
 }
 

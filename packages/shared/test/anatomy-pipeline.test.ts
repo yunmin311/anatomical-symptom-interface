@@ -34,7 +34,13 @@ import {
 } from '../src/anatomy-pipeline.ts';
 import type { SourceMesh } from '../src/anatomy-pipeline.ts';
 import { parseManifest, validateManifest, DEFAULT_GEOMETRY_BUDGET } from '../src/anatomy-manifest.ts';
-import { BODYPARTS3D_LICENCE, BODYPARTS3D_SOURCE, SHOULDER_MAPPING, mappingFor } from '../src/anatomy-mapping.ts';
+import {
+  BODYPARTS3D_LICENCE,
+  BODYPARTS3D_SOURCE,
+  MAPPINGS,
+  SHOULDER_MAPPING,
+  mappingFor,
+} from '../src/anatomy-mapping.ts';
 import { getStructure } from '../src/anatomy.ts';
 
 /* ================================================================== */
@@ -175,10 +181,48 @@ test('every mapping row names a structure the domain actually has', () => {
   }
 });
 
-test('only shoulder is mapped in Phase 1, and the others say so', () => {
-  assert.ok(mappingFor('shoulder').length > 0);
-  for (const r of ['neck', 'lower_back', 'knee']) {
-    assert.deepEqual(mappingFor(r), [], `${r} should not be guessed at in Phase 1`);
+test('a region is mapped only after its ontology was audited', () => {
+  // All four V1 regions are now audited and mapped. A new region stays an empty table
+  // until `scripts/audit-region.mjs` has been run against the archive for it: an empty
+  // table is an honest statement that nothing has been checked, and a guessed one would
+  // be indistinguishable from a finished one.
+  for (const r of ['shoulder', 'neck', 'lower_back', 'knee'])
+    assert.ok(mappingFor(r).length > 0, `${r} has no mapping rows`);
+});
+
+test('every mapping row carries the audit evidence a reader needs', () => {
+  // A row that cannot say WHY it names a particular mesh cannot be reviewed by a human,
+  // which is the whole point of auditing before mapping. `no-source-concept` rows must
+  // also say so explicitly rather than merely omitting a mesh.
+  for (const region of Object.keys(MAPPINGS)) {
+    for (const entry of mappingFor(region)) {
+      const real = entry.candidates.filter((c) => !/^(UNAVAILABLE|SHARED):/.test(c.meshName));
+      if (real.length === 0) {
+        assert.ok(
+          entry.expectAbsent === true,
+          `${region}: ${entry.asiId} binds nothing but does not declare expectAbsent`,
+        );
+        continue;
+      }
+      for (const candidate of real)
+        assert.ok(
+          candidate.fmaConceptId,
+          `${region}: ${entry.asiId} -> ${candidate.meshName} claims a mesh with no FMA concept id`,
+        );
+      if (entry.composite)
+        assert.ok(entry.composite.reason.length > 10, `${region}: ${entry.asiId} composite has no reason`);
+    }
+  }
+});
+
+test('every mapped region resolves every row to a real domain structure', () => {
+  for (const region of Object.keys(MAPPINGS)) {
+    for (const entry of mappingFor(region)) {
+      assert.ok(
+        getStructure(entry.asiId),
+        `${region}: mapping row for a structure that does not exist: ${entry.asiId}`,
+      );
+    }
   }
 });
 
@@ -299,10 +343,14 @@ test('the pipeline runs end to end and produces a valid manifest', () => {
 
 test('every manifest entry has a mesh that was actually written', () => {
   const result = runPipeline('shoulder', ARCHIVE_LIKE(), { gridDivisions: 8, side: 'left' });
-  for (const e of result.manifest.entries) {
-    assert.ok(result.files.has(e.file), `manifest names a mesh that was not produced: ${e.file}`);
-  }
-  assert.equal(result.files.size, result.manifest.entries.length, 'wrote meshes nobody references');
+  // Component-aware: a composite names several files, and the count must match BOTH
+  // sides or "wrote meshes nobody references" stops meaning anything.
+  const named = result.manifest.entries.flatMap((e) =>
+    e.composite ? e.composite.components.map((c) => c.file) : e.file ? [e.file] : [],
+  );
+  for (const file of named)
+    assert.ok(result.files.has(file), `manifest names a mesh that was not produced: ${file}`);
+  assert.equal(result.files.size, named.length, 'wrote meshes nobody references');
 });
 
 test('mesh file names are derived from asiId, not from the source name', () => {
@@ -350,18 +398,25 @@ test('licence and attribution are on every entry', () => {
 
 test('every entry records where its geometry came from', () => {
   const result = runPipeline('shoulder', ARCHIVE_LIKE(), { gridDivisions: 8, side: 'left' });
-  for (const e of result.manifest.entries) {
-    assert.equal(e.source.dataset, BODYPARTS3D_SOURCE.dataset);
-    assert.ok(e.source.release.length > 0, 'no source release recorded');
-    assert.equal(e.source.archive, BODYPARTS3D_SOURCE.archive);
+  // Every component records its own provenance, which is the whole point of keeping
+  // them separate rather than collapsing seven vertebrae into one source claim.
+  const sources = result.manifest.entries.flatMap((e) =>
+    e.composite ? e.composite.components.map((c) => c.source) : e.source ? [e.source] : [],
+  );
+  for (const source of sources) {
+    assert.equal(source.dataset, BODYPARTS3D_SOURCE.dataset);
+    assert.ok(source.release.length > 0, 'no source release recorded');
+    assert.equal(source.archive, BODYPARTS3D_SOURCE.archive);
   }
 });
 
 test('FMA bindings stay unverified, because nothing has been checked', () => {
   const result = runPipeline('shoulder', ARCHIVE_LIKE(), { gridDivisions: 8, side: 'left' });
-  for (const e of result.manifest.entries) {
-    assert.equal(e.fma.status, 'unverified', 'an FMA binding was claimed as verified');
-  }
+  const fmas = result.manifest.entries.flatMap((e) =>
+    e.composite ? e.composite.components.map((c) => c.fma) : e.fma ? [e.fma] : [],
+  );
+  for (const fma of fmas)
+    assert.equal(fma.status, 'unverified', 'an FMA binding was claimed as verified');
   const issues = validateManifest(result.manifest).filter((i) => i.severity === 'warning');
   assert.ok(issues.length > 0, 'unverified FMA bindings should be surfaced as warnings');
 });

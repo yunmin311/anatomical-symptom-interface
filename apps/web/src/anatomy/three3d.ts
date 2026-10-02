@@ -317,7 +317,18 @@ export class Three3dAnatomyAdapter implements RenderedViewer {
     assertNonMedical(this.manifest);
     this.index = indexScene(this.manifest);
     this.state = {
-      region: 'shoulder',
+      // The region comes from the SCENE, not from a constant.
+      //
+      // It was hardcoded to 'shoulder', which was invisible while every scene was a
+      // shoulder. A neck-only manifest then had no entries matching `state.region`,
+      // `retargetCamera` measured nothing, and the camera kept its fixture-scale
+      // depth planes at 0.05..50 -- so neck geometry rendered about 1400 units away,
+      // outside the frustum, and could not be picked. The scene rendered correctly
+      // and was silently unclickable, which is the worst shape a bug can take.
+      //
+      // `focusRegion` replaces this when the user picks a region; this is the value
+      // before they do.
+      region: (this.manifest.entries[0]?.region ?? 'shoulder') as BodyRegion,
       visibleSubRegionIds: [],
       visibleLayers: [...TISSUE_LAYER_ORDER],
       selectedStructureIds: [],
@@ -326,7 +337,7 @@ export class Three3dAnatomyAdapter implements RenderedViewer {
       pins: [],
       activePin: null,
     };
-    this.view = DEFAULT_VIEW.shoulder;
+    this.view = DEFAULT_VIEW[(this.manifest.entries[0]?.region ?? 'shoulder') as BodyRegion];
   }
 
   /* ---------------- AnatomyAdapter ---------------- */
@@ -803,11 +814,33 @@ export class Three3dAnatomyAdapter implements RenderedViewer {
     const urlEntries = this.manifest.entries.filter((entry) => entry.geometry.type === 'url');
     if (urlEntries.length === 0) return;
 
+    // A COMPOSITE contributes several sources, and each must load. The whole entry
+    // fails if any component does, for the same reason rule 2 below applies to a single
+    // asset: a partially mounted cervical spine is a body drawn with holes in it and
+    // reported as ready.
     const settled = await Promise.allSettled(
-      urlEntries.map(async (entry) => ({ entry, root: await this.buildUrlRoot(entry) })),
+      urlEntries.map(async (entry) => {
+        const components = entry.geometry.type === 'url' ? entry.geometry.components : undefined;
+        if (!components?.length) return { entry, roots: [await this.buildUrlRoot(entry)] };
+        // Sequential rather than parallel so one failed component names itself in the
+        // error; the sets are small (seven vertebrae, three scalenes).
+        const roots: THREE.Object3D[] = [];
+        for (const component of components) {
+          try {
+            roots.push(await this.buildComponentRoot(entry, component));
+          } catch (cause) {
+            for (const root of roots) releaseObject(root);
+            throw new Error(
+              `component ${component.meshName} of ${entry.asiId} failed to load: ` +
+                (cause instanceof Error ? cause.message : String(cause)),
+            );
+          }
+        }
+        return { entry, roots };
+      }),
     );
 
-    const adopted: Array<{ entry: RendererSceneEntry; root: THREE.Object3D }> = [];
+    const adopted: Array<{ entry: RendererSceneEntry; roots: THREE.Object3D[] }> = [];
     const failures: string[] = [];
     for (const outcome of settled) {
       if (outcome.status === 'fulfilled') adopted.push(outcome.value);
@@ -818,24 +851,44 @@ export class Three3dAnatomyAdapter implements RenderedViewer {
 
     // Dispose-while-loading: release what did arrive and adopt nothing.
     if (this.disposed || !this.scene) {
-      for (const { root } of adopted) releaseObject(root);
+      for (const { roots } of adopted) for (const root of roots) releaseObject(root);
       return;
     }
     if (failures.length) {
-      for (const { root } of adopted) releaseObject(root);
+      for (const { roots } of adopted) for (const root of roots) releaseObject(root);
       throw new Error(
         `Three3dAnatomyAdapter: ${failures.length} asset(s) failed to load, so the 3D view is incomplete — ${failures[0]}`,
       );
     }
 
-    for (const { entry, root } of adopted) {
+    for (const { entry, roots } of adopted) {
       if (entry.geometry.type !== 'url') continue;
-      if (entry.geometry.position) root.position.set(...entry.geometry.position);
-      if (entry.geometry.scale) root.scale.set(...entry.geometry.scale);
-      if (entry.geometry.rotation) root.rotation.set(...entry.geometry.rotation);
-      this.scene.add(root);
-      this.objects.set(entry.asiId, root);
-      this.indexDescendants(root, entry.asiId);
+      for (const root of roots) {
+        if (entry.geometry.position) root.position.set(...entry.geometry.position);
+        if (entry.geometry.scale) root.scale.set(...entry.geometry.scale);
+        if (entry.geometry.rotation) root.rotation.set(...entry.geometry.rotation);
+        this.scene.add(root);
+        // EVERY component of a composite indexes to the SAME asiId.
+        //
+        // This is the invariant the whole composite model rests on: a raycast on the
+        // seventh cervical vertebra resolves to `asi:neck.cervical-spine`, because a
+        // user who pointed at their neck pointed at all seven. A pick resolving to a
+        // sibling component id would mean one source element had become a second
+        // canonical identity, which is the failure this prevents.
+        this.indexDescendants(root, entry.asiId);
+      }
+      // Registered as a Group so the rest of the adapter keeps its one-object-per-id
+      // shape: retargetCamera measures it, layer toggling hides it, dispose finds it.
+      // `objects` stays Map<asiId, Object3D> rather than becoming a collection, so
+      // every existing caller is unchanged.
+      if (roots.length > 1) {
+        const group = new THREE.Group();
+        group.name = `composite:${entry.asiId}`;
+        for (const root of roots) group.attach(root);
+        this.objects.set(entry.asiId, group);
+      } else if (roots[0]) {
+        this.objects.set(entry.asiId, roots[0]);
+      }
     }
   }
 
@@ -866,6 +919,43 @@ export class Three3dAnatomyAdapter implements RenderedViewer {
         /* rejected: the loader never produced a scene, so nothing was allocated */
       },
     );
+  }
+
+  /**
+   * Resolve one composite COMPONENT to a root Object3D, or throw.
+   *
+   * Structurally the same as `buildUrlRoot` with a different URL, kept separate so the
+   * component's own cache entry, timeout and release rule are the same as any other
+   * asset rather than a second, less-tested path. Sharing the cache also means two
+   * canonical ids referencing the same file would load once, which `indexScene` then
+   * rejects as ambiguous anyway.
+   */
+  private async buildComponentRoot(
+    entry: RendererSceneEntry,
+    component: { url: string },
+  ): Promise<THREE.Object3D> {
+    const loader = this.opts.loadGlb ?? defaultGlbLoader;
+    const timeoutMs = this.opts.assetTimeoutMs ?? DEFAULT_ASSET_TIMEOUT_MS;
+
+    let load = this.glbCache.get(component.url);
+    if (!load) {
+      load = { promise: loader(component.url), loaded: null, abandoned: false, adopted: false };
+      this.glbCache.set(component.url, load);
+      this.assets.add(load);
+      this.armAssetRelease(load);
+    }
+    let loaded: { scene: THREE.Object3D };
+    try {
+      loaded = await withTimeout(load.promise, timeoutMs, component.url);
+    } catch (cause) {
+      if (load.loaded) releaseObject(load.loaded.scene);
+      throw cause;
+    }
+    const root = loaded.scene.clone(true);
+    load.loaded = loaded;
+    load.adopted = true;
+    void entry;
+    return root;
   }
 
   /**
