@@ -349,8 +349,12 @@ const decisionMarkers = [];
   ];
   const sides = declaredSides.length ? declaredSides : wordSides;
   // The suffix convention, checked against the words. A disagreement is reported.
+  // The suffix check only means anything for a one-sided mesh. A MIDLINE mesh has no
+  // suffix and should not, so testing `FJ3157` for "is it M?" always reports a
+  // disagreement -- which is how a lumbar vertebra ended up flagged as ambiguous
+  // laterality in a region where it is neither left nor right.
   const suffixAgrees =
-    sides.length === 1 && sides[0] !== 'bilateral'
+    sides.length === 1 && (sides[0] === 'left' || sides[0] === 'right')
       ? presentMeshes.every(
           (m) => (m.file.endsWith('M') ? 'left' : 'right') === sides[0],
         )

@@ -51,6 +51,22 @@ import {
   CANONICAL_ANATOMY_MANIFEST as NECK_RIGHT,
   CANONICAL_ASSET_ROOT as NECK_RIGHT_ROOT,
 } from './generated/canonical-manifest.neck.right.ts';
+import {
+  CANONICAL_ANATOMY_MANIFEST as LOWER_BACK_LEFT,
+  CANONICAL_ASSET_ROOT as LOWER_BACK_LEFT_ROOT,
+} from './generated/canonical-manifest.lower_back.left.ts';
+import {
+  CANONICAL_ANATOMY_MANIFEST as LOWER_BACK_RIGHT,
+  CANONICAL_ASSET_ROOT as LOWER_BACK_RIGHT_ROOT,
+} from './generated/canonical-manifest.lower_back.right.ts';
+import {
+  CANONICAL_ANATOMY_MANIFEST as KNEE_LEFT,
+  CANONICAL_ASSET_ROOT as KNEE_LEFT_ROOT,
+} from './generated/canonical-manifest.knee.left.ts';
+import {
+  CANONICAL_ANATOMY_MANIFEST as KNEE_RIGHT,
+  CANONICAL_ASSET_ROOT as KNEE_RIGHT_ROOT,
+} from './generated/canonical-manifest.knee.right.ts';
 
 /**
  * The generated manifests, keyed by region and side.
@@ -103,6 +119,14 @@ const GENERATED: ProductionSceneRegistry = {
   neck: {
     left: { manifest: NECK_LEFT, assetRoot: NECK_LEFT_ROOT },
     right: { manifest: NECK_RIGHT, assetRoot: NECK_RIGHT_ROOT },
+  },
+  lower_back: {
+    left: { manifest: LOWER_BACK_LEFT, assetRoot: LOWER_BACK_LEFT_ROOT },
+    right: { manifest: LOWER_BACK_RIGHT, assetRoot: LOWER_BACK_RIGHT_ROOT },
+  },
+  knee: {
+    left: { manifest: KNEE_LEFT, assetRoot: KNEE_LEFT_ROOT },
+    right: { manifest: KNEE_RIGHT, assetRoot: KNEE_RIGHT_ROOT },
   },
 };
 

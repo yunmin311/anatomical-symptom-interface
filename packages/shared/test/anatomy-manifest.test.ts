@@ -136,10 +136,40 @@ test('a layer that disagrees with anatomy.ts is an error', () => {
   assert.match(errors(m)[0]!.message, /layer disagrees with the domain/);
 });
 
-test('an asiId whose prefix does not match the declared region is an error', () => {
+test('an asiId that is not a member of the declared region is an error', () => {
+  // ONTOLOGY membership, not id prefixes. It used to be a prefix test, and it was
+  // wrong twice over: it rejected four correct lower-back entries (the region is
+  // `lower_back` while its structures are prefixed `asi:lower-back.`), and it could not
+  // express the real case of a structure that legitimately belongs to two regions.
   const m = manifest([entry({ region: 'knee' })]);
   const msgs = errors(m).map((e) => e.message).join(' ');
-  assert.match(msgs, /prefix does not match|does not exist/);
+  assert.match(msgs, /is not a member of the declared region knee/);
+  assert.match(msgs, /it belongs to shoulder/, 'the error should say where it does belong');
+});
+
+test('a structure may be an entry for any region it belongs to', () => {
+  // The upper trapezius is the worked example: ONE canonical id, listed in the shoulder
+  // sub-regions AND the neck sub-regions, with one mesh and one provenance. A neck
+  // manifest carrying it must validate, which the old prefix rule could not do -- it
+  // would have read `asi:shoulder.` and rejected a correct entry.
+  //
+  // It appears ONCE per manifest. Two regions means two manifests, each with one
+  // entry; a single manifest listing it twice is the duplicate-as-two-truths error the
+  // alias work exists to prevent, and it is checked below.
+  const neckEntry = entry({
+    asiId: 'asi:shoulder.trapezius-upper',
+    region: 'neck',
+    subRegionIds: ['neck.posterior'],
+    layer: 'muscle',
+    file: 'neck/asi-shoulder-trapezius-upper.glb',
+  });
+  assert.deepEqual(
+    errors(manifest([neckEntry], { regions: ['neck'] })),
+    [],
+  );
+
+  const twice = manifest([neckEntry, { ...neckEntry, file: 'neck/other.glb' }]);
+  assert.match(errors(twice).map((e) => e.message).join(' '), /duplicate asiId/);
 });
 
 test('an unknown sub-region is an error', () => {

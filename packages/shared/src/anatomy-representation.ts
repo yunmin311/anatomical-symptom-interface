@@ -276,7 +276,279 @@ export const REPRESENTATION_DECLARATIONS: Readonly<Record<string, Representation
       detail: 'no concept name in the archive contains "nuchal"',
     },
   },
+// --- lower back ---
+  //
+  // Four of ten available. The gaps are the point: two of them are traps a plausible
+  // mapping would have walked into, and both are recorded where the next person will
+  // see them rather than in a commit message.
+  'asi:lower-back.lumbar-spine': {
+    twoD: { available: true, placeholder: true },
+    threeD: {
+      status: 'available',
+      // FIVE lumbar vertebrae, midline, one canonical selection over five sourced
+      // meshes. A person pointing at their lower back has pointed at their whole lumbar
+      // spine, which is exactly why this is one structure and not five concepts.
+      sides: { midline: { available: true, componentCount: 5 } },
+    },
+  },
+  'asi:lower-back.sacrum': {
+    twoD: { available: true, placeholder: true },
+    threeD: { status: 'available', sides: { midline: { available: true, componentCount: 1 } } },
+  },
+  'asi:lower-back.iliopsoas': {
+    twoD: { available: true, placeholder: true },
+    threeD: {
+      status: 'available',
+      // NOT a source concept, but iliacus and psoas major both are, each with its own
+      // mesh per side. The clinical name for the pair is a composite of two real things,
+      // and that is what this is.
+      sides: {
+        left: { available: true, componentCount: 2 },
+        right: { available: true, componentCount: 2 },
+      },
+    },
+  },
+  'asi:lower-back.gluteus-maximus': {
+    twoD: { available: true, placeholder: true },
+    threeD: {
+      status: 'available',
+      sides: {
+        left: { available: true, componentCount: 1 },
+        right: { available: true, componentCount: 1 },
+      },
+    },
+  },
+  'asi:lower-back.erector-spinae': {
+    twoD: { available: true, placeholder: true },
+    threeD: {
+      status: 'unavailable',
+      reason: 'composite-unsupported',
+      detail:
+        'a lumbar erector spinae is three muscles and the archive models only iliocostalis lumborum at the lumbar level -- there is no longissimus lumborum or spinalis lumborum concept. Binding the one would show a third of the structure under a label claiming all of it.',
+    },
+  },
+  'asi:lower-back.multifidus': {
+    twoD: { available: true, placeholder: true },
+    threeD: {
+      status: 'unavailable',
+      reason: 'no-source-concept',
+      detail: 'no multifidus concept exists anywhere in the archive',
+    },
+  },
+  'asi:lower-back.quadratus-lumborum': {
+    twoD: { available: true, placeholder: true },
+    threeD: {
+      status: 'unavailable',
+      reason: 'no-source-concept',
+      detail:
+        'no quadratus lumborum concept exists. The archive has pronator quadratus (forearm) and quadratus femoris (thigh); both are different muscles, and binding either would put a thigh muscle inside a lower back.',
+    },
+  },
+  'asi:lower-back.thoracolumbar-fascia': {
+    twoD: { available: true, placeholder: true },
+    threeD: {
+      status: 'unavailable',
+      reason: 'no-source-concept',
+      detail: 'no lumbar or thoracolumbar fascia concept exists; the archive carries no fascia of the trunk wall',
+    },
+  },
+  'asi:lower-back.coccyx': {
+    twoD: { available: true, placeholder: true },
+    threeD: {
+      status: 'unavailable',
+      reason: 'no-source-concept',
+      detail: 'the archive has the sacrum but no coccyx bone; "sacral" appears only in vein names',
+    },
+  },
+  'asi:lower-back.sacrotuberous-ligament': {
+    twoD: { available: true, placeholder: true },
+    threeD: {
+      status: 'unavailable',
+      reason: 'no-source-concept',
+      detail: 'no sacrotuberous ligament concept exists; the archive carries no pelvic ligaments',
+    },
+  },
 
+  // --- knee ---
+  //
+  // Five of nineteen. This is the weakest region in the archive by a wide margin, and
+  // the reason is structural rather than a mapping failure: BodyParts3D 4.0 is a solid
+  // bone-and-muscle dataset, and the knee's functionally most important structures --
+  // its ligaments, its menisci, its bursae -- are exactly the ones it does not model.
+  'asi:knee.patella': {
+    twoD: { available: true, placeholder: true },
+    threeD: {
+      status: 'available',
+      // FJ3275 is LEFT and FJ3381 is RIGHT. The ids are not adjacent and not in side
+      // order, so nothing about the numbering could have told you that.
+      sides: {
+        left: { available: true, componentCount: 1 },
+        right: { available: true, componentCount: 1 },
+      },
+    },
+  },
+  'asi:knee.popliteus': {
+    twoD: { available: true, placeholder: true },
+    threeD: {
+      status: 'available',
+      sides: {
+        left: { available: true, componentCount: 1 },
+        right: { available: true, componentCount: 1 },
+      },
+    },
+  },
+  'asi:knee.iliotibial-band': {
+    twoD: { available: true, placeholder: true },
+    threeD: {
+      status: 'available',
+      // The source's name is "iliotibial tract" (FMA51048). Same structure; the naming
+      // difference is recorded because a reader searching the archive for "band" will
+      // find nothing and needs to know why.
+      sides: {
+        left: { available: true, componentCount: 1 },
+        right: { available: true, componentCount: 1 },
+      },
+    },
+  },
+  'asi:knee.gastrocnemius-head': {
+    twoD: { available: true, placeholder: true },
+    threeD: {
+      status: 'available',
+      // Our concept is the MEDIAL head and the source models medial and lateral heads
+      // as separate concepts, so this is an exact match. The lateral head is a different
+      // muscle, not a less precise version of the right one.
+      sides: {
+        left: { available: true, componentCount: 1 },
+        right: { available: true, componentCount: 1 },
+      },
+    },
+  },
+  'asi:knee.popliteal-artery': {
+    twoD: { available: true, placeholder: true },
+    threeD: {
+      status: 'available',
+      sides: {
+        left: { available: true, componentCount: 1 },
+        right: { available: true, componentCount: 1 },
+      },
+    },
+  },
+  'asi:knee.sartorius-gracilis-semimembranosus': {
+    twoD: { available: true, placeholder: true },
+    threeD: {
+      status: 'unavailable',
+      reason: 'no-source-concept',
+      detail:
+        'this concept is the pes anserinus TENDONS. The archive has the sartorius, gracilis and semimembranosus as three real MUSCLES with real meshes -- but a muscle is a different structure in a different place, and binding them would put thigh muscle where the user pointed at tendon.',
+    },
+  },
+  'asi:knee.semimembranosus-tendon': {
+    twoD: { available: true, placeholder: true },
+    threeD: {
+      status: 'unavailable',
+      reason: 'no-source-concept',
+      detail:
+        'the semimembranosus MUSCLE exists (FMA22448/FJ1435) but its tendon does not exist in this archive',
+    },
+  },
+  'asi:knee.patellar-tendon': {
+    twoD: { available: true, placeholder: true },
+    threeD: {
+      status: 'unavailable',
+      reason: 'no-source-concept',
+      detail: 'no patellar ligament or tendon concept exists in the archive',
+    },
+  },
+  'asi:knee.quadriceps-tendon': {
+    twoD: { available: true, placeholder: true },
+    threeD: {
+      status: 'unavailable',
+      reason: 'no-source-concept',
+      detail: 'no quadriceps tendon concept exists; the archive has the muscle but not its tendon',
+    },
+  },
+  'asi:knee.mcl': {
+    twoD: { available: true, placeholder: true },
+    threeD: {
+      status: 'unavailable',
+      reason: 'no-source-concept',
+      detail:
+        'no medial collateral ligament exists. All 38 "ligament" concepts in the archive are extraocular muscles -- check ligaments of the eye movement muscles.',
+    },
+  },
+  'asi:knee.lcl': {
+    twoD: { available: true, placeholder: true },
+    threeD: {
+      status: 'unavailable',
+      reason: 'no-source-concept',
+      detail: 'no lateral collateral ligament exists; all 38 "ligament" concepts are extraocular muscles',
+    },
+  },
+  'asi:knee.meniscus-medial': {
+    twoD: { available: true, placeholder: true },
+    threeD: {
+      status: 'unavailable',
+      reason: 'no-source-concept',
+      detail: 'the archive has no meniscal concept at all; BodyParts3D 4.0 models no fibrocartilage',
+    },
+  },
+  'asi:knee.meniscus-lateral': {
+    twoD: { available: true, placeholder: true },
+    threeD: {
+      status: 'unavailable',
+      reason: 'no-source-concept',
+      detail: 'the archive has no meniscal concept at all; BodyParts3D 4.0 models no fibrocartilage',
+    },
+  },
+  'asi:knee.prepatellar-bursa': {
+    twoD: { available: true, placeholder: true },
+    threeD: {
+      status: 'unavailable',
+      reason: 'non-solid-space',
+      detail: 'the archive has no bursal concept of any kind, at the knee or anywhere else',
+    },
+  },
+  'asi:knee.tibial-collateral-bursa': {
+    twoD: { available: true, placeholder: true },
+    threeD: {
+      status: 'unavailable',
+      reason: 'non-solid-space',
+      detail: 'the archive has no bursal concept of any kind',
+    },
+  },
+  'asi:knee.lateral-collateral-bursa': {
+    twoD: { available: true, placeholder: true },
+    threeD: {
+      status: 'unavailable',
+      reason: 'non-solid-space',
+      detail: 'the archive has no bursal concept of any kind',
+    },
+  },
+  'asi:knee.patellofemoral-joint': {
+    twoD: { available: true, placeholder: true },
+    threeD: {
+      status: 'unavailable',
+      reason: 'non-solid-space',
+      detail: 'no patellofemoral concept exists; the archive carries bones and muscles, not joint spaces',
+    },
+  },
+  'asi:knee.popliteal-space': {
+    twoD: { available: true, placeholder: true },
+    threeD: {
+      status: 'unavailable',
+      reason: 'non-solid-space',
+      detail: 'a space rather than a solid, and the archive models no spaces at the knee',
+    },
+  },
+  'asi:knee.tibial-nerve': {
+    twoD: { available: true, placeholder: true },
+    threeD: {
+      status: 'unavailable',
+      reason: 'no-source-concept',
+      detail:
+        'no tibial nerve concept exists; the archive carries neurovascular structures only as named vessels, and no nerve at the knee',
+    },
+  },
   // --- Part-level deltoid, from the source's own terminology ---
   //
   // BodyParts3D 4.0 has no whole-muscle deltoid; it has three parts, each a

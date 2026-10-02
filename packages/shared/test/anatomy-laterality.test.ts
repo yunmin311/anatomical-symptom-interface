@@ -41,7 +41,13 @@ const representation = (id: string): Representation => {
 };
 
 /** Every generated manifest, so a new region is covered by writing it once here. */
-const BUILDS = ['shoulder', 'neck'].flatMap((region) =>
+/**
+ * Every region the pipeline builds. A region is added here when its assets are
+ * committed, so its declarations, units, laterality and composite shapes are all checked
+ * without writing a new test per region.
+ */
+const REGIONS_BUILT = ['shoulder', 'neck', 'lower_back', 'knee'] as const;
+const BUILDS = REGIONS_BUILT.flatMap((region) =>
   (['left', 'right'] as const).map((side) => ({ region, side, manifest: manifest(region, side) })),
 );
 // EVERY generated manifest, shoulder and neck alike. `producedSides` reads this, so a

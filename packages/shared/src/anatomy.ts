@@ -507,6 +507,24 @@ export function structuresForRegion(region: BodyRegion, subRegionId?: string): S
   return def.subRegions.find((s) => s.id === subRegionId)?.structures ?? [];
 }
 
+/**
+ * Which regions a structure belongs to, read from the ONTOLOGY.
+ *
+ * Not from the id. The id prefix records where a user first meets a structure and is not
+ * authoritative: `shoulder.trapezius-upper` also belongs to the neck, and the lower back
+ * region's structures are prefixed `asi:lower-back.` while the region itself is spelled
+ * `lower_back` -- so a prefix check rejects four perfectly good lower-back entries.
+ *
+ * It failed in exactly that way, and the fix is not a longer prefix rule. Membership is
+ * declared where structures are declared, and this reads that.
+ */
+export function regionsForStructure(asiId: string): BodyRegion[] {
+  const out: BodyRegion[] = [];
+  for (const region of Object.keys(REGIONS) as BodyRegion[])
+    if (structuresForRegion(region).some((s) => s.id === asiId) && !out.includes(region)) out.push(region);
+  return out;
+}
+
 export function getSubRegion(region: BodyRegion, subRegionId: string): SubRegion | undefined {
   return REGIONS[region].subRegions.find((s) => s.id === subRegionId);
 }

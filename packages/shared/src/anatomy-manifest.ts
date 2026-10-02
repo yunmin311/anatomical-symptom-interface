@@ -25,7 +25,13 @@
  * line that was never checked.
  */
 import { z } from 'zod';
-import { BodyRegionSchema, TissueLayerSchema, getStructure, getSubRegion } from './anatomy.ts';
+import {
+  BodyRegionSchema,
+  TissueLayerSchema,
+  getStructure,
+  getSubRegion,
+  regionsForStructure,
+} from './anatomy.ts';
 
 /** Which side of the body a mesh represents. */
 export const LateralitySchema = z.enum(['left', 'right', 'bilateral', 'midline', 'not_applicable']);
@@ -302,10 +308,20 @@ export function validateManifest(
           message: `layer disagrees with the domain: manifest says ${e.layer}, anatomy says ${structure.layer}`,
         });
       }
-      if (!e.asiId.startsWith(`asi:${e.region}.`) && !e.asiId.startsWith(`asi:${e.region}-`)) {
+      // Region membership comes from the ONTOLOGY, not from the id prefix.
+      //
+      // This used to be a string-prefix test, and it rejected four correct lower-back
+      // entries: the region is spelled `lower_back` while its structures are prefixed
+      // `asi:lower-back.`, so no prefix rule could have matched. A longer rule would have
+      // been the wrong fix -- the id prefix records where a user first meets a structure
+      // and is not authoritative, since `shoulder.trapezius-upper` also belongs to the
+      // neck.
+      if (!regionsForStructure(e.asiId).includes(e.region)) {
         issues.push({
           severity: 'error', asiId: e.asiId, meshName: e.meshName,
-          message: `asiId prefix does not match the declared region ${e.region}`,
+          message:
+            `structure is not a member of the declared region ${e.region}; it belongs to ` +
+            `${regionsForStructure(e.asiId).join(', ') || 'no region in the ontology'}`,
         });
       }
     }

@@ -422,17 +422,22 @@ export function deltoidPartIds(): string[] {
 /**
  * Which region's mapping to use.
  *
- * Neck is bound here too, and it was written AFTER auditing the archive with
- * `scripts/audit-region.mjs` rather than before, which is the only reason its rows can
- * be trusted. See `anatomy-mapping-neck.ts` for the audit trail and for why seven of its
- * nine concepts are reported as gaps rather than approximated.
+ * Neck and lower_back are bound here too, and both were written AFTER auditing the
+ * archive with `scripts/audit-region.mjs` rather than before, which is the only reason
+ * their rows can be trusted. `anatomy-mapping-lower-back.ts` records the two traps the
+ * audit found -- a forearm and a thigh muscle both named "quadratus", and an erector
+ * spinae the source models one third of.
  *
- * The other two regions stay absent. An empty table is an honest statement that nothing
- * has been checked; a guessed one is not.
+ * All four V1 regions are bound, and each was written AFTER auditing the archive.
+ * The knee table is mostly gaps, and that is the finding rather than a failure:
+ * BodyParts3D 4.0 carries no knee ligament, no meniscus and no bursa at all. See
+ * `anatomy-mapping-knee.ts`.
  */
 export const MAPPINGS: Readonly<Record<string, readonly MappingEntry[]>> = {
   shoulder: SHOULDER_MAPPING,
   neck: NECK_MAPPING,
+  lower_back: LOWER_BACK_MAPPING,
+  knee: KNEE_MAPPING,
 };
 
 /**
@@ -443,6 +448,8 @@ export const MAPPINGS: Readonly<Record<string, readonly MappingEntry[]>> = {
 export const UNMAPPABLE: readonly { asiId: string; reason: string }[] = [
   ...UNMAPPABLE_SHOULDER,
   ...UNMAPPABLE_NECK,
+  ...UNMAPPABLE_LOWER_BACK,
+  ...UNMAPPABLE_KNEE,
 ];
 
 export function mappingFor(region: string): readonly MappingEntry[] {
@@ -511,3 +518,5 @@ export const BODYPARTS3D_SOURCE = {
  */
 export const BODYPARTS3D_UNITS = 'mm' as const;
 import { NECK_MAPPING, UNMAPPABLE_NECK } from './anatomy-mapping-neck.ts';
+import { LOWER_BACK_MAPPING, UNMAPPABLE_LOWER_BACK } from './anatomy-mapping-lower-back.ts';
+import { KNEE_MAPPING, UNMAPPABLE_KNEE } from './anatomy-mapping-knee.ts';

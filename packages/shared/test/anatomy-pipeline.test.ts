@@ -181,14 +181,37 @@ test('every mapping row names a structure the domain actually has', () => {
   }
 });
 
-test('a region is mapped only after its ontology was audited, and the rest say so', () => {
-  assert.ok(mappingFor('shoulder').length > 0);
-  assert.ok(mappingFor('neck').length > 0);
-  // lower_back and knee are still unaudited, so their tables are empty on purpose. An
-  // empty table is an honest statement that nothing has been checked; a guessed one
-  // would be indistinguishable from a finished one.
-  for (const r of ['lower_back', 'knee']) {
-    assert.deepEqual(mappingFor(r), [], `${r} must not be guessed at before it is audited`);
+test('a region is mapped only after its ontology was audited', () => {
+  // All four V1 regions are now audited and mapped. A new region stays an empty table
+  // until `scripts/audit-region.mjs` has been run against the archive for it: an empty
+  // table is an honest statement that nothing has been checked, and a guessed one would
+  // be indistinguishable from a finished one.
+  for (const r of ['shoulder', 'neck', 'lower_back', 'knee'])
+    assert.ok(mappingFor(r).length > 0, `${r} has no mapping rows`);
+});
+
+test('every mapping row carries the audit evidence a reader needs', () => {
+  // A row that cannot say WHY it names a particular mesh cannot be reviewed by a human,
+  // which is the whole point of auditing before mapping. `no-source-concept` rows must
+  // also say so explicitly rather than merely omitting a mesh.
+  for (const region of Object.keys(MAPPINGS)) {
+    for (const entry of mappingFor(region)) {
+      const real = entry.candidates.filter((c) => !/^(UNAVAILABLE|SHARED):/.test(c.meshName));
+      if (real.length === 0) {
+        assert.ok(
+          entry.expectAbsent === true,
+          `${region}: ${entry.asiId} binds nothing but does not declare expectAbsent`,
+        );
+        continue;
+      }
+      for (const candidate of real)
+        assert.ok(
+          candidate.fmaConceptId,
+          `${region}: ${entry.asiId} -> ${candidate.meshName} claims a mesh with no FMA concept id`,
+        );
+      if (entry.composite)
+        assert.ok(entry.composite.reason.length > 10, `${region}: ${entry.asiId} composite has no reason`);
+    }
   }
 });
 
