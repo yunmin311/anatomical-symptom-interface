@@ -17,24 +17,30 @@ import { Hono } from 'hono';
 import { cors } from 'hono/cors';
 import { z } from 'zod';
 import {
+  apiError,
+  ApplyMutationsRequestSchema,
+  anatomyCapability,
   BodyRegionSchema,
+  CreateEpisodeRequestSchema,
   FieldPolicyError,
-  groundFromText,
   groundOrRefuse,
   INTERVIEW,
+  LocaliseRequestSchema,
   nextQuestion,
   questionProgress,
   REGIONS,
   releaseReady,
-  SourceTypeSchema,
   totalRuleCount,
-  VerificationStatusSchema,
+  validationError,
   writablePaths,
   ANSWER_SCHEMA_NOTE,
+  type AnswerInput,
+  type FieldMutationInput,
 } from '@asi/shared';
 import { env, gate, hasModel, releaseProfile } from './env.ts';
 import { createOrchestrator } from './orchestrator/index.ts';
 import { spatialHistoryWithEmptyRegions } from './db/spatial.ts';
+import { BUILT_MANIFESTS } from './anatomy-manifests.ts';
 import { episodeForReopen } from './db/episode-lifecycle.ts';
 import {
   answersFor,
@@ -59,8 +65,8 @@ import type { Provenance } from '@asi/shared';
  * arrive with no `value` at all, which the field store must never accept. These
  * two builders make the presence explicit and give the compiler a required type.
  */
-type ParsedMutation = z.infer<typeof MutationInput>;
-type ParsedAnswer = z.infer<typeof AnswerInput>;
+type ParsedMutation = FieldMutationInput;
+type ParsedAnswer = AnswerInput;
 
 function toFieldMutation(m: ParsedMutation): FieldMutation {
   if (!('value' in m)) throw new Error(`[api] mutation for "${m.fieldPath}" has no value`);
@@ -81,6 +87,37 @@ function toAnswerMutation(a: ParsedAnswer): AnswerMutation {
 
 const app = new Hono();
 app.use('*', cors());
+
+/**
+ * The ONE place a domain refusal becomes an HTTP response.
+ *
+ * There were five hand-written error shapes before this, and they disagreed: one route
+ * returned `{ error: 'not found' }`, another `{ error: e.message }` -- the message text
+ * used AS a code -- and the two the smoke test cares about used real codes. A client could
+ * branch on those last two and had to string-match the rest, which is how an MCP client
+ * ends up parsing English to find out what happened.
+ *
+ * Every refusal now carries a stable code from `ApiErrorCodeSchema`, plus a human message
+ * and, where it exists, the detail a caller needs to act: the offending field, the
+ * canonical id that replaced a retired one, or the validation issues.
+ */
+function refuse(
+  c: { json: (body: unknown, status?: number) => Response },
+  code: Parameters<typeof apiError>[0],
+  message: string,
+  status: number,
+  extra: Parameters<typeof apiError>[2] = {},
+): Response {
+  return c.json(apiError(code, message, extra), status);
+}
+
+/** Map a thrown domain refusal onto the envelope. Reused by every write route. */
+function refuseThrown(c: { json: (body: unknown, status?: number) => Response }, e: unknown): Response {
+  if (e instanceof FieldPolicyError)
+    return refuse(c, 'field_policy_violation', e.message, 422, { field: e.path });
+  if (e instanceof MutationRejected) return refuse(c, 'mutation_rejected', e.message, 404);
+  throw e;
+}
 
 const orchestrator = createOrchestrator();
 
@@ -109,20 +146,30 @@ app.get('/api/health', (c) =>
 app.get('/api/regions', (c) => c.json(Object.values(REGIONS)));
 app.get('/api/regions/:region', (c) => {
   const r = REGIONS[c.req.param('region') as keyof typeof REGIONS];
-  if (!r) return c.json({ error: 'unknown region' }, 404);
+  if (!r) return refuse(c, 'unknown_region', 'No such region in this build.', 404, {
+    region: c.req.param('region'),
+  });
   return c.json(r);
 });
 
+/**
+ * What can actually be RENDERED, per region and side.
+ *
+ * `/api/regions` answers "does this region exist in the ontology", which is not the
+ * question a client has before offering a 3D picker. This answers "is there sourced
+ * geometry for it, on which sides, and what is missing and why" -- including that the
+ * 2D map is a hand-made placeholder.
+ *
+ * The counts come from the generated manifests the renderer mounts, not from a table of
+ * intentions, so a missing build is reported as missing.
+ */
+app.get('/api/anatomy/capability', (c) => c.json(anatomyCapability(BUILT_MANIFESTS)));
+
 /* ---------------- grounding / routing ---------------- */
 
-const LocaliseBody = z.object({
-  utterance: z.string().min(1).max(2000),
-  pinnedRegion: BodyRegionSchema.optional(),
-});
-
 app.post('/api/localise', async (c) => {
-  const body = LocaliseBody.safeParse(await c.req.json());
-  if (!body.success) return c.json({ error: body.error.flatten() }, 400);
+  const body = LocaliseRequestSchema.safeParse(await c.req.json());
+  if (!body.success) return c.json(validationError(body.error), 400);
   // Returns either a grounded result or an explicit refusal. There is no
   // default region, so a caller cannot proceed without handling 'unsupported'.
   return c.json(await orchestrator.localise(body.data));
@@ -132,7 +179,10 @@ app.post('/api/localise', async (c) => {
 
 app.get('/api/interview/:region', (c) => {
   const region = c.req.param('region') as keyof typeof INTERVIEW;
-  if (!INTERVIEW[region]) return c.json({ error: 'unknown region' }, 404);
+  if (!INTERVIEW[region])
+    return refuse(c, 'unknown_region', 'No such region in this build.', 404, {
+      region: c.req.param('region'),
+    });
   return c.json(INTERVIEW[region]);
 });
 
@@ -149,6 +199,7 @@ app.post('/api/episodes/:id/interview/next', async (c) => {
   if (!grounding || grounding.status !== 'grounded') {
     return c.json(
       {
+        ...apiError('episode_not_localised', grounding?.reason ?? 'ungrounded'),
         next: null,
         blocked: true,
         reason: grounding?.reason ?? 'ungrounded',
@@ -166,63 +217,19 @@ app.post('/api/episodes/:id/interview/next', async (c) => {
 
 /* ---------------- episodes ---------------- */
 
-const ProvenanceInput = z.object({
-  sourceType: SourceTypeSchema,
-  verificationStatus: VerificationStatusSchema,
-  createdBy: z.string().min(1).max(120),
-  sourceReference: z.string().max(200).nullish(),
-  confidence: z.number().min(0).max(1).nullish(),
-  rawText: z.string().max(4000).nullish(),
-  evidenceStatus: z.enum(['user_report', 'visual_selection', 'ai_candidate', 'clinician_finding', 'system_derived']).optional(),
-});
-
-const MutationInput = z.object({
-  fieldPath: z.string().min(1).max(120),
-  value: z.unknown(),
-  provenance: ProvenanceInput,
-});
-
-const AnswerInput = z.object({
-  questionId: z.string().min(1).max(120),
-  raw: z.unknown(),
-  wroteFields: z.array(z.string().max(120)).max(16).default([]),
-  createdBy: z.string().min(1).max(120),
-  rawText: z.string().max(4000).nullish(),
-});
-
-const CreateEpisodeBody = z.object({
-  personId: z.string().min(1).max(120).default('local'),
-  displayName: z.string().max(200).optional(),
-  title: z.string().max(300).optional(),
-  side: z.enum(['left', 'right', 'midline', 'bilateral', 'unknown']).optional(),
-  /** Where localisation landed. Required, and must be a real outcome. */
-  grounding: z.discriminatedUnion('status', [
-    z.object({
-      status: z.literal('grounded'),
-      region: BodyRegionSchema,
-      side: z.enum(['left', 'right', 'midline', 'bilateral', 'unknown']).optional(),
-      by: z.enum(['deterministic', 'model']).optional(),
-      score: z.number().min(0).max(1).nullish(),
-      clarification: z.string().max(240).nullish(),
-    }),
-    z.object({
-      status: z.literal('unsupported'),
-      reason: z.enum(['ungrounded', 'out_of_scope']),
-    }),
-  ]),
-  mutations: z.array(MutationInput).max(64).default([]),
-  answers: z.array(AnswerInput).max(64).default([]),
-});
+// The request shapes come from `@asi/shared`, NOT from here. They used to be declared in
+// this file, which meant an MCP server had no way to validate against them and grew its
+// own. One definition, two surfaces.
 
 app.post('/api/episodes', async (c) => {
-  const body = CreateEpisodeBody.safeParse(await c.req.json());
-  if (!body.success) return c.json({ error: body.error.flatten() }, 400);
+  const body = CreateEpisodeRequestSchema.safeParse(await c.req.json());
+  if (!body.success) return c.json(validationError(body.error), 400);
   const g = body.data.grounding;
 
   if (g.status === 'unsupported') {
     return c.json(
       {
-        error: 'episode_not_localised',
+        ...apiError('episode_not_localised', g.reason),
         reason: g.reason,
         message:
           'This workflow only records shoulder, neck, lower back and knee problems. ' +
@@ -251,11 +258,7 @@ app.post('/api/episodes', async (c) => {
     });
     return c.json(ep, 201);
   } catch (e) {
-    if (e instanceof FieldPolicyError) {
-      return c.json({ error: 'field_policy_violation', field: e.path, reason: e.message }, 422);
-    }
-    if (e instanceof MutationRejected) return c.json({ error: e.message }, 404);
-    throw e;
+    return refuseThrown(c, e);
   }
 });
 
@@ -264,17 +267,17 @@ app.post('/api/episodes', async (c) => {
  * Validation, provenance checks, the claim-class merge, the field row, the
  * preserved assertions, the record projection and the safety re-evaluation all
  * happen inside one transaction. A rejected mutation rolls the batch back.
+ *
+ * ANSWER CORRECTION is this endpoint, not another one. Posting an answer for a question
+ * that already has one REPLACES it, and the response says so per question:
+ * `answers[].replaced`. The store marks the replacement `user_edited` on its own, from the
+ * row, so a client cannot claim a correction that did not happen -- and a client cannot
+ * downgrade a real correction either, because the store does not believe the client.
  */
-const ApplyBody = z.object({
-  mutations: z.array(MutationInput).max(64).default([]),
-  answers: z.array(AnswerInput).max(64).default([]),
-  status: z.enum(['open', 'resolved', 'ongoing', 'archived']).optional(),
-});
-
 app.post('/api/episodes/:id/mutations', async (c) => {
   const id = c.req.param('id');
-  const body = ApplyBody.safeParse(await c.req.json());
-  if (!body.success) return c.json({ error: body.error.flatten() }, 400);
+  const body = ApplyMutationsRequestSchema.safeParse(await c.req.json());
+  if (!body.success) return c.json(validationError(body.error), 400);
   try {
     const outcome = applyMutations(
       id,
@@ -287,11 +290,7 @@ app.post('/api/episodes/:id/mutations', async (c) => {
     );
     return c.json(outcome);
   } catch (e) {
-    if (e instanceof FieldPolicyError) {
-      return c.json({ error: 'field_policy_violation', field: e.path, reason: e.message }, 422);
-    }
-    if (e instanceof MutationRejected) return c.json({ error: e.message }, 404);
-    throw e;
+    return refuseThrown(c, e);
   }
 });
 
@@ -308,7 +307,7 @@ app.get('/api/episodes', (c) => {
 app.get('/api/episodes/:id', (c) => {
   const id = c.req.param('id');
   const ep = getEpisode(id);
-  if (!ep) return c.json({ error: 'not found' }, 404);
+  if (!ep) return refuse(c, 'episode_not_found', `No episode with id ${id}.`, 404);
   return c.json({
     ...ep,
     grounding: getGrounding(id),
@@ -328,13 +327,13 @@ app.get('/api/episodes/:id', (c) => {
  */
 app.get('/api/episodes/:id/reopen', (c) => {
   const out = episodeForReopen(c.req.param('id'), releaseProfile);
-  if (!out) return c.json({ error: 'not found' }, 404);
+  if (!out) return refuse(c, 'episode_not_found', `No episode with id ${c.req.param('id')}.`, 404);
   return c.json(out);
 });
 
 app.post('/api/episodes/:id/note', async (c) => {
   const body = z.object({ text: z.string().min(1).max(4000) }).safeParse(await c.req.json());
-  if (!body.success) return c.json({ error: body.error.flatten() }, 400);
+  if (!body.success) return c.json(validationError(body.error), 400);
   appendTranscript(c.req.param('id'), 'user', body.data.text);
   return c.json({ ok: true });
 });
@@ -343,13 +342,13 @@ app.get('/api/episodes/:id/prior', (c) => c.json(priorEpisodes(c.req.param('id')
 
 app.get('/api/episodes/:id/summary', (c) => {
   const out = summaryFor(c.req.param('id'), releaseProfile);
-  if (!out) return c.json({ error: 'not found' }, 404);
+  if (!out) return refuse(c, 'episode_not_found', `No episode with id ${c.req.param('id')}.`, 404);
   return c.json(out);
 });
 
 app.get('/api/episodes/:id/summary.txt', (c) => {
   const out = summaryFor(c.req.param('id'), releaseProfile);
-  if (!out) return c.json({ error: 'not found' }, 404);
+  if (!out) return refuse(c, 'episode_not_found', `No episode with id ${c.req.param('id')}.`, 404);
   return c.text(out.text);
 });
 

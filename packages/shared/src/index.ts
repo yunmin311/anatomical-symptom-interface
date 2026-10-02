@@ -25,3 +25,5 @@ export * from './field-policy.ts';
 export * from './interview/engine.ts';
 export * from './safety-signals.ts';
 export * from './rules/redflags.ts';
+export * from './api-contract.ts';
+export * from './anatomy-capability.ts';
