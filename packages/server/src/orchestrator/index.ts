@@ -16,7 +16,14 @@
  * result or an explicit refusal, and callers must handle both.
  */
 import { z } from 'zod';
-import type { BodyRegion, ConsideredStructure, Depth, Side } from '@asi/shared';
+import {
+  getSubRegion,
+  REGIONS,
+  type BodyRegion,
+  type ConsideredStructure,
+  type Depth,
+  type Side,
+} from '@asi/shared';
 import {
   ALL_RULES,
   getStructure,
@@ -178,16 +185,60 @@ const ToolResultSchema = z.object({
  * candidate list" that was never present in the prompt, so it could only
  * invent ids. Now the list is built, length-capped, and sent.
  */
-const MAX_CANDIDATE_STRUCTURES = 40;
+/**
+ * The tripwire, not the truncation point.
+ *
+ * The ontology holds 54 structures across four regions. The old cap was 40 and the
+ * catalogue was built in region order, so the fourteen that fell off the end were the
+ * knee's -- a knee complaint could not produce knee candidates, and the ids were then
+ * filtered out downstream, which made it present as "the model chose nothing".
+ *
+ * This is set ABOVE the real size deliberately. The whole ontology costs roughly 2k tokens
+ * of ids and labels, which is not a prompt-length problem; the problem was a cap that
+ * silently ate a body part. So the cap is now generous, and the guard below throws if the
+ * ontology ever outgrows it -- which turns "some region is invisible to the model" from a
+ * silent defect into a startup failure somebody has to look at.
+ */
+const MAX_CANDIDATE_STRUCTURES = 200;
 
+/**
+ * Every structure id the model may propose, deduplicated.
+ *
+ * Three defects in the version this replaces:
+ *
+ *  1. `slice(0, 40)` over a list built in REGION ORDER, while the prompt states "the
+ *     catalogue is the complete set of ids you may use". It was 40 of 54, and the 14 that
+ *     fell off the end were the knee's -- so a knee complaint could not produce knee
+ *     candidates at all. The ids were then silently filtered out by `catalogueIds.has(id)`,
+ *     which is why it presented as "the model picked nothing" rather than as a truncation.
+ *  2. The region list was hardcoded rather than read from `REGIONS`, so a fifth region would
+ *     have been invisible here.
+ *  3. No deduplication. `asi:shoulder.deltoid` belongs to three shoulder sub-regions and
+ *     occupied three of the forty slots, so each additional region pushed more out.
+ *
+ * The cap is now a real safety valve rather than a silent truncation: if the ontology ever
+ * grows past it, this THROWS rather than quietly dropping the tail. A cap that fires is a
+ * decision somebody has to make.
+ */
 function candidateCatalogue(): { id: string; label: string; layTerm: string | null; region: string }[] {
-  const out: { id: string; label: string; layTerm: string | null; region: string }[] = [];
-  for (const region of ['shoulder', 'neck', 'lower_back', 'knee'] as BodyRegion[]) {
-    for (const s of structuresForRegion(region)) {
-      out.push({ id: s.id, label: s.label, layTerm: s.layTerm ?? null, region });
+  const byId = new Map<string, { id: string; label: string; layTerm: string | null; region: string }>();
+  for (const region of Object.keys(REGIONS) as BodyRegion[]) {
+    for (const structure of structuresForRegion(region)) {
+      const existing = byId.get(structure.id);
+      // Keep the FIRST region a structure belongs to: it is the one whose prefix it wears,
+      // and the model only needs the id.
+      if (!existing) byId.set(structure.id, { id: structure.id, label: structure.label, layTerm: structure.layTerm ?? null, region });
     }
   }
-  return out.slice(0, MAX_CANDIDATE_STRUCTURES);
+  const all = [...byId.values()];
+  if (all.length > MAX_CANDIDATE_STRUCTURES)
+    throw new Error(
+      `the candidate catalogue has ${all.length} structures, above the ${MAX_CANDIDATE_STRUCTURES} cap. ` +
+        `Raising the cap sends a longer prompt; LOWERING it silently drops ids and the model ` +
+        `cannot propose them -- which is what the previous unconditional slice did, losing ` +
+        `every knee structure. This must be a decision, not a truncation.`,
+    );
+  return all;
 }
 
 const CATALOGUE = candidateCatalogue();
@@ -332,8 +383,20 @@ export class ModelOrchestrator implements Orchestrator {
   }
 }
 
+/**
+ * Does this sub-region exist in this region?
+ *
+ * It used to answer `structuresForRegion(region).length > 0 && subRegionId.startsWith(
+ * region + '.')`, with the comment "a sub-region must actually exist in the region, or we
+ * drop it". It did not check that: `'shoulder.anything-at-all'` passed both clauses. The
+ * first clause is also true for every `BodyRegion`, so it read like a check and was not one.
+ *
+ * `getSubRegion` is the ontology's own answer, and this is the validator for what a MODEL
+ * proposes -- which is exactly where a weak check lets a fabricated location through into
+ * the record.
+ */
 function signalSafeSubRegion(region: BodyRegion, subRegionId: string): boolean {
-  return structuresForRegion(region).length > 0 && subRegionId.startsWith(`${region}.`);
+  return Boolean(getSubRegion(region, subRegionId));
 }
 
 export function createOrchestrator(): Orchestrator {

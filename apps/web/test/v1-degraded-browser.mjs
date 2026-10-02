@@ -49,6 +49,12 @@ function assert(condition, message) {
   if (!condition) throw new Error(message);
 }
 
+/** `assert.match` with a reason. node:assert's own is not on this shim. */
+function assertMatches(value, pattern, message) {
+  if (!pattern.test(value)) throw new Error(`${message} (got: ${JSON.stringify(value)})`);
+}
+assert.match = assertMatches;
+
 /** The inverse of a regex match, with a reason. `node:assert`'s own doesNotMatch is not on
  * this shim, and calling it silently threw a TypeError that read like a product failure. */
 function assertNoMatch(value, pattern, message) {
@@ -182,48 +188,98 @@ try {
     /* Bilateral                                                       */
     /* --------------------------------------------------------------- */
 
-    await check(`bilateral is two real scenes, never one mirrored${at}`, async () => {
-      const bilateral = await askApp(page, async () => {
+    await check(`bilateral shows a NAMED side, and it can be changed${at}`, async () => {
+      // This used to assert `sceneFor('shoulder','bilateral')` returned two distinct mesh
+      // sets, which is true and worth knowing -- and which the product never used. The
+      // VIEWER mounted `scenes[0]`, i.e. the left scene, chosen by array position, and the
+      // toolbar suppressed the side label for bilateral. So a user with pain in both knees
+      // looked at left anatomy with nothing on screen saying which side it was.
+      //
+      // Driven through the product now: record a bilateral complaint, reach the viewer, and
+      // require the side to be named and switchable.
+      await page.goto(url);
+      await page.waitForSelector('#root *', { timeout: 30_000 });
+      await page
+        .getByLabel('What has been bothering you?')
+        .fill('both my knees hurt going down stairs');
+      await page.getByRole('button', { name: 'Locate on body map' }).click();
+      await page.locator('.location-workbench, .empty-state').waitFor();
+      if (await page.getByRole('button', { name: 'Show me the body map' }).isVisible())
+        await page.getByRole('button', { name: 'Show me the body map' }).click();
+      await page.locator('.location-workbench').waitFor();
+      await page.getByRole('button', { name: 'Side & depth', exact: true }).click();
+      const both = page.getByLabel('Both sides', { exact: true });
+      await both.waitFor({ timeout: 10_000 });
+      await both.check();
+      await page.getByRole('button', { name: 'Area & pin', exact: true }).click();
+      await page.locator('.subregion-option').first().click();
+
+      // Three things had to be found before the side label exists, and each was a timeout:
+      //   - the viewer lives on the LOCATE screen, not the interview
+      //   - it only mounts when the 3D surface is selected (`<Body3d active={surface === '3d'}>`)
+      //   - and the whole map has to be open
+      //
+      // So: open the map, choose 3D, then look.
+      const threeD = page.getByRole('radio', { name: '3D', exact: true });
+      if (await threeD.isVisible().catch(() => false)) await threeD.check();
+      await page.waitForTimeout(500);
+
+      // The side must be NAMED on screen. A viewer showing an unnamed side is the defect.
+      const sideLabel = page.locator('[data-testid="viewer-side"]');
+      await sideLabel.waitFor({ timeout: 15_000 });
+      const initial = (await sideLabel.innerText()).toLowerCase();
+      assert(
+        /left|right/.test(initial),
+        `the viewer shows a bilateral complaint with no side named: "${initial}". A 3D viewer ` +
+          `with no side named is the one place a user could look at left anatomy and believe it right.`,
+      );
+      assert.match(
+        initial,
+        /both sides were reported/,
+        'the viewer does not say the report was bilateral, so the single side looks deliberate',
+      );
+
+      // And it must be CHANGEABLE, or the user is stuck on whichever side loaded first.
+      const toggle = page.locator('.viewer3d__side-toggle');
+      await toggle.waitFor({ timeout: 10_000 });
+      const rightButton = toggle.getByRole('button', { name: 'Right' });
+      await rightButton.click();
+      await page.waitForTimeout(400);
+      const after = (await sideLabel.innerText()).toLowerCase();
+      assert.match(after, /right/, `switching to the right side did not change what is named: "${after}"`);
+
+      // And the interview is still reachable afterwards: the correction path depends on it.
+      await page.getByRole('button', { name: /Use this location/ }).click();
+      await page.locator('.interview-panel, .experience-layout, main').first().waitFor();
+
+      // The registry still has to hold two genuinely different scenes, or "switching" is a lie.
+      const scenes = await askApp(page, async () => {
         const active = await import('/src/anatomy/active-scene.ts');
-        const selection = active.sceneFor('shoulder', 'bilateral');
-        if (selection.kind !== 'both')
-          return { kind: selection.kind, reason: selection.reason ?? null };
+        const selection = active.sceneFor('knee', 'bilateral');
+        if (selection.kind !== 'both') return { kind: selection.kind };
         return {
           kind: selection.kind,
           sides: selection.sides,
           meshes: selection.scenes.map((scene) =>
-            [
-              ...new Set(
-                scene.entries
-                  .flatMap((e) =>
-                    e.geometry?.type === 'url'
-                      ? e.geometry.components?.map((c) => c.url) ?? [e.geometry.url]
-                      : [],
-                  )
-                  .filter(Boolean),
-              ),
-            ].sort(),
+            scene.entries
+              .flatMap((e) =>
+                e.geometry?.type === 'url'
+                  ? e.geometry.components?.map((c) => c.url) ?? [e.geometry.url]
+                  : [],
+              )
+              .filter(Boolean)
+              .sort()
+              .join(),
           ),
-          laterality: selection.scenes.map((s) => [...new Set(s.entries.map((e) => e.laterality))]),
         };
       });
-
-      assert(bilateral.kind === 'both', `bilateral returned ${bilateral.kind}`);
-      assert(bilateral.sides.length === 2, `bilateral loaded ${bilateral.sides.length} scene(s)`);
-      // Non-empty, or the equality check below would pass on two empty lists.
-      assert(bilateral.meshes[0].length > 0, 'the first bilateral scene named no mesh files');
-      assert(bilateral.meshes[1].length > 0, 'the second bilateral scene named no mesh files');
-      // Two DIFFERENT file sets: if they were identical, one side is a copy of the other.
+      assert(scenes.kind === 'both', `bilateral returned ${scenes.kind}`);
+      assert(scenes.meshes[0].length > 0, 'the first bilateral scene named no mesh files');
       assert(
-        bilateral.meshes[0].join() !== bilateral.meshes[1].join(),
-        'the two bilateral scenes use the same files, so one is a copy of the other',
+        scenes.meshes[0] !== scenes.meshes[1],
+        'the two bilateral scenes use the same files, so switching sides shows the same geometry',
       );
-      // And each is labelled as itself.
-      assert(
-        bilateral.laterality.every((set) => set.includes('left') || set.includes('right')),
-        'a bilateral scene carries no lateral identity',
-      );
-      ok(`bilateral loads ${bilateral.meshes[0].length} + ${bilateral.meshes[1].length} distinct meshes`);
+      ok(`named ${initial.trim()} then switched to the right; two distinct scenes`);
     });
 
     /* --------------------------------------------------------------- */

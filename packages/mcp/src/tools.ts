@@ -34,6 +34,7 @@ import {
   ApplyMutationsRequestSchema,
   buildAnswer,
   mutationsForAnswer,
+  userProvenance,
   BodyRegionSchema,
   CreateEpisodeRequestSchema,
   FieldPolicyError,
@@ -148,12 +149,19 @@ function write(
   }
 }
 
-/** Provenance for a value the USER stated. Never `user_confirmed` by default. */
-const userProvenance = (createdBy = 'user') => ({
-  sourceType: 'user_statement' as const,
-  verificationStatus: 'unverified' as const,
-  createdBy,
-});
+// Provenance for a value the USER stated comes from `@asi/shared`'s `userProvenance`,
+// which already encodes that `location.point`, `location.subRegionId` and
+// `location.userSelectedStructureIds` are SELECTIONS rather than statements.
+//
+// This file used to declare its own copy with `sourceType: 'user_statement'` and no special
+// case, so `update_location({ point })` always failed field policy -- which allows a pin
+// only from `user_selection` -- while the tool's description advertised "optionally an
+// approximate pin" and its schema accepted `point`. A client following the description got a
+// refusal for something the browser does routinely.
+//
+// Two copies of the provenance rule is exactly how they disagreed.
+export { userProvenance } from '@asi/shared';
+
 
 /* ------------------------------------------------------------------ */
 /* Tools                                                              */
@@ -335,7 +343,7 @@ export const TOOLS = {
         .map(([fieldPath, value]) => ({
           fieldPath: `location.${fieldPath}`,
           value,
-          provenance: userProvenance(),
+          provenance: userProvenance(`location.${fieldPath}`),
         }));
       if (!mutations.length)
         return fail('validation_failed', 'update_location was given nothing to change.');
@@ -409,7 +417,10 @@ export const TOOLS = {
           {
             fieldPath: 'location.userSelectedStructureIds',
             value: merged,
-            provenance: { ...userProvenance(), sourceType: 'user_selection' as const },
+            // No `sourceType` override: `userProvenance` already knows
+            // `location.userSelectedStructureIds` is a selection, and it encodes that from the
+            // PATH. Overriding it here was a third copy of the same rule.
+            provenance: userProvenance('location.userSelectedStructureIds'),
           },
         ],
       });

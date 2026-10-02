@@ -14,7 +14,6 @@
  */
 import { Three3dAnatomyAdapter } from './three3d.ts';
 import type { RendererSceneManifest } from './scene-manifest.ts';
-import { FIXTURE_SCENE } from './active-scene.ts';
 import type {
   AnatomyAdapter,
   CameraPreset,
@@ -85,7 +84,28 @@ export class AnatomyWorkspace {
 
   constructor(source: AnatomyAdapter, opts: WorkspaceOptions = {}) {
     this.source = source;
-    this.manifest = opts.manifest ?? FIXTURE_SCENE;
+    /*
+     * There is no default manifest.
+     *
+     * This was `opts.manifest ?? FIXTURE_SCENE`, which put a SYNTHETIC anatomy manifest one
+     * omitted argument away from every screen: `FIXTURE_MANIFEST` is imported by a
+     * production module and `phase1-fixture-1` ships inside the web bundle. It was not
+     * reachable today -- the only production construction passes a manifest explicitly -- but
+     * the whole `assertProductionSceneIsReal` guard chain is bypassed by simply not passing
+     * one, and the module header claimed the fixture is used "by the browser gates and the
+     * headless adapter tests", which named two consumers and omitted this one.
+     *
+     * So omitting the manifest is now a hard error rather than a silent synthetic fallback.
+     * A class with no anatomy must render nothing and say so, which is what `Body3d` does
+     * when `sceneFor` returns a refusal.
+     */
+    if (!opts.manifest)
+      throw new Error(
+        'AnatomyWorkspace requires an explicit manifest. Omitting it used to fall back to the ' +
+          'SYNTHETIC fixture, which renders plausible anatomy that is entirely fabricated; a ' +
+          'production viewer must never be able to reach it by omission.',
+      );
+    this.manifest = opts.manifest;
     this.failMount = opts.failMount ?? false;
     this.opts = opts;
     this.status = {

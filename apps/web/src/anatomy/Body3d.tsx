@@ -74,10 +74,36 @@ export function Body3d({
   const known = asBodyRegion(region);
   const selection = sceneFor(known ?? region, side);
   const mountable = selection.kind === 'scene' ? selection.scene : null;
-  // `both` mounts one scene at a time too; the viewer shows a side, and the toolbar says
-  // which. So it is mountable, and it is the only case with no `reason`.
-  const bilateral = selection.kind === 'both' ? selection.scenes[0] : null;
-  const scene = mountable ?? bilateral;
+  /*
+   * `bilateral` used to mount `scenes[0]` and nothing else.
+   *
+   * `sceneFor` returns `[left, right]` for `bilateral`, so `scenes[0]` is the LEFT scene --
+   * chosen by array position, with no side named anywhere. And the toolbar's side label
+   * suppressed `bilateral`, so the one screen where the choice was invisible was also the
+   * screen where the viewer refused to say which side it was showing. A user with pain in
+   * both knees could look at left anatomy believing it was right, which is the exact failure
+   * this file's own header says the viewer exists to prevent.
+   *
+   * It is now a choice with a name. The side being displayed is held in state, it changes
+   * when the record's side does, and the toolbar always says it -- including for bilateral.
+   */
+  const [bilateralSide, setBilateralSide] = useState<'left' | 'right'>('left');
+  useEffect(() => {
+    // Switching to a one-sided record must not leave the toggle claiming a side that no
+    // longer applies, and starting on the RIGHT would break anyone who read `scenes[0]`
+    // behaviour as "the first one shown"; left is the neutral start because the toggle is
+    // always visible and always named.
+    if (side !== 'bilateral') setBilateralSide('left');
+  }, [side]);
+
+  const bilateralScene =
+    selection.kind === 'both'
+      ? selection.scenes[bilateralSide === 'right' ? 1 : 0]
+      : null;
+  const scene = mountable ?? bilateralScene;
+  /** The side actually ON SCREEN, which is not always the side in the record. */
+  const shownSide: Side | null =
+    selection.kind === 'scene' ? selection.side : selection.kind === 'both' ? bilateralSide : null;
   const reason =
     selection.kind === 'needs-side' || selection.kind === 'needs-region' || selection.kind === 'none'
       ? selection.reason
@@ -146,10 +172,44 @@ export function Body3d({
         volumes, and why there is no image.
       */}
       <div className="viewer3d__toolbar">
-        {side !== 'unknown' && side !== 'bilateral' && scene && (
+        {/*
+          The side ON SCREEN, not the side in the record.
+
+          These were the same value until bilateral, and using the record's side made the
+          viewer go silent exactly when it mattered most: for `bilateral` the label was
+          suppressed entirely, while the scene being displayed was `scenes[0]` -- the left
+          one, chosen by array position. So the only time the viewer could show anatomy from
+          an unnamed side was the only time it declined to name it.
+
+          `shownSide` is what the canvas actually holds, so the label and the geometry cannot
+          disagree.
+        */}
+        {shownSide && scene && (
           <p className="viewer3d__side" data-testid="viewer-side">
-            Showing your {side} side.
+            Showing your {shownSide} side
+            {side === 'bilateral' ? ' (both sides were reported)' : ''}.
           </p>
+        )}
+
+        {/*
+          For bilateral, a real control to switch between the two real scenes. Not a mirror:
+          both are real source geometry, and only one is shown at a time because the canvas
+          shows one side. Without this the user is stuck on whichever side loaded first, with
+          no way to look at the other.
+        */}
+        {selection.kind === 'both' && (
+          <div className="viewer3d__side-toggle" role="group" aria-label="Which side to display">
+            {(['left', 'right'] as const).map((option) => (
+              <button
+                key={option}
+                className={`viewer3d__side-button${shownSide === option ? ' is-active' : ''}`}
+                aria-pressed={shownSide === option}
+                onClick={() => setBilateralSide(option)}
+              >
+                {option === 'left' ? 'Left' : 'Right'}
+              </button>
+            ))}
+          </div>
         )}
         {status?.disclaimer && (
           <p className="viewer3d__disclaimer" data-testid="fixture-disclaimer">
