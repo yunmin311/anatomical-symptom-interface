@@ -111,8 +111,19 @@ try {
       await page.getByRole('button', { name: 'Side & depth', exact: true }).click();
       await page.getByLabel('Deep inside', { exact: true }).check();
       await page.getByRole('button', { name: 'Structures', exact: true }).click();
+      // NOT conditional. This used to be `if (visible) click`, which made "the structure
+      // step did not happen" indistinguishable from "the structure step passed" -- and the
+      // check is named "area, depth, a structure and a pin", so a run that pointed at
+      // nothing while a structure was available reported success. Structure selection is
+      // the one step in this flow that only exists in 3D, so skipping it silently is
+      // exactly the substitution this project forbids.
       const indicate = page.getByRole('button', { name: 'Indicate this structure' }).first();
-      if (await indicate.isVisible().catch(() => false)) await indicate.click();
+      await indicate.waitFor({ timeout: 10_000 });
+      await indicate.click();
+      await page
+        .locator('[data-testid^="candidate-"].candidate-item--selected')
+        .first()
+        .waitFor({ timeout: 10_000 });
       await page.getByRole('button', { name: 'Area & pin', exact: true }).click();
       // The pin control is inside a collapsed <details>, because an approximate pin is
       // optional detail rather than part of choosing an area. A gate that assumes it is
