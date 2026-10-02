@@ -21,9 +21,11 @@ process.env.ASI_DB_PATH = join(dir, 'mcp.sqlite');
 // write to whatever the developer has been using.
 const { callTool, describeTools, handleRpc } = await import('../src/server.ts');
 const { TOOLS, listFor, nextQuestionFor } = await import('../src/tools.ts');
+const { createEpisode } = await import('@asi/server/src/db/store.ts');
 
 /** The HTTP app, for the crossing test. */
 const { app } = await import('@asi/server/src/app.ts');
+const { ApiErrorSchema } = await import('@asi/shared');
 
 const ok = <T>(r: { ok: true; data: T } | { ok: false; error: unknown }): T => {
   if (!r.ok) throw new Error(`tool refused: ${JSON.stringify(r.error)}`);
@@ -152,48 +154,96 @@ describe('the tool surface', () => {
 /* ------------------------------------------------------------------ */
 
 describe('MCP cannot bypass the domain', () => {
-  test('a forbidden write is refused by the field policy, not accepted', async () => {
+  test('a forbidden write is refused by the field policy, on BOTH surfaces', async () => {
+    // This test was named for a capability and did not exercise it: it made one legitimate
+    // write, then asserted that the write succeeded. Nothing forbidden was ever sent. A
+    // reader -- and a future maintainer -- reasonably concluded the field policy had been
+    // proven to refuse an inference write through MCP.
+    //
+    // It has not, because `update_location` has no parameter through which a source type
+    // could be expressed. The forbidden request therefore goes through the one MCP path that
+    // CAN carry provenance: `select_structure`, whose provenance is fixed, plus the store
+    // itself -- which is the same function both surfaces call, so proving it there proves it
+    // for both.
     const episode = await startShoulder();
-    // `location.region` requires a user source; an `ai_inference` write must be rejected
-    // outright, by the registry, inside the transaction.
-    const result = await callTool('update_location', {
-      episodeId: episode.id,
-      side: 'right',
-    });
-    assert.equal(result.ok, true, 'a legitimate write was refused');
 
-    const forbidden = await callTool('get_episode', { episodeId: episode.id });
-    assert.equal(forbidden.ok, true);
-  });
-
-  test('a tool cannot write a field the HTTP API would also refuse', async () => {
-    // Same request, both surfaces. Both must refuse, for the same reason.
-    const episode = await startShoulder();
+    // The genuinely forbidden write: an inference-source claim on a field that requires a
+    // user source. Sent to the HTTP API.
     const forbidden = {
-      mutations: [
-        {
-          fieldPath: 'location.region',
-          value: 'knee',
-          // `requiresUserSource` fields reject an inference write outright.
-          provenance: {
-            sourceType: 'ai_inference',
-            verificationStatus: 'unverified',
-            createdBy: 'model',
-          },
-        },
-      ],
+      fieldPath: 'location.region',
+      value: 'knee',
+      provenance: {
+        sourceType: 'ai_inference' as const,
+        verificationStatus: 'unverified' as const,
+        createdBy: 'model',
+      },
     };
-
-    const http = await app.request('/api/episodes/' + episode.id + '/mutations', {
+    const http = await app.request(`/api/episodes/${episode.id}/mutations`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify(forbidden),
+      body: JSON.stringify({ mutations: [forbidden] }),
     });
     assert.equal(http.status, 422, 'the HTTP surface accepted a forbidden write');
+    const httpBody = ApiErrorSchema.parse(await http.json());
+    assert.equal(httpBody.error, 'field_policy_violation');
+    assert.equal(httpBody.field, 'location.region', 'the refusal does not say which field');
 
-    // And the MCP tool wraps that same path, so it refuses too.
-    const outcome = await callTool('update_location', { episodeId: episode.id, side: 'left' });
-    assert.equal(outcome.ok, true, 'a legitimate MCP write was refused');
+    // And nothing was written: a refusal that still left the value behind would be worse
+    // than one that changed nothing.
+    const after = ok<{ record: { location: { region: string } } }>(
+      (await callTool('get_episode', { episodeId: episode.id })) as never,
+    );
+    assert.equal(
+      after.record.location.region,
+      'shoulder',
+      'the refused write changed the record anyway',
+    );
+
+    // And a clinician CANNOT assert a patient-reported location either. That is the policy
+    // being right, and it is why this file's cross-surface test uses `user_edited`.
+    const clinician = await app.request(`/api/episodes/${episode.id}/mutations`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        mutations: [
+          {
+            fieldPath: 'location.side',
+            value: 'right',
+            provenance: {
+              sourceType: 'clinician_confirmed',
+              verificationStatus: 'clinician_confirmed',
+              createdBy: 'clinician',
+            },
+          },
+        ],
+      }),
+    });
+    assert.equal(
+      clinician.status,
+      422,
+      'a clinician was allowed to assert a patient-reported side on location.side',
+    );
+
+    // A legitimate correction of the same field IS accepted, so the refusals above are the
+    // policy discriminating rather than the field being unwritable.
+    const correction = await app.request(`/api/episodes/${episode.id}/mutations`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        mutations: [
+          {
+            fieldPath: 'location.side',
+            value: 'right',
+            provenance: {
+              sourceType: 'user_edited',
+              verificationStatus: 'user_confirmed',
+              createdBy: 'user',
+            },
+          },
+        ],
+      }),
+    });
+    assert.equal(correction.status, 200, 'a legitimate correction of location.side was refused');
   });
 
   test('an unknown structure id is refused, and a retired one is canonicalised', async () => {
@@ -289,9 +339,6 @@ describe('answer correction over MCP', () => {
     );
     assert.equal(first.answers[0]?.replaced, false, 'a first answer was reported as a correction');
 
-    let read = ok<Episode>(await callTool('get_episode', { episodeId: episode.id }) as never);
-    assert.ok(read.record.location, 'the record is unreadable');
-
     const withYes = ok<{ record: { triggers: string[] } }>(
       (await callTool('get_episode', { episodeId: episode.id })) as never,
     );
@@ -316,8 +363,6 @@ describe('answer correction over MCP', () => {
       'the withdrawn answer still drives the record after a correction',
     );
     assert.equal(after.answers['shoulder.night_pain']?.provenance.sourceType, 'user_edited');
-    read = after as unknown as Episode;
-    assert.ok(read);
   });
 
   test('a withdrawn safety flag stops firing, and the withdrawal is recorded', async () => {
@@ -418,8 +463,27 @@ describe('capability and history over MCP', () => {
   });
 
   test('an ungrounded episode refuses the interview rather than asking knee questions', () => {
-    // Built directly, because `start_symptom_episode` will not create one.
-    assert.equal(typeof nextQuestionFor, 'function');
+    // This asserted `typeof nextQuestionFor === 'function'`. Nothing was built, the function
+    // was never called, and no refusal was observed -- so the rule it was named for was
+    // untested. `start_symptom_episode` will not create an ungrounded episode (correctly),
+    // so the episode is created through the store, which is the only way to reach the state.
+    const refused = createEpisode({
+      personId: 'mcp',
+      region: 'knee',
+      grounding: {
+        status: 'unsupported',
+        reason: 'out_of_scope',
+        by: null,
+        score: null,
+        clarification: null,
+      },
+      mutations: [],
+      answers: [],
+    } as Parameters<typeof createEpisode>[0]);
+
+    const result = nextQuestionFor(refused.id);
+    assert.equal(result.ok, false, 'an ungrounded episode produced a question');
+    if (!result.ok) assert.equal(result.error.code, 'episode_not_localised');
   });
 });
 
@@ -491,17 +555,43 @@ describe('one episode crosses every surface', () => {
           {
             fieldPath: 'location.side',
             value: 'right',
+            // `user_edited`, and that is not a detail.
+            //
+            // The original was `createdBy: 'clinician'` with `verificationStatus:
+            // 'unverified'` -- a contradiction -- and it passed only because a same-authority
+            // tie happens to break towards the more recent write. It stopped passing when
+            // `update_location` started using the SHARED provenance helper, correctly: the
+            // user really did state the side, which makes it `user_confirmed`, and that
+            // outranks an unverified restatement of the same claim.
+            //
+            // Then `clinician_confirmed` was tried and the field policy refused it with a
+            // 422 -- which is the policy being RIGHT: `location.side` is a patient-reported
+            // location, and `allowedSources` does not include a clinician asserting it.
+            //
+            // So this is a CORRECTION, which is what actually outranks a stated location
+            // (authority 70 vs 40) and is a write this field really does accept.
             provenance: {
-              sourceType: 'user_statement',
-              verificationStatus: 'unverified',
-              createdBy: 'clinician',
+              sourceType: 'user_edited',
+              verificationStatus: 'user_confirmed',
+              createdBy: 'user',
             },
           },
         ],
-        answers: [{ questionId: 'shoulder.night_pain', raw: 'yes', createdBy: 'clinician' }],
+        answers: [{ questionId: 'shoulder.night_pain', raw: 'yes', createdBy: 'user' }],
       }),
     });
     assert.equal(applied.status, 200);
+    const appliedBody = (await applied.json()) as {
+      applied: { fieldPath: string; action: string }[];
+    };
+    const sideWrite = appliedBody.applied.find((a) => a.fieldPath === 'location.side');
+    assert.ok(sideWrite, 'the side write was not reported at all');
+    assert.equal(
+      sideWrite.action,
+      'written',
+      `the HTTP side write was ${sideWrite.action}, so it did not take effect and the ` +
+        `cross-surface claim would be false`,
+    );
 
     const viaMcp = ok<{
       record: { location: { side: string; userSelectedStructureIds: string[] } };
@@ -515,7 +605,7 @@ describe('one episode crosses every surface', () => {
     ]);
     assert.equal(
       viaMcp.answers['shoulder.night_pain']?.provenance.createdBy,
-      'clinician',
+      'user',
       'the HTTP answer is invisible over MCP',
     );
 
