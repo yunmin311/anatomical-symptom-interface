@@ -241,39 +241,15 @@ export function evaluateSession(record: SymptomRecord, answers: AnswerMap) {
 /* Mutation payloads                                                  */
 /* ------------------------------------------------------------------ */
 
-const userProv = (fieldPath: string, rawText?: string): Provenance => ({
-  sourceType: fieldPath.startsWith('location.point') || fieldPath === 'location.subRegionId'
-    || fieldPath === 'location.userSelectedStructureIds'
-    ? 'user_selection'
-    : 'user_statement',
-  verificationStatus: 'user_confirmed',
-  createdBy: 'user',
-  capturedAt: new Date().toISOString(),
-  rawText: rawText ?? null,
-});
 
-/**
- * Build the mutation payload for the fields an answer wrote.
+/*
+ * `mutationsForAnswer` and `mutationsForField` moved to `@asi/shared`.
  *
- * Only the fields the answer actually changed are sent, each with the right
- * source type. A question that writes nothing — every safety-only question —
- * therefore produces an empty mutation list, and the safety signal travels in
- * the ANSWER, not in the record.
+ * They lived here because the browser was once the only thing that recorded an answer.
+ * The MCP surface records answers too, and its first version stored the answer without
+ * the fields that answer implies -- so "the user says it wakes them at night" became a
+ * fact that changed nothing a clinician reads. Two surfaces, one question ("what does
+ * this answer write?") means one implementation, in the pure domain where both can reach
+ * it without either depending on the other.
  */
-export function mutationsForAnswer(
-  record: SymptomRecord,
-  answer: ReturnType<typeof buildAnswer>,
-  wroteFields: string[],
-): FieldMutation[] {
-  const get = (p: string): unknown =>
-    p.split('.').reduce<unknown>((a, k) => (a as Record<string, unknown>)?.[k], record as unknown as Record<string, unknown>);
-  return wroteFields.map((fieldPath) => ({
-    fieldPath,
-    value: get(fieldPath),
-    provenance: userProv(fieldPath, answer.provenance.rawText ?? undefined),
-  }));
-}
-
-export function mutationsForField(fieldPath: string, value: unknown): FieldMutation[] {
-  return [{ fieldPath, value, provenance: userProv(fieldPath) }];
-}
+export { mutationsForAnswer, mutationsForField } from '@asi/shared';
