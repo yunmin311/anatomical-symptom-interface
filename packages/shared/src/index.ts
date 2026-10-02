@@ -27,3 +27,4 @@ export * from './safety-signals.ts';
 export * from './rules/redflags.ts';
 export * from './api-contract.ts';
 export * from './anatomy-capability.ts';
+export * from './answer-mutations.ts';

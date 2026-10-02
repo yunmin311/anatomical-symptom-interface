@@ -1,0 +1,23 @@
+{
+  "name": "@asi/mcp",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Provider-independent MCP surface over ASI Core. A client, never a second write path.",
+  "main": "./src/tools.ts",
+  "scripts": {
+    "start": "node --experimental-strip-types src/server.ts",
+    "dev": "node --experimental-strip-types --watch src/server.ts",
+    "typecheck": "tsc --noEmit",
+    "test": "node --experimental-strip-types --test test/*.test.ts"
+  },
+  "dependencies": {
+    "@asi/server": "workspace:*",
+    "@asi/shared": "workspace:*",
+    "zod": "^3.24.1"
+  },
+  "devDependencies": {
+    "@types/node": "^22.13.1",
+    "typescript": "^5.9.3"
+  }
+}

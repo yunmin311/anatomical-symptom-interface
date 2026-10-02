@@ -86,6 +86,17 @@ const q = (question: InterviewQuestion): InterviewQuestion => question;
 const add = <T,>(arr: readonly T[], ...items: T[]): T[] => [...new Set([...arr, ...items])];
 
 /**
+ * Remove items, preserving order.
+ *
+ * Needed because an answer can WITHDRAW something. A user who corrects "yes, it wakes me
+ * at night" to "no" has told us the symptom is not there, and a record that keeps the
+ * night trigger after that correction is reporting a symptom the user has disowned.
+ */
+const without = <T,>(arr: readonly T[], ...items: T[]): T[] => [
+  ...new Set(arr.filter((item) => !items.includes(item))),
+];
+
+/**
  * Apply one answer to a record, returning the field paths written.
  *
  * This is the single place an interview answer changes the record. It is pure:
@@ -150,9 +161,24 @@ const SHOULDER_QUESTIONS: InterviewQuestion[] = [
     required: true,
     highlightStructureIds: ['asi:shoulder.supraspinatus-tendon', 'asi:shoulder.subacromial-bursa', 'asi:shoulder.acromion'],
     applyTo: (record, a) => {
-      // Only an explicit yes adds a trigger. 'no', 'unknown' and 'not_asked'
-      // must never add or remove a trigger.
-      if (denied(a) || uncertain(a)) return [];
+      // UNCERTAINTY NEVER CHANGES THE RECORD. 'I am not sure' and 'not asked' must not add
+      // a trigger and must not remove one -- that is rule 4 of this product, and it is why
+      // `unknown` is a first-class answer rather than a synonym for no.
+      //
+      // A definite NO is different, and used to behave the same way, which was wrong. The
+      // original comment said "only an explicit yes adds a trigger" and returned early for
+      // `denied` as well, so a user who corrected "yes" to "no" kept a night trigger the
+      // record still claimed they reported. The correction was accepted, marked
+      // `user_edited`, and had no effect on anything a clinician reads -- which makes the
+      // whole correction feature cosmetic for this question.
+      if (uncertain(a)) return [];
+      if (denied(a)) {
+        // Only touch the field when there is something to withdraw, so a "no" on a fresh
+        // record does not write an unchanged value and manufacture provenance for it.
+        if (!record.triggers.includes('night')) return [];
+        record.triggers = without(record.triggers, 'night');
+        return ['triggers'];
+      }
       record.triggers = add(record.triggers, 'night');
       return ['triggers'];
     },

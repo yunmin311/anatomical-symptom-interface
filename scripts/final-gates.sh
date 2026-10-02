@@ -279,6 +279,12 @@ run realgeom    node apps/web/test/real-geometry-browser.mjs
 # The gate the old runner omitted from its own report.
 run evidence    node apps/web/test/evidence.mjs
 
+# The MCP surface, over the same database the API uses. Not a separate run: the whole
+# point is that an episode crosses surfaces, so the gate has to use the running API and the
+# real store. A failure here is the assistant and the browser disagreeing about what a
+# patient said, which is invisible everywhere else.
+run mcpsurface  pnpm --filter @asi/mcp test
+
 # ============================================================================
 echo
 echo "=== per-package test counts ==="
