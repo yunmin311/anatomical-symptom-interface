@@ -164,9 +164,16 @@ export function answersFor(episodeId: string): AnswerMap {
       triState: String(r.tri_state),
       wroteFields: JSON.parse(String(r.wrote_fields_json)) as string[],
       provenance: {
-        sourceType: 'user_statement',
+        // READ FROM THE ROW, not assumed.
+        //
+        // This selected `source_type` and then wrote a literal `'user_statement'`, so
+        // every answer came back looking like a first answer -- including one the user
+        // had corrected. The column was in the query the whole time. A clinician
+        // reading the record could not tell a statement from a correction, which is
+        // the whole reason the column exists.
+        sourceType: String(r.source_type),
         capturedAt: String(r.captured_at),
-        verificationStatus: 'unverified',
+        verificationStatus: String(r.verification_status),
         createdBy: String(r.created_by),
         rawText: r.raw_text as string | null,
       },
@@ -207,7 +214,7 @@ export interface ApplyOutcome {
    * succeeded. Kept in the type so a future soft-fail path is explicit.
    */
   rejected: { fieldPath: string; reason: string }[];
-  answers: { questionId: string; triState: string }[];
+  answers: { questionId: string; triState: string; replaced: boolean }[];
   coverage: Record<string, boolean>;
   preserved: number;
   safety: SafetyEvaluation;
@@ -230,12 +237,37 @@ export function applyMutations(episodeId: string, input: ApplyInput, profile: Re
     const answerResults: ApplyOutcome['answers'] = [];
 
     // 1. Answers first: a safety question's signal must exist before rules run.
+    //
+    //    EDITING AN ANSWER REPLACES IT. It does not append a second, contradicting
+    //    answer: `raw_json` is keyed on (episode, question), so a second value for the
+    //    same question would make "what did the user say about this" unanswerable, and
+    //    a safety question with two values would have to pick one silently.
+    //
+    //    The replacement is marked `user_edited` rather than `user_statement`, because
+    //    "the user said this" and "the user CORRECTED what they said" are different
+    //    facts and a clinician reading the record is entitled to tell them apart.
+    //
+    //    KNOWN LIMITATION, deliberate and documented: this stores the CURRENT value
+    //    only. The original answer is overwritten, not kept, so there is no audit trail
+    //    of what was first said. Adding one would be an event-sourced medical record,
+    //    which this product is explicitly not at V1. What is kept is that the value
+    //    now carries `user_edited`, so a reader knows it was corrected, and
+    //    `captured_at` is the moment the CURRENT value was given. See
+    //    docs/known-limitations.md.
     for (const m of input.answerMutations ?? []) {
+      const prior = get<{ captured_at: string }>(
+        `SELECT captured_at FROM episode_answers WHERE episode_id = ? AND question_id = ?`,
+        episodeId,
+        m.questionId,
+      );
+      const isEdit = Boolean(prior);
+
       const answer = buildAnswer({
         questionId: m.questionId,
         raw: m.raw,
         wroteFields: m.wroteFields,
         provenance: {
+          // The moment the CURRENT value was given: the edit, not the original.
           capturedAt: m.capturedAt ?? now(),
           createdBy: m.createdBy,
           rawText: m.rawText ?? null,
@@ -250,20 +282,30 @@ export function applyMutations(episodeId: string, input: ApplyInput, profile: Re
            raw_json = excluded.raw_json,
            tri_state = excluded.tri_state,
            wrote_fields_json = excluded.wrote_fields_json,
+           source_type = excluded.source_type,
            captured_at = excluded.captured_at,
+           -- The editor is whoever made THIS value. Leaving the original author in
+           -- place would attribute a correction to whoever typed the first answer.
+           created_by = excluded.created_by,
+           verification_status = excluded.verification_status,
            raw_text = excluded.raw_text`,
         episodeId,
         m.questionId,
         JSON.stringify(answer.raw),
         answer.triState,
         JSON.stringify(answer.wroteFields),
-        'user_statement',
+        isEdit ? 'user_edited' : 'user_statement',
         answer.provenance.capturedAt,
         'unverified',
         answer.provenance.createdBy,
         answer.provenance.rawText ?? null,
       );
-      answerResults.push({ questionId: m.questionId, triState: answer.triState });
+      answerResults.push({
+        questionId: m.questionId,
+        triState: answer.triState,
+        // So a caller can report the correction rather than silently accepting it.
+        replaced: isEdit,
+      });
     }
 
     // 2. Field mutations.
@@ -611,10 +653,72 @@ function refreshPlaceAggregates(regionRowId: string): void {
 /* Safety flags                                                        */
 /* ------------------------------------------------------------------ */
 
+/**
+ * The safety flags currently standing for an episode.
+ *
+ * Read-only on purpose: flags are produced by evaluating the rules against the current
+ * record and answers, and written by `recordSafetyFlags`. Nothing may set one directly,
+ * because a flag whose provenance is a hand-set row is a warning nobody can trace.
+ */
+export function safetyFlags(episodeId: string): { ruleId: string; severity: string; userMessage: string }[] {
+  return (
+    all(
+      `SELECT rule_id, severity, user_message FROM safety_flags WHERE episode_id = ? ORDER BY rule_id`,
+      episodeId,
+    ) as { rule_id: string; severity: string; user_message: string }[]
+  ).map((r) => ({ ruleId: r.rule_id, severity: r.severity, userMessage: r.user_message }));
+}
+
+/**
+ * Persist the safety evaluation for an episode.
+ *
+ * ## WHY THE DELETE IS THE INTERESTING LINE
+ *
+ * This used to INSERT only, with a `if (exists) continue` guard. That guard reads like
+ * idempotence and is actually the bug: a rule that stopped firing was never removed, so
+ * a user who answered "yes" and then corrected it to "no" kept an emergency flag
+ * describing an answer they had withdrawn.
+ *
+ * A flag that outlives the evidence for it is worse than no flag at all -- it tells a
+ * clinician to act on something the patient has since said is not true, and unlike a
+ * missing warning it cannot be reasoned past.
+ *
+ * So the flag table is made to MATCH the current evaluation: anything the rules no
+ * longer produce is deleted, and anything they do is inserted or left alone.
+ * `raised_at` for a surviving flag is preserved, because when a warning first
+ * appeared is true and worth keeping; it is re-stamped only when the flag genuinely
+ * changes severity.
+ */
 function recordSafetyFlags(episodeId: string, safety: SafetyEvaluation, profile: ReleaseProfile): void {
+  const fired = new Set(safety.flags.map((f) => f.ruleId));
+
+  // Withdraw first, so a rule that stopped firing disappears. Doing it before the
+  // inserts also means a rule cannot briefly exist twice.
+  const current = all(
+    `SELECT id, rule_id, severity FROM safety_flags WHERE episode_id = ?`,
+    episodeId,
+  ) as { id: string; rule_id: string; severity: string }[];
+  for (const row of current) {
+    if (fired.has(row.rule_id)) continue;
+    run(`DELETE FROM safety_flags WHERE id = ?`, row.id);
+    appendTranscript(
+      episodeId,
+      'system',
+      `[safety:withdrawn] "${row.rule_id}" no longer applies. It was raised from an answer the ` +
+        `user has since corrected, so the flag has been removed rather than left describing ` +
+        `a symptom the user no longer reports.`,
+    );
+  }
+
   for (const f of safety.flags) {
-    const exists = get(`SELECT id FROM safety_flags WHERE episode_id = ? AND rule_id = ?`, episodeId, f.ruleId);
-    if (exists) continue;
+    const existing = current.find((row) => row.rule_id === f.ruleId);
+    if (existing) {
+      // Keep raised_at: when a warning first appeared is true. Re-stamp only when the
+      // severity actually changed, so a clinician can see the flag escalated.
+      if (existing.severity !== f.severity)
+        run(`UPDATE safety_flags SET severity = ?, user_message = ? WHERE id = ?`, f.severity, f.userMessage, existing.id);
+      continue;
+    }
     run(
       `INSERT INTO safety_flags (id, episode_id, rule_id, severity, user_message, review_status, profile, raised_at)
        VALUES (?,?,?,?,?,?,?,?)`,
