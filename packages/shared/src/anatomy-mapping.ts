@@ -154,7 +154,20 @@ export interface MappingEntry {
  * claimed mesh for exactly that reason — so laterality is a build decision rather
  * than a mapping decision.
  */
-export const PIPELINE_SIDES = ['left', 'right'] as const;
+/**
+ * Sides a build can represent.
+ *
+ * `midline` is a real build, not a synonym for "both sides". A region whose source has
+ * genuine midline geometry -- a cervical spine, a lumbar spine, a sacrum -- gets its own
+ * manifest containing ONLY that geometry, so `sceneFor(region, 'midline')` can return
+ * something the source actually supports.
+ *
+ * It was left out of this list while the only midline geometry was duplicated into both
+ * side builds as context. `ProductionSide` advertised midline, `sceneFor(region,
+ * 'midline')` was typed to return a real scene, and the registry had no midline key at
+ * all -- a capability the types promised and the build never produced.
+ */
+export const PIPELINE_SIDES = ['left', 'right', 'midline'] as const;
 export type PipelineSide = (typeof PIPELINE_SIDES)[number];
 
 /**

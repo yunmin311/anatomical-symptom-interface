@@ -325,6 +325,16 @@ export interface SelectionResult {
   /** Canonical concepts assembled from several source meshes. */
   composite: CompositeBinding[];
   unmapped: Unmapped[];
+  /**
+   * Structures deliberately left out of THIS build because they are not the side it
+   * represents.
+   *
+   * Distinct from `unmapped` on purpose. `unmapped` means "we wanted this and the source
+   * could not supply it" -- a gap to report. A midline build excluding the left
+   * sternocleidomastoid is not a gap: there is no honest way for that structure to appear
+   * in a midline scene, and listing it as unavailable would misrepresent the source.
+   */
+  excluded: { asiId: string; reason: string }[];
   /** Source meshes present in the input that no structure claimed. */
   unusedMeshNames: string[];
 }
@@ -352,6 +362,7 @@ export function selectStructures(
   const bound: Binding[] = [];
   const composite: CompositeBinding[] = [];
   const unmapped: Unmapped[] = [];
+  const excluded: { asiId: string; reason: string }[] = [];
 
   for (const entry of mapping) {
     // The structure must exist in our own domain. A mapping row naming a
@@ -373,8 +384,28 @@ export function selectStructures(
     // anatomy in the middle. They stay ONE midline structure: the entry's laterality is
     // `midline`, never a left copy, so nothing can mistake C3 for a left vertebra.
     const usable = side
-      ? entry.candidates.filter((c) => c.side === side || c.side === 'midline')
+      ? side === 'midline'
+        ? // A MIDLINE build contains midline geometry ONLY.
+          //
+          // It does not reuse the `side === 'midline' || c.side === 'midline'` union,
+          // because that union only makes sense for a LEFT or RIGHT build, where the
+          // midline structures ride along as context. Applied to a midline build it would
+          // let every left and right candidate through and produce a "midline" scene
+          // that was a copy of the left shoulder wearing a midline label.
+          entry.candidates.filter((c) => c.side === 'midline')
+        : entry.candidates.filter((c) => c.side === side || c.side === 'midline')
       : entry.candidates;
+
+    // A structure with no midline candidate is EXCLUDED rather than reported unmapped.
+    // Nothing is wrong with the source here: the structure simply is not midline anatomy,
+    // and reporting it as a gap would be a false claim about the dataset.
+    if (side === 'midline' && usable.length === 0) {
+      excluded.push({
+        asiId: entry.asiId,
+        reason: 'the source models this structure per side; it has no midline representation',
+      });
+      continue;
+    }
 
     // A COMPOSITE claims every candidate for this side, not the first one found.
     //
@@ -472,6 +503,7 @@ export function selectStructures(
     bound,
     composite,
     unmapped,
+    excluded,
     unusedMeshNames: availableMeshNames.filter((n) => !claimed.has(n)),
   };
 }
@@ -601,6 +633,10 @@ export function runPipeline(
   // into selection rather than being applied afterwards -- filtering after the fact
   // would already have let the wrong side's file be chosen.
   const selection = selectStructures(region, [...meshes.keys()], options.side);
+
+  for (const x of selection.excluded) {
+    notes.push(`${x.asiId}: EXCLUDED from the ${options.side} build -- ${x.reason}`);
+  }
 
   for (const u of selection.unmapped) {
     notes.push(

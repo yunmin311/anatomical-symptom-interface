@@ -65,6 +65,11 @@ try {
       const selection = active.sceneFor(region, side);
       if (selection.kind !== 'scene')
         return { region, side, kind: selection.kind, reason: selection.reason ?? null };
+      // The side the SELECTION claims, carried out of the page. The probe mounts whatever
+      // `sceneFor` returned, so this is what proves the mounted scene really is the one
+      // `sceneFor(region, 'midline')` hands a caller -- otherwise a gate could mount a
+      // left scene and then assert it was the midline one.
+      const selectionSide = selection.side ?? null;
 
       const scene = selection.scene;
       const host = document.createElement('div');
@@ -184,6 +189,7 @@ try {
       return {
         region,
         side,
+        selectionSide,
         kind: 'scene',
         entryCount: scene.entries.length,
         sceneSource: scene.source,
@@ -247,8 +253,25 @@ try {
   await check('production covers the regions it claims to, and no others', () => {
     if (!result.regions.length) throw new Error('no production regions discovered');
     ok(`regions with real geometry: ${result.regions.join(', ')}`);
-    if (built.length !== result.regions.length * 2)
-      throw new Error(`expected ${result.regions.length * 2} scenes, probed ${built.length}`);
+
+    // Every region must have BOTH sides. Midline is not universal and must not be
+    // counted as if it were: this used to assert `regions * 2`, which was right while
+    // every region had exactly two builds and quietly became a wrong number the moment a
+    // midline build existed. The count is now derived from what the registry declares.
+    const expectedScenes = result.regions.reduce(
+      (total, region) => total + result.sidesFor[region].length,
+      0,
+    );
+    if (built.length !== expectedScenes)
+      throw new Error(
+        `the registry declares ${expectedScenes} scene(s) across ${result.regions.length} region(s), ` +
+          `but ${built.length} were produced`,
+      );
+    for (const region of result.regions) {
+      const sides = result.sidesFor[region];
+      if (!sides.includes('left') || !sides.includes('right'))
+        throw new Error(`${region} has no built geometry for one side: [${sides.join(', ')}]`);
+    }
     if (notBuilt.length) throw new Error(`a discovered region produced no scene: ${JSON.stringify(notBuilt)}`);
     // A region in the audit plan that is not built must report `needs-region`, not
     // quietly borrow another region's geometry.
@@ -465,6 +488,166 @@ try {
     for (const scene of built)
       if (scene.side !== 'midline')
         ok(`${scene.region}/${scene.side}: midline entries are context, not a side copy`);
+  });
+
+  /* A DEDICATED midline scene, per region ------------------------------- */
+  /* --------------------------------------------------------------------- */
+
+  await check('a region with real midline geometry serves a DEDICATED midline scene', () => {
+    // The distinction this asserts is between "midline geometry exists somewhere" and
+    // "asking for midline gives you midline". Cervical vertebrae used to satisfy the
+    // first while `sceneFor(neck, 'midline')` returned nothing at all, because the
+    // vertebrae only ever rode along inside the left and right scenes.
+    const dedicated = built.filter((s) => s.side === 'midline');
+    if (!dedicated.length)
+      throw new Error('no region serves a dedicated midline scene, so this asserts nothing');
+
+    for (const scene of dedicated) {
+      // `sceneFor` is what produced this scene: the probe mounts whatever
+      // `sceneFor(region, side)` returned, and the side the selection CLAIMED comes back
+      // with it.
+      if (scene.selectionSide !== 'midline')
+        throw new Error(
+          `sceneFor(${scene.region}, 'midline') returned a scene claiming side ${scene.selectionSide}`,
+        );
+      // And the same call, from `sceneFor`, is recorded as a scene rather than a refusal.
+      const declared = result.absent.find(
+        (a) => a.region === scene.region && a.side === 'midline',
+      );
+      if (!declared || declared.kind !== 'scene')
+        throw new Error(
+          `sceneFor(${scene.region}, 'midline') reported ${declared?.kind ?? 'nothing'} while a ` +
+            `midline scene was mounted`,
+        );
+
+      // It contains ONLY midline geometry. One left or right entry here would make this
+      // scene a side scene with a midline label, which is the exact thing the whole
+      // midline build exists to prevent.
+      const wrong = scene.picks.filter((p) => p.canonicalLaterality !== 'midline');
+      if (wrong.length)
+        throw new Error(
+          `the ${scene.region} midline scene contains ${wrong.length} non-midline entr` +
+            `${wrong.length === 1 ? 'y' : 'ies'}: ${wrong.map((w) => `${w.asiId}=${w.canonicalLaterality}`).join(', ')}`,
+        );
+
+      // Real geometry, actually mounted, actually pickable.
+      //
+      // `scene.released` is read AFTER dispose -- that is what makes the release check
+      // meaningful -- so its zero counts are the correct post-dispose state and say
+      // nothing about whether anything mounted. The evidence that geometry mounted is
+      // the pick list: every entry below resolved a canonical id from a real mesh under
+      // a real raycast, which cannot happen against an empty scene.
+      if (!scene.picks.length)
+        throw new Error(`the ${scene.region} midline scene has no structures to mount`);
+      const unmounted = scene.picks.filter((p) => !p.componentCount);
+      if (unmounted.length)
+        throw new Error(
+          `the ${scene.region} midline scene mounted no mesh for ` +
+            `${unmounted.map((u) => u.asiId).join(', ')}`,
+        );
+      // `external`, not `generated`: the adapter names the provenance, and 'generated' was a
+      // guess about the vocabulary that happened to be wrong. `external` is the value
+      // that actually distinguishes this from the synthetic fixture.
+      if (scene.sceneSource !== 'external')
+        throw new Error(
+          `the ${scene.region} midline scene is sourced from ${scene.sceneSource}, not external anatomy`,
+        );
+      const unpicked = scene.picks.filter((p) => !p.picked);
+      if (unpicked.length)
+        throw new Error(
+          `the ${scene.region} midline scene has ${unpicked.length} structure(s) no ray can hit: ` +
+            `${unpicked.map((u) => u.asiId).join(', ')}`,
+        );
+      if (scene.attribution?.synthetic)
+        throw new Error(`the ${scene.region} midline scene is synthetic geometry`);
+      // And it carries a real licence, because "it is real" has to mean attributable.
+      if (scene.attribution?.licence !== 'CC-BY-4.0')
+        throw new Error(
+          `the ${scene.region} midline scene is licensed ${scene.attribution?.licence}, not CC-BY-4.0`,
+        );
+
+      const meshes = scene.picks.reduce((n, p) => n + p.componentCount, 0);
+      ok(
+        `${scene.region}/midline: ${scene.picks.length} midline structure(s), ${meshes} mesh(es), ` +
+          `all picked, no side geometry`,
+      );
+    }
+  });
+
+  await check('a region whose source has no midline geometry refuses rather than borrowing', () => {
+    // The other half of the same claim. BodyParts3D models the shoulder and the knee per
+    // side, so there is no midline shoulder. The only wrong answers are the left scene or
+    // the right scene wearing a midline label, or `needs-side`, which asks the user a
+    // meaningless question about a structure that has no side.
+    const withMidline = new Set(built.filter((s) => s.side === 'midline').map((s) => s.region));
+    const expectedNone = ['shoulder', 'knee'];
+    for (const region of expectedNone) {
+      if (withMidline.has(region))
+        throw new Error(`${region} unexpectedly serves a midline scene; this expectation is stale`);
+      const selection = result.absent.find((a) => a.region === region && a.side === 'midline');
+      if (!selection) throw new Error(`sceneFor(${region}, 'midline') was never probed`);
+      if (selection.kind !== 'none')
+        throw new Error(
+          `sceneFor(${region}, 'midline') returned ${selection.kind}; the source has no midline ` +
+            `geometry for this region, so only 'none' is honest`,
+        );
+      if (!selection.reason || !/per side|midline/i.test(selection.reason))
+        throw new Error(`sceneFor(${region}, 'midline') does not explain itself: ${selection.reason}`);
+    }
+    ok(`${expectedNone.join(', ')}: no midline geometry in the source, refused with a reason`);
+  });
+
+  await check('a midline scene reuses source meshes only as the SAME midline structure', () => {
+    // The precise anti-relabel rule.
+    //
+    // An earlier version of this check asserted that no midline mesh may appear in a side
+    // build, and it failed immediately -- correctly. FJ3176 is one file in the archive:
+    // the atlas. The midline build and both side builds load that same file, because it is
+    // the same vertebra, and requiring it not to appear twice would be demanding that the
+    // dataset contain three copies of one bone.
+    //
+    // What must actually hold is narrower and is the real failure mode: where a midline
+    // mesh also appears in a side build, it must appear there AS THE SAME MIDLINE
+    // STRUCTURE. Sharing a mesh as a left sternocleidomastoid would be relabelling.
+    const sideOwners = new Map();
+    for (const scene of built) {
+      if (scene.side === 'midline') continue;
+      for (const pick of scene.picks) {
+        for (const c of pick.components ?? [{ meshName: pick.meshName }]) {
+          if (!c.meshName) continue;
+          sideOwners.set(c.meshName, { asiId: pick.asiId, laterality: pick.canonicalLaterality });
+        }
+      }
+    }
+
+    let shared = 0;
+    for (const scene of built.filter((s) => s.side === 'midline')) {
+      for (const pick of scene.picks) {
+        for (const c of pick.components ?? [{ meshName: pick.meshName }]) {
+          if (!c.meshName) continue;
+          const owner = sideOwners.get(c.meshName);
+          if (!owner) continue;
+          shared += 1;
+          if (owner.asiId !== pick.asiId)
+            throw new Error(
+              `${scene.region}/midline uses mesh ${c.meshName} as ${pick.asiId}, but a side build ` +
+                `uses it as ${owner.asiId}`,
+            );
+          if (owner.laterality !== 'midline')
+            throw new Error(
+              `${scene.region}/midline uses mesh ${c.meshName}, which a side build holds as ` +
+                `${owner.laterality} geometry`,
+            );
+        }
+      }
+    }
+    if (!shared)
+      throw new Error(
+        'no midline mesh was shared with a side build, so this rule was never exercised',
+      );
+    ok(
+      `${shared} midline meshes are shared with the side builds as the SAME midline structure`,
+    );
   });
 
   await check('every registry key is a real BodyRegion value', () => {

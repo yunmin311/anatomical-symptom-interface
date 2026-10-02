@@ -60,6 +60,14 @@ import {
   CANONICAL_ASSET_ROOT as LOWER_BACK_RIGHT_ROOT,
 } from './generated/canonical-manifest.lower_back.right.ts';
 import {
+  CANONICAL_ANATOMY_MANIFEST as LOWER_BACK_MIDLINE,
+  CANONICAL_ASSET_ROOT as LOWER_BACK_MIDLINE_ROOT,
+} from './generated/canonical-manifest.lower_back.midline.ts';
+import {
+  CANONICAL_ANATOMY_MANIFEST as NECK_MIDLINE,
+  CANONICAL_ASSET_ROOT as NECK_MIDLINE_ROOT,
+} from './generated/canonical-manifest.neck.midline.ts';
+import {
   CANONICAL_ANATOMY_MANIFEST as KNEE_LEFT,
   CANONICAL_ASSET_ROOT as KNEE_LEFT_ROOT,
 } from './generated/canonical-manifest.knee.left.ts';
@@ -119,10 +127,14 @@ const GENERATED: ProductionSceneRegistry = {
   neck: {
     left: { manifest: NECK_LEFT, assetRoot: NECK_LEFT_ROOT },
     right: { manifest: NECK_RIGHT, assetRoot: NECK_RIGHT_ROOT },
+    // Real midline geometry: seven cervical vertebrae, one canonical concept.
+    midline: { manifest: NECK_MIDLINE, assetRoot: NECK_MIDLINE_ROOT },
   },
   lower_back: {
     left: { manifest: LOWER_BACK_LEFT, assetRoot: LOWER_BACK_LEFT_ROOT },
     right: { manifest: LOWER_BACK_RIGHT, assetRoot: LOWER_BACK_RIGHT_ROOT },
+    // Real midline geometry: five lumbar vertebrae plus the sacrum.
+    midline: { manifest: LOWER_BACK_MIDLINE, assetRoot: LOWER_BACK_MIDLINE_ROOT },
   },
   knee: {
     left: { manifest: KNEE_LEFT, assetRoot: KNEE_LEFT_ROOT },
@@ -193,12 +205,14 @@ function buildProductionScene(region: BodyRegion, side: ProductionSide): Rendere
   // cervical spine, because a person looking at their left neck still has vertebrae
   // behind the muscles.
   //
-  // The rule that must still hold is the important one: no entry may claim the OTHER
-  // side. That is a real error -- right anatomy in a left scene is wrong anatomy on
-  // screen -- and it is the only thing this check is for.
-  const wrongSide = canonical.entries.filter(
-    (e) => e.laterality !== side && e.laterality !== 'midline',
-  );
+  // A MIDLINE build is the opposite case and gets the opposite rule. Its entire claim is
+  // that it holds midline geometry and nothing else, so allowing "or midline" here would
+  // let every left and right entry through and put a copy of the left shoulder on screen
+  // under a label saying midline.
+  const wrongSide =
+    side === 'midline'
+      ? canonical.entries.filter((e) => e.laterality !== 'midline')
+      : canonical.entries.filter((e) => e.laterality !== side && e.laterality !== 'midline');
   if (wrongSide.length)
     throw new Error(
       `the generated ${side} manifest carries ${wrongSide.length} entr${
@@ -281,15 +295,17 @@ export const PRODUCTION_SCENES: Readonly<
  *   withheld. Both are real source geometry, never one mirrored.
  * - `needs-side`: the side is `unknown`. We genuinely do not know, and one-sided
  *   geometry cannot stand in for "either side".
- * - `needs-region`: the region has no built geometry yet. This is the honest answer for
- *   lower_back and knee while their mapping is still an empty table, and it falls back
- *   to the 2D map rather than to invented 3D.
- * - `none`: `midline`, or a region/side combination with no one-sided representation.
+ * - `needs-region`: the region has no built geometry at all. It falls back to the 2D map
+ *   rather than to invented 3D.
+ * - `none`: `midline` in a region whose source has no midline geometry (the shoulder and
+ *   the knee have none -- BodyParts3D models both per side), or a region/side combination
+ *   with no one-sided representation.
  *
- * `midline` deserves a note. It is not the same as `needs-side`: a midline concept has
- * no side by definition, so asking the user which side is a nonsense question. When a
- * region later gets midline geometry (the cervical vertebrae are the first candidate),
- * this becomes `scene` and nothing else has to change.
+ * `midline` is not the same as `needs-side`: a midline concept has no side by definition,
+ * so asking the user which side is a nonsense question. Where the source HAS midline
+ * geometry this returns a real `scene` -- the cervical vertebrae for the neck, the lumbar
+ * vertebrae and sacrum for the lower back. Where it does not, it returns `none` with the
+ * reason, rather than the left scene wearing a midline label.
  */
 export type SceneSelection =
   | { kind: 'scene'; region: BodyRegion; side: ProductionSide; scene: RendererSceneManifest }
@@ -341,11 +357,19 @@ export function sceneFor(region: BodyRegion, side: Side): SceneSelection {
     // would be the same error as refusing to load a structure because it is not
     // left or right.
     if (built!.midline) return { kind: 'scene', region, side: 'midline', scene: built!.midline };
+    // The two reasons are kept apart deliberately. "Not built yet" is a claim about this
+    // repository and could be fixed by running the build. "The source has none" is a
+    // claim about the dataset, and no amount of building would change it: BodyParts3D
+    // models the shoulder and the knee per side, so there is no midline shoulder to load.
+    // Telling a user a thing is merely unfinished when it is actually impossible is how
+    // a roadmap turns into a promise.
     return {
       kind: 'none',
       region,
       reason:
-        'Midline structures for this region have not been built yet. The map and the questions still work.',
+        `The source anatomy for the ${region.replace(/_/g, ' ')} is modelled per side, so there is ` +
+        `no midline representation to show. Showing one side here and calling it midline would be ` +
+        `wrong. The map and the questions still work.`,
     };
   }
   if (side === 'bilateral')

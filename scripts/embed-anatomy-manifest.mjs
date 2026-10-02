@@ -59,8 +59,8 @@ const WEB_MODULE_DIR = join(ROOT, 'apps/web/src/anatomy/generated');
 const ALLOW_SYNTHETIC = argv.includes('--allow-synthetic');
 
 async function main() {
-  if (!['left', 'right'].includes(SIDE)) {
-    console.error(`[anatomy] --side must be left or right, got ${SIDE}`);
+  if (!['left', 'right', 'midline'].includes(SIDE)) {
+    console.error(`[anatomy] --side must be left, right or midline, got ${SIDE}`);
     process.exitCode = 1;
     return;
   }
@@ -115,12 +115,14 @@ async function main() {
   // moment a midline composite existed -- the guard was right to fire and its rule was
   // the thing that needed changing.
   //
-  // What must still hold: every entry's laterality is either this build's side or
-  // midline, and nothing claims a side the build is not. A right-side entry in a left
-  // build is the error this is here to catch.
-  const wrongSide = manifest.entries.filter(
-    (e) => e.laterality !== SIDE && e.laterality !== 'midline',
-  );
+  // A MIDLINE build is the opposite case and gets the opposite rule. Its whole claim is
+  // that it holds midline geometry and nothing else, so "or midline" would let every
+  // left and right entry through and embed a scene called midline that is a copy of the
+  // left shoulder. Midline means midline, exactly.
+  const wrongSide =
+    SIDE === 'midline'
+      ? manifest.entries.filter((e) => e.laterality !== 'midline')
+      : manifest.entries.filter((e) => e.laterality !== SIDE && e.laterality !== 'midline');
   if (wrongSide.length) {
     console.error(
       `[anatomy] REFUSING a ${SIDE} build containing ${wrongSide.length} entr${
@@ -144,6 +146,29 @@ async function main() {
   console.log(`[anatomy] units             ${units.join(', ')}`);
   console.log(`[anatomy] dataset            ${manifest.licence.id}`);
   console.log(`[anatomy] synthetic          ${synthetic ? 'YES (test path)' : 'no'}`);
+
+  // --- the header claims, computed rather than assumed ---
+  //
+  // These used to be read off `entries[0]`, which crashed on a build whose first entry
+  // is a composite: a composite parent deliberately carries NO single `source`, because
+  // it does not have one. It also produced a comment that lied -- "every entry in this
+  // file carries laterality: left" is false for a left build, which legitimately carries
+  // the midline cervical spine as context, and true only for a midline build.
+  const sources = manifest.entries
+    .map((e) => e.source)
+    .filter((s) => s !== null);
+  const archiveName = sources[0]?.archive ?? 'unknown';
+  const datasetName = sources[0]
+    ? `${sources[0].dataset} ${sources[0].release}`
+    : 'unknown';
+  const lateralsInBuild = [...new Set(manifest.entries.map((e) => e.laterality))].sort();
+  const sideClaim =
+    lateralsInBuild.length === 1 && lateralsInBuild[0] === SIDE
+      ? `every entry in this file carries laterality: '${SIDE}'`
+      : `entries carry laterality ${lateralsInBuild.map((l) => `'${l}'`).join(' and ')} -- ` +
+        `this build represents ${SIDE}, and midline structures are context, not ${SIDE} anatomy`;
+  const unitsInBuild = [...new Set(manifest.entries.map((e) => e.geometry.units))].sort();
+  const unitsClaim = unitsInBuild.join(', ');
 
   // --- geometry: copy region directories, never anything else ---
   mkdirSync(WEB_PUBLIC, { recursive: true });
@@ -184,10 +209,10 @@ async function main() {
  *
  * Provenance: ${manifest.licence.attribution}
  * Licence:    ${manifest.licence.name} (${manifest.licence.id}) -- ${manifest.licence.url}
- * Archive:    ${manifest.entries[0]?.source.archive ?? 'unknown'}
- * Dataset:    ${manifest.entries[0]?.source.dataset ?? 'unknown'} ${manifest.entries[0]?.source.release ?? ''}
- * Side:       ${SIDE} -- every entry in this file carries \`laterality: '${SIDE}'\`.
- * Units:      ${manifest.entries[0]?.geometry.units ?? 'unknown'}, from the source model, not inferred here.
+ * Archive:    ${archiveName}
+ * Dataset:    ${datasetName}
+ * Side:       ${SIDE} -- ${sideClaim}
+ * Units:      ${unitsClaim}, from the source model, not inferred here.
  */
 
 import type { AssetManifest } from '@asi/shared';
