@@ -131,59 +131,67 @@ try {
       // is data-driven, so its length is not known here, and a loop with a bound and
       // no assertion on WHY it stopped will quietly "pass" the steps it managed and
       // fail on the consequence -- which is what happened.
+      //
+      // The second version tested "Review current details" BEFORE testing the interview
+      // form. That button is rendered unconditionally in the interview stage, so the loop
+      // left the interview on its first iteration and saved an episode with ZERO answers
+      // -- at every width, reported as "0 answer(s), then saved; the summary is on
+      // screen". The gate had been asserting the end of the flow and never its middle.
+      // The form is now tested FIRST: leaving the interview is only offered once there is
+      // no question left to answer.
       let answered = 0;
       for (;;) {
-        // The interview does NOT save itself. It ends on a summary strip with an
-        // explicit "Review current details" control, and the review stage is where
-        // "Save & build summary" lives. A flow gate that looks for the save button
-        // from the first question is looking for a control that is not there yet, and
-        // the missing step -- which is a real part of the flow -- gets skipped.
+        if (answered > 60)
+          throw new Error('the interview never reached a saveable review');
         const save = page.getByRole('button', { name: 'Save & build summary' });
         if (await save.isVisible().catch(() => false)) break;
-        const toReview = page.getByRole('button', { name: /Review current details/ });
+
+        const form = page.locator('.interview-panel form');
+        if (await form.isVisible().catch(() => false)) {
+          const text = form.locator('textarea');
+          if (await text.count()) await text.first().fill('it hurts when I lift my arm');
+          else {
+            // Prefer the explicit "I am not sure". Answering every question affirmatively
+            // would produce a record that claims the user reported something they did not,
+            // and "not asked" vs "no" is one of this product's hardest rules.
+            const unsure = form.getByLabel('I am not sure', { exact: true });
+            if (await unsure.count()) await unsure.check();
+            else await form.locator('input').first().check();
+          }
+          await form.getByRole('button', { name: 'Continue', exact: true }).click();
+          answered += 1;
+          continue;
+        }
+
+        // No question form. Either the interview has finished, or a clarify/location step
+        // sits between questions -- and neither can be told apart from here alone.
+        if (await save.isVisible().catch(() => false)) break;
+        const clarify = page.locator('.clarify, .location-workbench').first();
+        if (await clarify.isVisible().catch(() => false)) {
+          await page.getByRole('button', { name: /Use this location/ }).click().catch(() => {});
+          await page.locator('.question__prompt').waitFor().catch(() => {});
+          continue;
+        }
+        // The interview panel showed its end state, so reviewing is the way out. Only NOW
+        // is clicking this the same thing a user does.
+        const toReview = page.getByRole('button', { name: /Review current details/ }).first();
         if (await toReview.isVisible().catch(() => false)) {
           await toReview.click();
           continue;
         }
-        // The interview is not a form once it reaches REVIEW: the summary panel has
-        // no <form>, and treating "no form" as "finished" was the original bug here.
-        // The review stage is detected by its own control instead.
-        if (answered > 40) throw new Error('the interview never reached a saveable review');
-        const form = page.locator('.interview-panel form');
-        if (!(await form.isVisible().catch(() => false))) {
-          // Look for the review screen before giving up.
-          if (await page.getByRole('button', { name: 'Save & build summary' }).isVisible().catch(() => false))
-            break;
-          // A clarify step can also sit between questions.
-          const clarify = page.locator('.clarify, .location-workbench').first();
-          if (await clarify.isVisible().catch(() => false)) {
-            await page.getByRole('button', { name: /Use this location/ }).click().catch(() => {});
-            await page.locator('.question__prompt').waitFor().catch(() => {});
-            continue;
-          }
-          throw new Error(
-            `stuck after ${answered} answers: no interview form, no save button. Screen: ${(
-              await page.locator('main').innerText()
-            )
-              .replace(/\s+/g, ' ')
-              .slice(0, 180)}`,
-          );
-        }
-
-        const text = form.locator('textarea');
-        if (await text.count()) await text.first().fill('it hurts when I lift my arm');
-        else {
-          // Prefer the explicit "I am not sure". Answering every question affirmatively
-          // would produce a record that claims the user reported something they did not,
-          // and "not asked" vs "no" is one of this product's hardest rules.
-          const unsure = form.getByLabel('I am not sure', { exact: true });
-          if (await unsure.count()) await unsure.check();
-          else await form.locator('input').first().check();
-        }
-        await form.getByRole('button', { name: 'Continue', exact: true }).click();
-        answered += 1;
+        throw new Error(
+          `stuck after ${answered} answers: no interview form, no save button. Screen: ${(
+            await page.locator('main').innerText()
+          )
+            .replace(/\s+/g, ' ')
+            .slice(0, 180)}`,
+        );
       }
 
+      assert(
+        answered > 0,
+        'the episode was saved with no answers at all; the interview was skipped, not completed',
+      );
       await page.getByRole('button', { name: 'Save & build summary' }).click();
       // The saved episode must be VISIBLE, not merely attempted: an async save that
       // never resolves leaves the button in place and looks identical from here.
@@ -231,14 +239,41 @@ try {
 
     await check(`reopen continues the SAME episode${at}`, async () => {
       await page.locator('[data-testid="close-place"]').click().catch(() => {});
+      await openHealthMap(page);
+      await page.locator('.episode-timeline__item').first().waitFor({ timeout: 15_000 });
       const before = await page.locator('.episode-timeline__item').count();
-      const continueBtn = page.getByRole('button', { name: /Continue this episode|Resume/ }).first();
-      if (!(await continueBtn.isVisible().catch(() => false))) {
-        ok('no reopen control on this screen; covered by the reopen gate');
-        return;
-      }
+
+      // The control lives inside the episode's collapsed <details>, so the panel must be
+      // EXPANDED before looking for it.
+      //
+      // This check used to report "no reopen control on this screen; covered by the reopen
+      // gate" and PASS. It was checking a collapsed panel for a control that only exists
+      // once expanded -- so the gate asserted nothing at all, on the one behaviour that
+      // makes longitudinal history work. A gate that passes when the feature is missing
+      // is worse than no gate: it reports the feature as covered.
+      const details = page.locator('details.episode').first();
+      await details.waitFor({ timeout: 15_000 });
+      const summary = details.locator('summary').first();
+      if ((await details.getAttribute('open')) === null)
+        await summary.click();
+
+      const continueBtn = page
+        .locator('details.episode')
+        .first()
+        .getByRole('button', { name: /Continue this episode|Resume/ })
+        .first();
+      await continueBtn.waitFor({ timeout: 10_000 });
+
       await continueBtn.click();
-      await page.locator('.location-workbench, .question__prompt, .interview-panel').first().waitFor();
+      // Wait for the RECORD screen, not for an interview form. A reopened episode is
+      // fully answered, so InterviewPanel returns its end state and renders no form at
+      // all -- waiting for `.question__prompt` here waits for a control that will never
+      // appear and reports a timeout that reads like a broken reopen.
+      await page
+        .locator('.experience-layout, .review-layout, .interview-panel, main')
+        .first()
+        .waitFor({ timeout: 15_000 });
+
       // The whole point: the record came back, so this is the same episode rather than a
       // new one. A second record for the same complaint would make the history lie about
       // how many times something happened.
@@ -250,6 +285,87 @@ try {
         `reopen changed the episode count from ${before} to ${after}; a reopen must not create a record`,
       );
       ok('same episode, no duplicate');
+    });
+
+    await check(`a correction replaces the answer it corrects${at}`, async () => {
+      // The correction path, end to end in the browser: reach a question that was already
+      // answered, correct it, and confirm the correction is both marked and effective.
+      await page.locator('[data-testid="close-place"]').click().catch(() => {});
+
+      // The previous check left the app ON THE HEALTH MAP, so the record screens do not
+      // exist yet. Come back to the record first -- the same route a user takes.
+      if (!(await page.locator('.review-layout, .experience-layout').first().isVisible().catch(() => false))) {
+        const back = page.getByRole('button', { name: /Return to your record/ }).first();
+        if (await back.isVisible().catch(() => false)) await back.click();
+      }
+
+      // A reopened, fully answered episode shows a bare EmptyState -- InterviewPanel
+      // returns early when no question is next, so there is no `.interview-panel` to
+      // wait for. Wait for any of the three screens this can be, then take the ordinary
+      // "Review current details" route to the one that carries the correction controls.
+      await page
+        .locator('.experience-layout, .review-layout, main')
+        .first()
+        .waitFor({ timeout: 15_000 });
+
+      const toReview = page
+        .getByRole('button', { name: /Review current details/i })
+        .first();
+      if (await toReview.isVisible().catch(() => false)) await toReview.click();
+      await page.locator('.review-layout, .summary').first().waitFor({ timeout: 15_000 });
+
+      // Answer until the review panel offers a correction, or until the interview ends.
+      let editLink = page.locator('[data-testid^="edit-answer-"]').first();
+      for (let round = 0; round < 40; round++) {
+        if (await editLink.isVisible().catch(() => false)) break;
+        const option = page.locator('.answer-option input').first();
+        if (!(await option.isVisible().catch(() => false))) break;
+        await option.check().catch(() => {});
+        const cont = page.getByRole('button', { name: 'Continue' });
+        if (await cont.isVisible().catch(() => false)) await cont.click();
+        await page.waitForTimeout(120);
+      }
+
+      await editLink.waitFor({ timeout: 10_000 });
+      const questionId = (await editLink.getAttribute('data-testid')).replace(
+        'edit-answer-',
+        '',
+      );
+      await editLink.click();
+
+      // The banner is the whole point: the user must be told they are REPLACING something.
+      const banner = page.locator('.interview-edit-banner');
+      await banner.waitFor({ timeout: 10_000 });
+      assert(
+        /replace/i.test(await banner.innerText()),
+        'the correction banner does not say the previous answer is replaced',
+      );
+
+      // Answer differently from whatever is currently recorded.
+      const options = page.locator('.answer-options .answer-option input');
+      const count = await options.count();
+      assert(count > 0, 'the correction did not re-present the question');
+      await options.nth(count > 1 ? 1 : 0).check();
+      await page.getByRole('button', { name: 'Continue' }).click();
+
+      // Answering an edit target returns to the INTERVIEW, because that is where the
+      // correction was made -- the confirmation lives on the review screen, so go back
+      // the way a user would.
+      const backToReview = page
+        .getByRole('button', { name: /Review current details/i })
+        .first();
+      await backToReview.waitFor({ timeout: 10_000 });
+      await backToReview.click();
+
+      // Back in review, the corrected answer must be labelled as corrected.
+      const corrected = page.locator(`[data-testid="edit-answer-${questionId}"]`);
+      await corrected.waitFor({ timeout: 10_000 });
+      const row = corrected.locator('xpath=..');
+      assert(
+        /changed this answer/i.test(await row.innerText()),
+        'a corrected answer is not labelled as corrected on screen',
+      );
+      ok(`corrected ${questionId} and it is labelled as a change`);
     });
 
     await check(`a doctor-readable summary exists${at}`, async () => {
