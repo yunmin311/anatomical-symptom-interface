@@ -275,6 +275,7 @@ run pickpath    node apps/web/test/structure-pick-browser.mjs
 run realgeom    node apps/web/test/real-geometry-browser.mjs
   run realall     node apps/web/test/real-geometry-all-browser.mjs
   run laterality node apps/web/test/laterality-browser.mjs
+  run userflow   node apps/web/test/user-flow-browser.mjs
 # The gate the old runner omitted from its own report.
 run evidence    node apps/web/test/evidence.mjs
 

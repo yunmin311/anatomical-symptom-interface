@@ -868,6 +868,28 @@ details > p {
   top: 24px;
   align-self: start;
 }
+/* The open place: a heading over the episodes belonging to ONE server place. */
+.open-place {
+  margin-bottom: 24px;
+  padding: 14px 16px;
+  border: 1px solid var(--line, var(--candidate));
+  border-radius: 8px;
+  background: var(--workspace);
+}
+.open-place__heading {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+}
+.open-place__heading h2 {
+  margin: 0;
+  font-size: 17px;
+}
+.location-mark[aria-pressed='true'] {
+  border-color: var(--accent, var(--candidate));
+  background: var(--workspace);
+}
 .healthmap-index .body-index {
   height: 370px;
   background: var(--workspace);
