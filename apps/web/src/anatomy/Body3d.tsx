@@ -24,6 +24,7 @@ export function Body3d({
   onStatus,
   active,
   side,
+  region,
 }: {
   /**
    * A raycast result, reported whole. Deliberately not narrowed to a sub-region:
@@ -39,6 +40,14 @@ export function Body3d({
    * exactly like right anatomy until you know which one you are looking at.
    */
   side: Side;
+  /**
+   * The record's region, which with `side` selects WHICH real scene is mounted.
+   *
+   * Both are needed. A scene is identified by region AND side, so a viewer given only
+   * a side could render a neck for a shoulder complaint, and nothing about that would
+   * look wrong until someone read the attribution.
+   */
+  region: string;
   /**
    * Full workspace status. The caller needs the fallback REASON, not just a
    * boolean, to tell "still starting" apart from "gave up": switching surfaces
@@ -57,18 +66,24 @@ export function Body3d({
 
   // Which scene the record's side calls for, decided once per side so the effect below
   // remounts when the side changes rather than on every render.
-  const selection = sceneFor(side);
+  const selection = sceneFor(region, side);
   const mountable = selection.kind === 'scene' ? selection.scene : null;
-  const needsSide = selection.kind === 'needs-side' || selection.kind === 'none';
+  // `both` mounts one scene at a time too; the viewer shows a side, and the toolbar says
+  // which. So it is mountable, and it is the only case with no `reason`.
+  const bilateral = selection.kind === 'both' ? selection.scenes[0] : null;
+  const scene = mountable ?? bilateral;
   const reason =
-    selection.kind === 'needs-side' || selection.kind === 'none' ? selection.reason : null;
+    selection.kind === 'needs-side' || selection.kind === 'needs-region' || selection.kind === 'none'
+      ? selection.reason
+      : null;
+  const notMountable = reason !== null;
 
   useEffect(() => {
     const host = hostRef.current;
     if (!host || !active) return;
-    if (!mountable) return;
+    if (!scene) return;
     let cancelled = false;
-    const workspace = new AnatomyWorkspace(anatomy, { manifest: mountable });
+    const workspace = new AnatomyWorkspace(anatomy, { manifest: scene });
     workspaceRef.current = workspace;
     const unsubscribe = workspace.subscribe((next) => {
       if (cancelled) return;
@@ -98,7 +113,7 @@ export function Body3d({
     };
     // `mountable` rather than `side`: it is the scene identity, so a rebuild that
     // produces an equal-but-new object remounts and an unchanged side does not.
-  }, [active, mountable]);
+  }, [active, scene]);
 
   const workspace = workspaceRef.current;
   const live3d = status?.mode === '3d' && !failed;
@@ -114,7 +129,7 @@ export function Body3d({
         place a user could look at left anatomy and believe it was right. This is the
         record's side, the same one that chose the scene.
       */}
-      {needsSide && (
+      {notMountable && (
         <p className="viewer3d__disclaimer" data-testid="side-required">
           {reason}
         </p>
@@ -125,7 +140,7 @@ export function Body3d({
         volumes, and why there is no image.
       */}
       <div className="viewer3d__toolbar">
-        {side !== 'unknown' && side !== 'bilateral' && mountable && (
+        {side !== 'unknown' && side !== 'bilateral' && scene && (
           <p className="viewer3d__side" data-testid="viewer-side">
             Showing your {side} side.
           </p>
@@ -141,7 +156,7 @@ export function Body3d({
           the map, and it reads the canonical provenance through the adapter, so
           there is no path by which a licence gets typed in by hand.
         */}
-        {mountable && <AnatomyAttribution scene={mountable} />}
+        {scene && <AnatomyAttribution scene={scene} />}
       </div>
 
       {/* The host is always mounted so a fallback has somewhere to go. */}

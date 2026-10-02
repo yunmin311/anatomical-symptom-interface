@@ -28,9 +28,9 @@ import type { AssetManifest, AssetManifestEntry } from '../src/anatomy-manifest.
 // assumed to be one level up.
 const repoRoot = join(import.meta.dirname, '..', '..', '..');
 
-function manifest(side: 'left' | 'right'): AssetManifest {
+function manifest(region: string, side: 'left' | 'right'): AssetManifest {
   return JSON.parse(
-    readFileSync(join(repoRoot, 'assets/anatomy/generated', side, 'manifest.json'), 'utf8'),
+    readFileSync(join(repoRoot, 'assets/anatomy/generated', region, side, 'manifest.json'), 'utf8'),
   ) as AssetManifest;
 }
 
@@ -40,9 +40,53 @@ const representation = (id: string): Representation => {
   return declared;
 };
 
-const LEFT = manifest('left');
-const RIGHT = manifest('right');
-const BOTH = [LEFT, RIGHT];
+/** Every generated manifest, so a new region is covered by writing it once here. */
+const BUILDS = ['shoulder', 'neck'].flatMap((region) =>
+  (['left', 'right'] as const).map((side) => ({ region, side, manifest: manifest(region, side) })),
+);
+// EVERY generated manifest, shoulder and neck alike. `producedSides` reads this, so a
+// region added to BUILDS is checked automatically rather than needing its own
+// assertions -- and, just as importantly, cannot be declared available without the
+// corresponding manifest actually containing the entry.
+const BOTH = BUILDS.map((b) => b.manifest);
+const LEFT = manifest('shoulder', 'left');
+const RIGHT = manifest('shoulder', 'right');
+
+describe('every generated build, across every region', () => {
+  it('declares the side it was built for, in millimetres', () => {
+    for (const { region, side, manifest: m } of BUILDS) {
+      for (const entry of m.entries) {
+        assert.equal(entry.laterality, side, `${region}/${side}: ${entry.asiId}`);
+        assert.equal(entry.geometry.units, 'mm', `${region}/${side}: ${entry.asiId} units`);
+        assert.equal(entry.region, region, `${entry.asiId} built under ${region} says ${entry.region}`);
+      }
+    }
+    assert.ok(BUILDS.length >= 4, 'expected at least two regions x two sides');
+  });
+
+  it('uses a different source mesh on each side of every region', () => {
+    for (const region of new Set(BUILDS.map((b) => b.region))) {
+      const left = new Map(
+        BUILDS.find((b) => b.region === region && b.side === 'left')!.manifest.entries.map((e) => [
+          e.asiId,
+          e.meshName,
+        ]),
+      );
+      for (const entry of BUILDS.find((b) => b.region === region && b.side === 'right')!.manifest.entries) {
+        assert.notEqual(left.get(entry.asiId), entry.meshName, `${region}: ${entry.asiId} shares a mesh`);
+      }
+    }
+  });
+
+  it('no build claims a structure another build also claims for the same side', () => {
+    // A mesh cannot serve two canonical ids. If a region ever binds the same
+    // source mesh twice, picking would be ambiguous.
+    for (const { region, side, manifest: m } of BUILDS) {
+      const meshes = m.entries.map((e) => e.meshName);
+      assert.equal(new Set(meshes).size, meshes.length, `${region}/${side} reuses a mesh`);
+    }
+  });
+});
 
 describe('laterality is proven by the generated manifests, not asserted', () => {
   it('both committed manifests declare the side they were built for', () => {
@@ -113,16 +157,13 @@ describe('laterality is proven by the generated manifests, not asserted', () => 
     //
     // The test that can see it compares the loaded VERTEX SETS, and it lives in the
     // real-geometry browser gate where the GLBs are actually mounted.
-    const leftBytes = new Map(
-      LEFT.entries.map((e) => [e.file, readFileSync(join(repoRoot, 'assets/anatomy/generated/left', e.file))]),
-    );
-    for (const entry of RIGHT.entries) {
-      const right = readFileSync(join(repoRoot, 'assets/anatomy/generated/right', entry.file));
-      assert.notDeepEqual(
-        right,
-        leftBytes.get(entry.file),
-        `${entry.file} is byte-identical on both sides`,
-      );
+    for (const { region, side, manifest: m } of BUILDS) {
+      for (const entry of m.entries) {
+        const other = side === 'left' ? 'right' : 'left';
+        const mine = readFileSync(join(repoRoot, 'assets/anatomy/generated', region, side, entry.file));
+        const theirs = readFileSync(join(repoRoot, 'assets/anatomy/generated', region, other, entry.file));
+        assert.notDeepEqual(mine, theirs, `${region}: ${entry.file} is byte-identical on both sides`);
+      }
     }
   });
 
@@ -144,7 +185,9 @@ describe('representation declarations cannot outrun what was built', () => {
     // The over-claim this phase had to confront: the declarations said `['left']`
     // because only the left build existed, and widening them to `['left', 'right']`
     // without a build would have been the easy way to look finished.
-    const rightBuilt = new Set(RIGHT.entries.map((e) => e.asiId));
+    const rightBuilt = new Set(
+      BUILDS.filter((b) => b.side === 'right').flatMap((b) => b.manifest.entries.map((e) => e.asiId)),
+    );
     for (const [asiId, declared] of Object.entries(REPRESENTATION_DECLARATIONS)) {
       if (declared.threeD.status !== 'available') continue;
       if (declared.threeD.sides.includes('right'))

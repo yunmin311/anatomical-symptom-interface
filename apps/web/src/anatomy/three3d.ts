@@ -317,7 +317,18 @@ export class Three3dAnatomyAdapter implements RenderedViewer {
     assertNonMedical(this.manifest);
     this.index = indexScene(this.manifest);
     this.state = {
-      region: 'shoulder',
+      // The region comes from the SCENE, not from a constant.
+      //
+      // It was hardcoded to 'shoulder', which was invisible while every scene was a
+      // shoulder. A neck-only manifest then had no entries matching `state.region`,
+      // `retargetCamera` measured nothing, and the camera kept its fixture-scale
+      // depth planes at 0.05..50 -- so neck geometry rendered about 1400 units away,
+      // outside the frustum, and could not be picked. The scene rendered correctly
+      // and was silently unclickable, which is the worst shape a bug can take.
+      //
+      // `focusRegion` replaces this when the user picks a region; this is the value
+      // before they do.
+      region: (this.manifest.entries[0]?.region ?? 'shoulder') as BodyRegion,
       visibleSubRegionIds: [],
       visibleLayers: [...TISSUE_LAYER_ORDER],
       selectedStructureIds: [],
@@ -326,7 +337,7 @@ export class Three3dAnatomyAdapter implements RenderedViewer {
       pins: [],
       activePin: null,
     };
-    this.view = DEFAULT_VIEW.shoulder;
+    this.view = DEFAULT_VIEW[(this.manifest.entries[0]?.region ?? 'shoulder') as BodyRegion];
   }
 
   /* ---------------- AnatomyAdapter ---------------- */

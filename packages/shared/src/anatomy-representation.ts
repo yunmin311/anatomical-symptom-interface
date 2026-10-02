@@ -155,6 +155,87 @@ export const REPRESENTATION_DECLARATIONS: Readonly<Record<string, Representation
     threeD: { status: 'available', elementCount: 1, sides: ['left', 'right'] },
   },
 
+  // --- neck ---
+  //
+  // Two of the nine are available, and the seven gaps below are the point of the
+  // exercise rather than an embarrassment. Each reason says what the archive actually
+  // contains, so a reader can check it instead of taking the gap on trust.
+  //
+  // The interesting ones are the composites. The source is FINER than we are: three
+  // scalene concepts per side, six suboccipital concepts, seven vertebrae. One canonical
+  // id cannot take those meshes, and binding one of them would show a fraction of the
+  // structure under a label claiming all of it -- so they are `composite-unsupported`.
+  'asi:neck.sternocleidomastoid': {
+    twoD: { available: true, placeholder: true },
+    threeD: { status: 'available', elementCount: 1, sides: ['left', 'right'] },
+  },
+  'asi:neck.levator-scapulae': {
+    twoD: { available: true, placeholder: true },
+    threeD: { status: 'available', elementCount: 1, sides: ['left', 'right'] },
+  },
+  'asi:neck.cervical-spine': {
+    twoD: { available: true, placeholder: true },
+    threeD: {
+      status: 'unavailable',
+      reason: 'composite-unsupported',
+      detail:
+        'the source carries seven separate vertebrae meshes (atlas FMA12519, axis FMA12520, C3-C7) and one canonical id cannot take seven meshes',
+    },
+  },
+  'asi:neck.scalenes': {
+    twoD: { available: true, placeholder: true },
+    threeD: {
+      status: 'unavailable',
+      reason: 'composite-unsupported',
+      detail:
+        'the source has three scalene concepts per side (anterior, medius, posterior); binding one would show a third of the muscle as all of it',
+    },
+  },
+  'asi:neck.suboccipital': {
+    twoD: { available: true, placeholder: true },
+    threeD: {
+      status: 'unavailable',
+      reason: 'composite-unsupported',
+      detail:
+        'the source has six suboccipital concepts, and two of them (rectus capitis posterior major and minor) exist only on the left -- the archive has no FJ1567M or FJ1568M -- so the set is not even bilateral',
+    },
+  },
+  'asi:neck.upper-trapezius': {
+    twoD: { available: true, placeholder: true },
+    threeD: {
+      status: 'unavailable',
+      reason: 'not-yet-sourced',
+      detail:
+        'the source concept exists and is already bound to asi:shoulder.trapezius-upper (ascending part of trapezius, FMA33583/FMA33581); one mesh cannot serve two canonical ids',
+    },
+  },
+  'asi:neck.thyroid': {
+    twoD: { available: true, placeholder: true },
+    threeD: {
+      status: 'unavailable',
+      reason: 'no-source-concept',
+      detail:
+        'no thyroid gland concept exists in the archive; it has the inferior thyroid artery and the cricothyroid ligament, which are different structures',
+    },
+  },
+  'asi:neck.brachial-plexus': {
+    twoD: { available: true, placeholder: true },
+    threeD: {
+      status: 'unavailable',
+      reason: 'no-source-concept',
+      detail:
+        'no brachial plexus concept exists; the only plexus in the source is the choroid plexus, and BodyParts3D carries nerves as vessels rather than plexuses',
+    },
+  },
+  'asi:neck.nuchal-ligament': {
+    twoD: { available: true, placeholder: true },
+    threeD: {
+      status: 'unavailable',
+      reason: 'no-source-concept',
+      detail: 'no concept name in the archive contains "nuchal"',
+    },
+  },
+
   // --- Part-level deltoid, from the source's own terminology ---
   //
   // BodyParts3D 4.0 has no whole-muscle deltoid; it has three parts, each a

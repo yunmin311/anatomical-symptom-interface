@@ -46,9 +46,13 @@ const flag = (name, fallback = undefined) => {
 
 const REGION = flag('region', 'shoulder');
 const INPUT = flag('input');
-const OUT = flag('out', 'assets/anatomy/generated');
+// Output is per region AND per side. A single directory worked while only the left
+// shoulder existed; with several regions and two sides it lets one build silently
+// overwrite another, which is how a left manifest ends up serving right geometry.
+const OUT_ROOT = flag('out', 'assets/anatomy/generated');
 const GRID = Number(flag('grid', '10'));
 const SIDE = flag('side', 'left');
+const OUT = join(OUT_ROOT, REGION, SIDE);
 const ARCHIVE = flag('archive');
 const RETRIEVED = flag('retrieved');
 
@@ -91,13 +95,13 @@ async function main() {
   const shared = await import(
     pathToFileURL(join(process.cwd(), 'packages/shared/src/index.ts')).href
   );
-  const { runPipeline, validateManifest, manifestHasErrors, mappingFor, BODYPARTS3D_SOURCE, BODYPARTS3D_LICENCE } = shared;
+  const { runPipeline, validateManifest, manifestHasErrors, mappingFor, MAPPINGS, BODYPARTS3D_SOURCE, BODYPARTS3D_LICENCE } = shared;
 
   if (!BODYPARTS3D_LICENCE) throw new Error('shared package did not export the licence metadata');
 
   const wanted = mappingFor(REGION);
   if (!wanted.length) {
-    console.error(`[anatomy] no mapping for region "${REGION}". Mapped regions: shoulder only in Phase 1.`);
+    console.error(`[anatomy] no mapping for region "${REGION}". Mapped regions: ${Object.keys(MAPPINGS).join(', ')}.`);
     process.exitCode = 1;
     return;
   }
@@ -122,7 +126,7 @@ async function main() {
     console.log('  Obtain it, extract the .obj files to a gitignored directory, then:');
     console.log('');
     console.log(`    node scripts/build-anatomy.mjs --region ${REGION} \\`);
-    console.log('      --input <dir-of-obj-files> --out assets/anatomy/generated --grid 10');
+    console.log('      --input <dir-of-obj-files> --out assets/anatomy/generated --grid 10 --side left');
     console.log('');
     console.log('  Structures this pipeline will try to bind when it runs:');
     for (const e of wanted) {

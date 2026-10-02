@@ -273,16 +273,30 @@ for (const structure of structures) {
   }
   const n = norm(structure.label);
 
+  /** A mesh id the table explicitly did not bind here, with the reason it gave. */
+const decisionMarkers = [];
   const meshes = [];
   if (bound) {
+    for (const cand of bound.flatMap((b) => b.candidates)) {
+      const m = /^(UNAVAILABLE|SHARED):(.*)$/.exec(cand.meshName);
+      if (m) {
+        decisionMarkers.push({
+          kind: m[1] === 'UNAVAILABLE' ? 'unavailable' : 'shared',
+          detail: m[2],
+          sourceLabel: cand.sourceLabel ?? null,
+        });
+        continue;
+      }
+    }
     // The table's own candidates, so a candidate naming a mesh that is absent shows up
     // as absent rather than being quietly dropped.
     for (const cand of bound.flatMap((b) => b.candidates)) {
-      // `UNAVAILABLE:<name>` is a deliberate marker, not a filename: it records that
-      // we looked and the source does not carry the concept. Treating it as a missing
-      // mesh would report a data-loss problem where the real answer is "correctly
-      // absent" -- the opposite of what this audit is for.
-      if (/^UNAVAILABLE:/.test(cand.meshName)) continue;
+      // `UNAVAILABLE:<name>` records that we looked and the source does not carry the
+      // concept. `SHARED:<asiId>` records that the mesh is real but already bound to
+      // another canonical id. Both are decisions, not missing files: counting either as
+      // an absent mesh would report data loss where the answer is "correctly not bound
+      // here", which is the opposite of what this audit is for.
+      if (/^(UNAVAILABLE|SHARED):/.test(cand.meshName)) continue;
       const concept = conceptForMesh.get(cand.meshName);
       meshes.push({
         file: cand.meshName,
@@ -312,19 +326,21 @@ for (const structure of structures) {
   }
 
   const presentMeshes = meshes.filter((m) => meshStats.has(m.file));
-  // A structure whose every candidate is an `UNAVAILABLE:` marker has been DELIBERATELY
-  // recorded as absent. That is a decision to report as such, not a gap.
-  const declaredUnavailable = Boolean(bound) && !meshes.length;
-
-  const verdict = declaredUnavailable
-    ? 'declared-unavailable'
-    : !bound && !exact.length
-      ? 'unresolved'
-      : !presentMeshes.length
-        ? 'source-concept-no-mesh'
-        : presentMeshes.length > 1
-          ? 'multiple-meshes'
-          : 'one-mesh';
+  // A structure whose only candidates are decision markers has been DELIBERATELY left
+  // unbound. Which kind of decision matters, so the verdict distinguishes them.
+  const kind = decisionMarkers[0]?.kind ?? null;
+  const verdict =
+    kind === 'shared'
+      ? 'bound-elsewhere'
+      : kind === 'unavailable'
+        ? 'declared-unavailable'
+        : !bound && !exact.length
+          ? 'unresolved'
+          : !presentMeshes.length
+            ? 'source-concept-no-mesh'
+            : presentMeshes.length > 1
+              ? 'multiple-meshes'
+              : 'one-mesh';
 
   // The side, from three independent places, which is where disagreements surface.
   const wordSides = [...new Set(exact.map((c) => sideFromWords(c.english)).filter(Boolean))];
@@ -360,6 +376,7 @@ for (const structure of structures) {
       files: c.files,
     })),
     meshes,
+    decisionMarkers,
     meshesMissingFromArchive: missingMeshes,
     sides,
     sidesFromSourceWords: wordSides,
@@ -413,6 +430,7 @@ const MARK = {
   'multiple-meshes': 'MULT ',
   'source-concept-no-mesh': 'NOGEO',
   'declared-unavailable': 'NONE ',
+  'bound-elsewhere': 'ELSE ',
   unresolved: 'OPEN ',
 };
 for (const r of report) {
@@ -427,8 +445,13 @@ for (const r of report) {
   }
   if (r.verdict === 'declared-unavailable')
     console.log(
-      `          recorded UNAVAILABLE in the table: the source carries no usable geometry for ` +
-        `this concept. Correct outcome, not a gap.`,
+      `          recorded UNAVAILABLE: ${r.decisionMarkers.map((d) => d.detail).join(', ')}\n` +
+        `          Correct outcome, not a gap. The source does not carry this as one mesh.`,
+    );
+  if (r.verdict === 'bound-elsewhere')
+    console.log(
+      `          already bound to ${r.decisionMarkers.map((d) => d.detail).join(', ')}\n` +
+        `          One source mesh cannot serve two canonical ids, so it is not bound twice.`,
     );
   for (const m of r.meshes) {
     if (!meshStats.has(m.file)) {
@@ -452,7 +475,8 @@ for (const r of report) {
 }
 console.log(
   '  OK=one mesh   MULT=several meshes   NOGEO=concept but no geometry in the archive\n' +
-    '  NONE=recorded unavailable on purpose   OPEN=no binding row and no matching concept,\n' +
-    '  which needs a human reading the source and not a guess\n',
+    '  NONE=recorded unavailable on purpose   ELSE=the real mesh is bound to another region\n' +
+    '  OPEN=no binding row and no matching concept, which needs a human reading the\n' +
+    '  source and not a guess\n',
 );
 process.exit(0);

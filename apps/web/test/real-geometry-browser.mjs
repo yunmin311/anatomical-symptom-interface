@@ -59,7 +59,7 @@ try {
   /* ---------------------------------------------------------------- */
   const chain = await page.evaluate(async () => {
     const { CANONICAL_ANATOMY_MANIFEST, CANONICAL_ASSET_ROOT } = await import(
-      '/src/anatomy/generated/canonical-manifest.left.ts'
+      '/src/anatomy/generated/canonical-manifest.shoulder.left.ts'
     );
     const { toRendererScene, isSyntheticManifest } = await import(
       '/src/anatomy/asset-scene-adapter.ts'
@@ -72,6 +72,7 @@ try {
     // The app's own scene module, so this tests the ACTIVE scene and not a copy.
     const active = await import('/src/anatomy/active-scene.ts');
     const scene = active.ACTIVE_SCENE;
+
 
     // Independently re-derive it, so a bug in active-scene cannot hide here.
     const canonical = JSON.parse(JSON.stringify(CANONICAL_ANATOMY_MANIFEST));

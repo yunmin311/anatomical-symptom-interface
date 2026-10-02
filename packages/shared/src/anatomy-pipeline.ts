@@ -34,7 +34,7 @@ import {
   BODYPARTS3D_SOURCE,
   BODYPARTS3D_UNITS,
   PIPELINE_SIDES,
-  UNMAPPABLE_SHOULDER,
+  UNMAPPABLE,
   mappingFor,
 } from './anatomy-mapping.ts';
 import type {
@@ -374,7 +374,7 @@ export function meshFileName(asiId: string, region: BodyRegion): string {
  * mapping, so the two cannot drift.
  */
 export function unmappableReason(asiId: string): string | null {
-  return UNMAPPABLE_SHOULDER.find((u) => u.asiId === asiId)?.reason ?? null;
+  return UNMAPPABLE.find((u) => u.asiId === asiId)?.reason ?? null;
 }
 
 /** Sub-regions of `region` that offer `asiId`. Read from the domain, not the source. */

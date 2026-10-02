@@ -34,7 +34,13 @@ import {
 } from '../src/anatomy-pipeline.ts';
 import type { SourceMesh } from '../src/anatomy-pipeline.ts';
 import { parseManifest, validateManifest, DEFAULT_GEOMETRY_BUDGET } from '../src/anatomy-manifest.ts';
-import { BODYPARTS3D_LICENCE, BODYPARTS3D_SOURCE, SHOULDER_MAPPING, mappingFor } from '../src/anatomy-mapping.ts';
+import {
+  BODYPARTS3D_LICENCE,
+  BODYPARTS3D_SOURCE,
+  MAPPINGS,
+  SHOULDER_MAPPING,
+  mappingFor,
+} from '../src/anatomy-mapping.ts';
 import { getStructure } from '../src/anatomy.ts';
 
 /* ================================================================== */
@@ -175,10 +181,25 @@ test('every mapping row names a structure the domain actually has', () => {
   }
 });
 
-test('only shoulder is mapped in Phase 1, and the others say so', () => {
+test('a region is mapped only after its ontology was audited, and the rest say so', () => {
   assert.ok(mappingFor('shoulder').length > 0);
-  for (const r of ['neck', 'lower_back', 'knee']) {
-    assert.deepEqual(mappingFor(r), [], `${r} should not be guessed at in Phase 1`);
+  assert.ok(mappingFor('neck').length > 0);
+  // lower_back and knee are still unaudited, so their tables are empty on purpose. An
+  // empty table is an honest statement that nothing has been checked; a guessed one
+  // would be indistinguishable from a finished one.
+  for (const r of ['lower_back', 'knee']) {
+    assert.deepEqual(mappingFor(r), [], `${r} must not be guessed at before it is audited`);
+  }
+});
+
+test('every mapped region resolves every row to a real domain structure', () => {
+  for (const region of Object.keys(MAPPINGS)) {
+    for (const entry of mappingFor(region)) {
+      assert.ok(
+        getStructure(entry.asiId),
+        `${region}: mapping row for a structure that does not exist: ${entry.asiId}`,
+      );
+    }
   }
 });
 

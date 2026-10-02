@@ -381,12 +381,30 @@ export function deltoidPartIds(): string[] {
   return DELTOID_PARTS.map((p) => p.asiId);
 }
 /**
- * Which region's mapping to use. Phase 1 ships shoulder; the other three are
- * Phase 1B and are not guessed at here.
+ * Which region's mapping to use.
+ *
+ * Neck is bound here too, and it was written AFTER auditing the archive with
+ * `scripts/audit-region.mjs` rather than before, which is the only reason its rows can
+ * be trusted. See `anatomy-mapping-neck.ts` for the audit trail and for why seven of its
+ * nine concepts are reported as gaps rather than approximated.
+ *
+ * The other two regions stay absent. An empty table is an honest statement that nothing
+ * has been checked; a guessed one is not.
  */
 export const MAPPINGS: Readonly<Record<string, readonly MappingEntry[]>> = {
   shoulder: SHOULDER_MAPPING,
+  neck: NECK_MAPPING,
 };
+
+/**
+ * Every reason we know of for a concept having no mesh, across all regions.
+ *
+ * One list rather than one per region so a caller reporting a gap cannot miss a region.
+ */
+export const UNMAPPABLE: readonly { asiId: string; reason: string }[] = [
+  ...UNMAPPABLE_SHOULDER,
+  ...UNMAPPABLE_NECK,
+];
 
 export function mappingFor(region: string): readonly MappingEntry[] {
   return MAPPINGS[region] ?? [];
@@ -453,3 +471,4 @@ export const BODYPARTS3D_SOURCE = {
  * a source arrives in centimetres.
  */
 export const BODYPARTS3D_UNITS = 'mm' as const;
+import { NECK_MAPPING, UNMAPPABLE_NECK } from './anatomy-mapping-neck.ts';
