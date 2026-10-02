@@ -60,7 +60,7 @@ Recorded 2026-09-30 against `359e474` plus this pass.
 
 The earlier recorded `smoke.txt` claimed 37 passed. `scripts/smoke.mjs` has
 38 checks and is byte-identical to main, so that file was a partial run; the real
-result is 38/38 and the stored log has been replaced.
+smoke suite passes and the stored log has been replaced. (The exact check count moves when checks are added, so it is read from the run rather than asserted here.)
 
 Domain boundary re-checked at the end of the pass: `git diff main...HEAD --
 packages/ scripts/` is empty. No shared semantics, server semantics, database

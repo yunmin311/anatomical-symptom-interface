@@ -42,9 +42,18 @@ the model guessed, what a device measured, and what a doctor concluded.
                                 decided on the server and never re-derived
                                 in the browser
 
-  3D anatomy viewer  →  real GLB geometry, descendant meshes resolved to
-                        canonical asiIds, structure picking, 2D map as the
-                        floor for every failure path
+  3D anatomy viewer  - real GLB geometry from BodyParts3D 4.0 (CC BY 4.0),
+                        descendant meshes resolved to canonical asiIds,
+                        structure picking, 2D map as the floor for every
+                        failure path
+                        FOUR regions: shoulder, neck, lower back, knee
+                        real MIDLINE builds for neck and lower back; the source
+                        has none for shoulder or knee, and the product says so
+                        instead of showing a side
+  answer correction  - re-answering a question REPLACES it, marked
+                        user_edited; derived fields are recomputed from the
+                        whole answer set, so a correction actually withdraws
+                        what the original recorded
 ```
 
 ## Quick start
@@ -63,11 +72,37 @@ localiser, which can only *propose* locations — never confirm them.
 
 ```bash
 pnpm typecheck     # all packages
-pnpm test         # 500 unit tests across three packages
+pnpm test         # unit tests across all four packages
 node scripts/smoke.mjs   # 38 API checks (server must be running)
 
-# every gate, in one reproducible run: unit, build, smoke, safety metadata,
-# release gate, migrations, place identity, reopen, adapter, URL GLB, then the
-# browser / a11y / hit-zone / 3D / fallback / evidence gates. It starts and seeds
-# its own servers, and reports PASS / FAIL / SKIP per gate.
+# every gate, in one reproducible run: typecheck, unit, build, smoke, safety
+# metadata, release gate, migrations, place identity, reopen, anatomy adapter,
+# real geometry (per region AND all regions), laterality, the full V1 user flow
+# at 3 widths, the degraded paths, accessibility, MCP, and the evidence gate.
+# It starts and seeds its own servers, reports PASS / FAIL / SKIP per gate, and
+# exits non-zero if any gate failed OR any gate was skipped.
 bash scripts/final-gates.sh
+
+---
+
+## What this does not do
+
+Read `docs/known-limitations.md`. The short version:
+
+- **The safety rules are not clinically reviewed.** `releaseReady` is false and the release
+  profile refuses to start. This is an external dependency, not an engineering task.
+- **The 2D map is a placeholder.** Hand-made schematic geometry, marked as such everywhere.
+  Real 2D medical artwork has to come from a licensed external source.
+- **Only the current answer is kept.** Correcting an answer replaces it and marks it
+  `user_edited`; there is no history of what was first said.
+- **FMA bindings are unverified.** Every one is a claim read from the source's concept list,
+  never checked against FMA Explorer by a human.
+- **Some anatomy does not exist in the source dataset.** BodyParts3D has no knee ligaments,
+  no menisci and no bursae. Those concepts are reported unavailable, never substituted.
+
+## More
+
+- `docs/api-v1.md` — the HTTP contract, and what a second client must not bypass
+- `docs/mcp.md` — the MCP surface, and why it is a client of the domain
+- `docs/known-limitations.md` — everything above, in detail, with the reasoning
+- `docs/04-roadmap.md` — phase status, and what is genuinely still open

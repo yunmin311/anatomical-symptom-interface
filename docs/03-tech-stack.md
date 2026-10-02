@@ -14,7 +14,7 @@
 | UI | React | 19 | Largest ecosystem; nothing here is exotic. |
 | Build | Vite | 6 | Instant HMR, proxy to the API in dev, one alias for workspace source. |
 | State | Zustand | 5 | One store, no provider tree, no boilerplate for a session this shape. |
-| Tests | `node:test` | built-in | No runner dependency. 500 unit tests + 38 API smoke tests + 21 browser gates |
+| Tests | `node:test` | built-in | No runner dependency. Unit tests across four packages, an API smoke suite, and a gate runner that includes browser gates. Counts are read from the run, never written down |
 | Model | Anthropic Claude via `fetch` | — | Tool-use to force schema-shaped output. Optional: product works without it. |
 
 ## Deliberately NOT used yet
@@ -31,28 +31,19 @@
 
 # The parts that are not decided yet
 
-## 1. Anatomy model source — the biggest open question
+## 1. Anatomy model source — **decided and built**
 
-**Need:** labelled, layered, licence-clean 3D anatomy with a stable structure ID system.
-**Candidates:** see `docs/research/anatomy-assets.md` for the full comparison.
-**Recommendation for V1:** stay with the 2D SVG map; take BodyParts3D (CC-BY-SA) as GLB
-for Phase 1; keep BioDigital as a UX/API reference, not a dependency.
-**Adapter seam:** `apps/web/src/anatomy/types.ts` — implement `Three3dAnatomyAdapter`,
-nothing above it changes.
+BodyParts3D, release 4.0, CC BY 4.0. The archive was obtained, checksum-verified and run
+through `scripts/build-anatomy.mjs` for all four V1 regions, audited mesh by mesh against
+the archive before any mapping was trusted. 82 production GLBs.
 
-**Pipeline when you do adopt a model:**
-```bash
-# 1. Fetch (BodyParts3D is ~1.5k structures, CC BY 4.0 International)
-# 2. Blender headless: merge per-layer meshes, drop to GLB, re-map node names
-#    to our asi:* ids via a generated mapping table
-blender -b -P scripts/build_anatomy.py
-# 3. Decimate aggressively — target < 8MB for the 4 V1 regions
-gltf-transform optimize dist/anatomy.glb
-# 4. Emit a manifest: { asiId, meshName, layer, subRegionId, bounds }
-```
+The Blender step sketched below was **not needed**: the pipeline decimates on a grid and
+writes GLB directly, which keeps the source archive as the only large artifact and keeps the
+conversion reviewable in a diff. Kept as a record of the decision, not as a plan.
 
-The manifest is the important artefact. It is what lets the 3D viewer, the SVG map and
-the interview engine all talk about the same structure IDs.
+Production 2D medical artwork is still unsourced, and is a **separate** open question. The
+2D map in the product is hand-made schematic geometry, marked `placeholder = true`; real 2D
+must come from a licensed external source.
 
 ## 2. Model choice for the orchestrator
 
@@ -119,6 +110,14 @@ Full analysis in `docs/research/products-to-reuse.md`. The short version:
 
 ---
 
+# Surfaces
+
+| surface | where | notes |
+|---|---|---|
+| Browser | `apps/web` | the product |
+| HTTP API | `packages/server` | contract in `docs/api-v1.md`. Request/response schemas live in `@asi/shared` so both surfaces validate against the same objects, rather than each growing its own |
+| MCP | `packages/mcp` | a **client** of ASI Core, not a second path into it. `tools.ts` holds the tool semantics as plain functions; `server.ts` is a JSON-RPC 2.0 stdio shell over them. Hand-rolled, because the protocol surface is three messages and the semantics are the part worth testing. No model is called, no vendor is named, so CI needs no external service. See `docs/mcp.md` |
+
 # Testing strategy
 
 | Layer | Tool | Count | What it protects |
@@ -160,7 +159,7 @@ safety when an earlier answer is replaced is still undefined.
 pnpm install
 pnpm dev              # server :8787 + web :5173
 pnpm typecheck        # all packages
-pnpm test             # 500 unit tests across three packages
+pnpm test             # unit tests across all four packages
 pnpm seed             # reset to a 3-episode demo history
 node scripts/smoke.mjs   # 38 API checks against a running server
 bash scripts/final-gates.sh   # every gate: unit, build, smoke, safety metadata,
