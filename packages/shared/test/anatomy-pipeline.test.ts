@@ -320,10 +320,14 @@ test('the pipeline runs end to end and produces a valid manifest', () => {
 
 test('every manifest entry has a mesh that was actually written', () => {
   const result = runPipeline('shoulder', ARCHIVE_LIKE(), { gridDivisions: 8, side: 'left' });
-  for (const e of result.manifest.entries) {
-    assert.ok(result.files.has(e.file), `manifest names a mesh that was not produced: ${e.file}`);
-  }
-  assert.equal(result.files.size, result.manifest.entries.length, 'wrote meshes nobody references');
+  // Component-aware: a composite names several files, and the count must match BOTH
+  // sides or "wrote meshes nobody references" stops meaning anything.
+  const named = result.manifest.entries.flatMap((e) =>
+    e.composite ? e.composite.components.map((c) => c.file) : e.file ? [e.file] : [],
+  );
+  for (const file of named)
+    assert.ok(result.files.has(file), `manifest names a mesh that was not produced: ${file}`);
+  assert.equal(result.files.size, named.length, 'wrote meshes nobody references');
 });
 
 test('mesh file names are derived from asiId, not from the source name', () => {
@@ -371,18 +375,25 @@ test('licence and attribution are on every entry', () => {
 
 test('every entry records where its geometry came from', () => {
   const result = runPipeline('shoulder', ARCHIVE_LIKE(), { gridDivisions: 8, side: 'left' });
-  for (const e of result.manifest.entries) {
-    assert.equal(e.source.dataset, BODYPARTS3D_SOURCE.dataset);
-    assert.ok(e.source.release.length > 0, 'no source release recorded');
-    assert.equal(e.source.archive, BODYPARTS3D_SOURCE.archive);
+  // Every component records its own provenance, which is the whole point of keeping
+  // them separate rather than collapsing seven vertebrae into one source claim.
+  const sources = result.manifest.entries.flatMap((e) =>
+    e.composite ? e.composite.components.map((c) => c.source) : e.source ? [e.source] : [],
+  );
+  for (const source of sources) {
+    assert.equal(source.dataset, BODYPARTS3D_SOURCE.dataset);
+    assert.ok(source.release.length > 0, 'no source release recorded');
+    assert.equal(source.archive, BODYPARTS3D_SOURCE.archive);
   }
 });
 
 test('FMA bindings stay unverified, because nothing has been checked', () => {
   const result = runPipeline('shoulder', ARCHIVE_LIKE(), { gridDivisions: 8, side: 'left' });
-  for (const e of result.manifest.entries) {
-    assert.equal(e.fma.status, 'unverified', 'an FMA binding was claimed as verified');
-  }
+  const fmas = result.manifest.entries.flatMap((e) =>
+    e.composite ? e.composite.components.map((c) => c.fma) : e.fma ? [e.fma] : [],
+  );
+  for (const fma of fmas)
+    assert.equal(fma.status, 'unverified', 'an FMA binding was claimed as verified');
   const issues = validateManifest(result.manifest).filter((i) => i.severity === 'warning');
   assert.ok(issues.length > 0, 'unverified FMA bindings should be surfaced as warnings');
 });

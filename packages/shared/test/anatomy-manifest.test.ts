@@ -107,11 +107,14 @@ test('two meshes cannot claim the same asiId', () => {
 });
 
 test('two meshes cannot share a source mesh name', () => {
+  // Two canonical ids naming the same source mesh is how one anatomical element
+  // becomes two identities, so it is an error whether they are plain entries or a
+  // plain entry plus a composite component.
   const m = manifest([
     entry(),
     entry({ asiId: 'asi:shoulder.infraspinatus', layer: 'muscle', subRegionIds: ['shoulder.posterior'] }),
   ]);
-  assert.match(errors(m).map((e) => e.message).join(' '), /duplicate meshName/);
+  assert.match(errors(m).map((e) => e.message).join(' '), /mesh is used more than once/);
 });
 
 test('renaming a mesh in the source does not change the asiId', () => {
@@ -217,9 +220,11 @@ test('a tight budget reports the mesh that broke it', () => {
 
 test('a manifest file size budget is enforced when sizes are supplied', () => {
   const m = manifest([entry()]);
-  const good = validateManifest(m, { fileSizes: new Map([[entry().file, 1024]]) });
+  const file = entry().file;
+  assert.ok(file, 'the plain fixture entry must name a file');
+  const good = validateManifest(m, { fileSizes: new Map([[file, 1024]]) });
   assert.deepEqual(good.filter((i) => i.severity === 'error'), []);
-  const over = validateManifest(m, { budget: { ...DEFAULT_GEOMETRY_BUDGET, maxTotalBytes: 10 }, fileSizes: new Map([[entry().file, 9999]]) });
+  const over = validateManifest(m, { budget: { ...DEFAULT_GEOMETRY_BUDGET, maxTotalBytes: 10 }, fileSizes: new Map([[file, 9999]]) });
   assert.ok(over.some((i) => i.severity === 'error' && /bytes, over the budget/.test(i.message)));
 });
 

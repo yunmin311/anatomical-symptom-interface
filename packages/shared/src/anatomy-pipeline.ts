@@ -282,10 +282,48 @@ export interface Unmapped {
   /** Candidate names that were looked for, so the gap is actionable. */
   tried: string[];
   expectedAbsent: boolean;
+  /**
+   * Present when a COMPOSITE was expected but only some of its parts turned up.
+   *
+   * Reported separately from an ordinary gap because the two mean different things to
+   * whoever reads the build log: "nothing in the source for this concept" versus "the
+   * source has it, but not all of it". The second is the more dangerous one to miss,
+   * because it looks like progress.
+   */
+  incomplete?: {
+    expected: number;
+    found: number;
+    missing: string[];
+    alreadyClaimed: string[];
+    /**
+     * True when the reason is not a build failure but a SOURCE gap: the mapping
+     * declares that this side has no such component at all. Reported separately
+     * because "we looked and it is not there" and "we failed to load it" call for
+     * different responses, and conflating them is how an honest source gap turns into
+     * an unexplained empty scene.
+     */
+    absentInSource?: boolean;
+  };
+}
+
+/**
+ * One canonical concept resolved to several sourced elements.
+ *
+ * `components` each keep their own mesh, FMA claim and side. Nothing is merged: a
+ * clinician citing the atlas is not citing C7, and a manifest that cannot say which is
+ * which cannot be reviewed.
+ */
+export interface CompositeBinding {
+  asiId: string;
+  components: Binding[];
+  selectable: boolean;
+  reason: string;
 }
 
 export interface SelectionResult {
   bound: Binding[];
+  /** Canonical concepts assembled from several source meshes. */
+  composite: CompositeBinding[];
   unmapped: Unmapped[];
   /** Source meshes present in the input that no structure claimed. */
   unusedMeshNames: string[];
@@ -312,6 +350,7 @@ export function selectStructures(
   const present = new Set(availableMeshNames);
   const claimed = new Set<string>();
   const bound: Binding[] = [];
+  const composite: CompositeBinding[] = [];
   const unmapped: Unmapped[] = [];
 
   for (const entry of mapping) {
@@ -327,9 +366,89 @@ export function selectStructures(
       continue;
     }
 
+    // MIDLINE components belong in EVERY side build, as context.
+    //
+    // A user looking at their left neck still has cervical vertebrae behind the muscles,
+    // and excluding them would mean the left and right neck scenes disagreed about the
+    // anatomy in the middle. They stay ONE midline structure: the entry's laterality is
+    // `midline`, never a left copy, so nothing can mistake C3 for a left vertebra.
     const usable = side
-      ? entry.candidates.filter((c) => c.side === side)
+      ? entry.candidates.filter((c) => c.side === side || c.side === 'midline')
       : entry.candidates;
+
+    // A COMPOSITE claims every candidate for this side, not the first one found.
+    //
+    // The old behaviour took a single mesh per `asiId`, which was right when every
+    // concept mapped to one file and wrong the moment a real region did not: the neck
+    // has seven vertebrae under one canonical "cervical spine", and binding only the
+    // first would render C1 while the label claimed C1-C7.
+    //
+    // All-or-nothing on purpose. A composite missing one of its parts is a DIFFERENT
+    // structure from one missing all of them, and shipping it would show a partial
+    // spine under a label claiming the whole -- the same error as binding one mesh,
+    // just less obviously wrong. So if any part is absent or already claimed, the
+    // composite is unmapped and reported, and nothing is bound.
+    const present_ = usable.filter((c) => present.has(c.meshName));
+    const conflicts = present_.filter((c) => claimed.has(c.meshName));
+
+    if (entry.composite) {
+      // A side the mapping says is missing a required component cannot be represented,
+      // however complete it looks from the inside.
+      if (side && entry.composite.absentSides?.includes(side)) {
+        unmapped.push({
+          asiId: entry.asiId,
+          tried: entry.candidates.map((c: SourceCandidate) => c.meshName),
+          expectedAbsent: entry.expectAbsent === true,
+          incomplete: {
+            expected: present_.length,
+            found: present_.length,
+            missing: [],
+            alreadyClaimed: [],
+            absentInSource: true,
+          },
+        });
+        continue;
+      }
+      if (present_.length === 0) {
+        unmapped.push({
+          asiId: entry.asiId,
+          tried: entry.candidates.map((c: SourceCandidate) => c.meshName),
+          expectedAbsent: entry.expectAbsent === true,
+        });
+        continue;
+      }
+      if (present_.length !== usable.length || conflicts.length) {
+        unmapped.push({
+          asiId: entry.asiId,
+          tried: entry.candidates.map((c: SourceCandidate) => c.meshName),
+          expectedAbsent: entry.expectAbsent === true,
+          incomplete: {
+            expected: usable.length,
+            found: present_.length,
+            missing: usable
+              .filter((c) => !present.has(c.meshName))
+              .map((c) => c.meshName),
+            alreadyClaimed: conflicts.map((c) => c.meshName),
+          },
+        });
+        continue;
+      }
+      for (const c of present_) claimed.add(c.meshName);
+      composite.push({
+        asiId: entry.asiId,
+        components: present_.map((c) => ({
+          asiId: entry.asiId,
+          meshName: c.meshName,
+          fmaConceptId: c.fmaConceptId,
+          side: c.side,
+          sourceLabel: c.sourceLabel ?? null,
+        })),
+        selectable: entry.composite.selectable,
+        reason: entry.composite.reason,
+      });
+      continue;
+    }
+
     const hit = usable.find((c) => present.has(c.meshName) && !claimed.has(c.meshName));
     if (hit) {
       claimed.add(hit.meshName);
@@ -351,6 +470,7 @@ export function selectStructures(
 
   return {
     bound,
+    composite,
     unmapped,
     unusedMeshNames: availableMeshNames.filter((n) => !claimed.has(n)),
   };
@@ -364,6 +484,51 @@ export function selectStructures(
 export function meshFileName(asiId: string, region: BodyRegion): string {
   const slug = asiId.replace(/^asi:/, '').replace(/[^a-z0-9]+/gi, '-').replace(/^-+|-+$/g, '');
   return `${region}/asi-${slug}.glb`;
+}
+
+/**
+ * One COMPONENT's file, named after the component's own source mesh id.
+ *
+ * `shoulder/asi-neck-cervical-spine-FJ3176.glb` rather than a second file called
+ * `...cervical-spine.glb`, because a composite has several and a reviewer opening the
+ * generated directory needs to tell which file is which vertebra without consulting
+ * the manifest. The mesh id comes from the mapping table, which read it from the
+ * archive -- it is never parsed out of a filename here.
+ */
+export function componentFileName(asiId: string, meshName: string, region: BodyRegion): string {
+  const slug = asiId.replace(/^asi:/, '').replace(/[^a-z0-9]+/gi, '-').replace(/^-+|-+$/g, '');
+  return `${region}/asi-${slug}-${meshName}.glb`;
+}
+
+/** The smallest box containing every input box, for a composite's framing. */
+export function unionBounds(boxes: readonly { min: number[]; max: number[] }[]): {
+  min: [number, number, number];
+  max: [number, number, number];
+} {
+  // Seeded from the first box rather than +/-Infinity: an empty list has no bounding
+  // box, and silently returning infinities would put a composite's framing somewhere
+  // absurd rather than refusing.
+  const first = boxes[0];
+  if (!first)
+    throw new Error('unionBounds called with no boxes; a composite needs at least one component');
+  const min: [number, number, number] = [
+    first.min[0] ?? 0,
+    first.min[1] ?? 0,
+    first.min[2] ?? 0,
+  ];
+  const max: [number, number, number] = [
+    first.max[0] ?? 0,
+    first.max[1] ?? 0,
+    first.max[2] ?? 0,
+  ];
+  for (const box of boxes)
+    for (let axis = 0; axis < 3; axis += 1) {
+      const lo = box.min[axis] ?? 0;
+      const hi = box.max[axis] ?? 0;
+      if (lo < min[axis]!) min[axis] = lo;
+      if (hi > max[axis]!) max[axis] = hi;
+    }
+  return { min, max };
 }
 
 /**
@@ -439,9 +604,15 @@ export function runPipeline(
 
   for (const u of selection.unmapped) {
     notes.push(
-      u.expectedAbsent
-        ? `${u.asiId}: no source mesh expected -- ${unmappableReason(u.asiId) ?? 'no counterpart in the source dataset'}`
-        : `${u.asiId}: no source mesh found; tried ${u.tried.join(', ')}`,
+      u.incomplete?.absentInSource
+        ? `${u.asiId}: NOT bound for the ${options.side} side -- ${unmappableReason(u.asiId) ?? 'the source has no such component on this side'}`
+        : u.incomplete
+          ? `${u.asiId}: INCOMPLETE composite -- expected ${u.incomplete.expected} component(s), found ${u.incomplete.found}` +
+            `${u.incomplete.missing.length ? `, missing ${u.incomplete.missing.join(', ')}` : ''}` +
+            `${u.incomplete.alreadyClaimed.length ? `, already claimed ${u.incomplete.alreadyClaimed.join(', ')}` : ''}`
+          : u.expectedAbsent
+            ? `${u.asiId}: no source mesh expected -- ${unmappableReason(u.asiId) ?? 'no counterpart in the source dataset'}`
+            : `${u.asiId}: no source mesh found; tried ${u.tried.join(', ')}`,
     );
   }
 
@@ -508,6 +679,93 @@ export function runPipeline(
       },
       bounds: meshBounds(reduced),
       file,
+    });
+  }
+
+  // COMPOSITES: one canonical concept, several sourced elements.
+  //
+  // Emitted after the plain entries so a composite is never a special case in the
+  // common path, and every component keeps its own mesh id, FMA claim, laterality,
+  // file, geometry and bounds. The parent carries the union of the component bounds --
+  // which is what a viewer needs to frame it -- and explicitly carries NO single mesh,
+  // NO single file and NO single source concept, because it does not have one.
+  for (const c of selection.composite) {
+    const structure = getStructure(c.asiId);
+    if (!structure) continue;
+
+    const components = [];
+    for (const part of c.components) {
+      const source = meshes.get(part.meshName);
+      if (!source) continue;
+      const sourceTriangles = meshTriangleCount(source);
+      const reduced = reduceMesh(source, options.gridDivisions);
+      // One file per component, named after the COMPONENT, so the file name says which
+      // vertebra it is rather than repeating the parent's.
+      const partFile = componentFileName(c.asiId, part.meshName, region);
+      files.set(partFile, encodeGlb(reduced));
+      components.push({
+        meshName: part.meshName,
+        fma: {
+          conceptId: part.fmaConceptId,
+          status: 'unverified' as const,
+          note: `BodyParts3D ${BODYPARTS3D_SOURCE.conceptRelease} concept list; not yet checked against FMA Explorer`,
+        },
+        source: {
+          dataset: BODYPARTS3D_SOURCE.dataset,
+          release: BODYPARTS3D_SOURCE.release,
+          conceptId: part.fmaConceptId ? `FMA:${part.fmaConceptId}` : null,
+          archive: options.archive ?? BODYPARTS3D_SOURCE.archive,
+          doi: BODYPARTS3D_SOURCE.doi,
+          retrievedAt: options.retrievedAt ?? null,
+        },
+        laterality: part.side,
+        geometry: {
+          triangles: meshTriangleCount(reduced),
+          sourceTriangles,
+          reduction: sourceTriangles > 0 ? Number((1 - meshTriangleCount(reduced) / sourceTriangles).toFixed(4)) : null,
+          units: BODYPARTS3D_UNITS,
+        },
+        bounds: meshBounds(reduced),
+        file: partFile,
+        sourceLabel: part.sourceLabel,
+      });
+    }
+    if (!components.length) continue;
+
+    const union = unionBounds(components.map((part) => part.bounds));
+    const triangles = components.reduce((a, part) => a + part.geometry.triangles, 0);
+    const sourceTriangles = components.reduce((a, part) => a + part.geometry.sourceTriangles, 0);
+
+    entries.push({
+      asiId: c.asiId,
+      meshName: null,
+      region,
+      subRegionIds: subRegionsContaining(region, c.asiId),
+      layer: structure.layer,
+      anatomicalLabel: structure.label,
+      layTerm: structure.layTerm ?? null,
+      // The parent's own laterality, derived from the components rather than asserted:
+      // a set of left meshes is left, a set of midline meshes is midline, and a set
+      // spanning both is bilateral. Never a build flag.
+      laterality: components.every((p) => p.laterality === 'left')
+        ? 'left'
+        : components.every((p) => p.laterality === 'right')
+          ? 'right'
+          : components.every((p) => p.laterality === 'midline')
+            ? 'midline'
+            : 'bilateral',
+      fma: null,
+      source: null,
+      licence: { ...BODYPARTS3D_LICENCE },
+      geometry: {
+        triangles,
+        sourceTriangles,
+        reduction: sourceTriangles > 0 ? Number((1 - triangles / sourceTriangles).toFixed(4)) : null,
+        units: BODYPARTS3D_UNITS,
+      },
+      bounds: union,
+      file: null,
+      composite: { selectable: c.selectable, reason: c.reason, components },
     });
   }
 

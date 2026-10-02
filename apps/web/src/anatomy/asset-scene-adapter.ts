@@ -143,11 +143,26 @@ const HOMOGENEOUS_FIELDS = [
   'source.doi',
 ] as const;
 
+/**
+ * The scene-level source of an entry.
+ *
+ * A COMPOSITE has no `source` of its own -- claiming one dataset for seven vertebrae
+ * that each carry their own record would be exactly the collapse the composite model
+ * exists to prevent -- so the release-level facts are read off its first component.
+ * `assertProvenanceHomogeneous` then requires every entry to agree, so this cannot let
+ * two datasets through under one citation.
+ */
+function sourceOf(entry: AssetManifestEntry): AssetManifestEntry['source'] {
+  return entry.source ?? entry.composite?.components[0]?.source ?? null;
+}
+
 function fieldOf(entry: AssetManifestEntry, field: (typeof HOMOGENEOUS_FIELDS)[number]): string {
   if (field.startsWith('licence.')) {
     return String(effectiveLicence(entry)[field.slice('licence.'.length) as 'id'] ?? '');
   }
-  return String(entry.source[field.slice('source.'.length) as 'dataset'] ?? '');
+  const source = sourceOf(entry);
+  if (!source) return '';
+  return String(source[field.slice('source.'.length) as 'dataset'] ?? '');
 }
 
 /**
@@ -219,7 +234,13 @@ export function deriveAttribution(
   // Safe to read entry 0 AFTER the homogeneity check: every entry agrees.
   const reference = manifest.entries[0]!;
   const licence = effectiveLicence(reference);
-  const source = reference.source;
+  // A composite parent has no `source`; its components do, and homogeneity has already
+  // established they agree. See sourceOf().
+  const source = sourceOf(reference);
+  if (!source)
+    throw new SceneManifestError(
+      'the manifest has no release-level source: the first entry is a composite with no components',
+    );
 
   return {
     licence: {
@@ -279,6 +300,72 @@ function focusPointFor(_entry: AssetManifestEntry): MapPoint | undefined {
   return undefined;
 }
 
+/**
+ * How the renderer obtains one canonical structure's geometry.
+ *
+ * A composite gets `components`, not a single `url`, and the components are what get
+ * mounted. The invariant the renderer relies on: a raycast on ANY component resolves to
+ * the parent entry's `asiId`. That is why components are not separate entries here --
+ * one selectable structure with several meshes, rather than several selectable
+ * structures that happen to share a parent.
+ *
+ * `selectable` says whether the components are ALSO canonical structures in their own
+ * right. The deltoid parts are (they have their own `asi:` ids and are bound
+ * individually). Cervical vertebrae are not, and making them selectable would promote
+ * every source mesh to something a user points at.
+ */
+function geometryFor(
+  entry: AssetManifestEntry,
+  urlFor: (file: string) => string,
+): RendererSceneEntry['geometry'] {
+  if (entry.composite)
+    return {
+      type: 'url',
+      // The parent's own file is absent on a composite; `components` is the geometry.
+      // Declaring a single url here would let the renderer load one vertebra and
+      // silently ignore the other six.
+      url: '',
+      components: entry.composite.components.map((component) => ({
+        url: urlFor(component.file),
+        meshName: component.meshName,
+        conceptId: component.fma.conceptId ?? null,
+        laterality: component.laterality,
+        label: component.sourceLabel ?? null,
+      })),
+      selectable: entry.composite.selectable,
+    };
+  // nodeName deliberately omitted: the Core pipeline emits one mesh per GLB, so
+  // requiring one would refuse every real asset.
+  return { type: 'url', url: urlFor(entry.file!) };
+}
+
+/**
+ * Source provenance for the renderer.
+ *
+ * For a composite this is the PARENT's identity plus every component's own claim. The
+ * parent has no single source concept and does not pretend to: `conceptId` is null and
+ * `meshName` is null, and the components carry the truth.
+ */
+function provenanceFor(entry: AssetManifestEntry): RendererSceneEntry['provenance'] {
+  const dataset = entry.source?.dataset ?? entry.composite?.components[0]?.source.dataset ?? '';
+  const release = entry.source?.release ?? entry.composite?.components[0]?.source.release ?? '';
+  return {
+    meshName: entry.meshName ?? null,
+    dataset,
+    release,
+    conceptId: entry.source?.conceptId ?? null,
+    ...(entry.composite
+      ? {
+          components: entry.composite.components.map((c) => ({
+            meshName: c.meshName,
+            conceptId: c.fma.conceptId ?? null,
+            laterality: c.laterality,
+          })),
+        }
+      : {}),
+  };
+}
+
 /** One canonical entry -> one renderer scene entry. */
 export function toRendererSceneEntry(
   entry: AssetManifestEntry,
@@ -309,24 +396,16 @@ export function toRendererSceneEntry(
     //    mesh from a mirrored one.
     laterality: entry.laterality,
     views,
-    geometry: {
-      type: 'url',
-      // 5. canonical file -> GLB URL. nodeName deliberately omitted: the Core
-      //    pipeline emits one mesh per GLB, so requiring one would refuse every
-      //    real asset. A future multi-part file sets it explicitly.
-      url: urlFor(entry.file),
-    },
+    geometry: geometryFor(entry, urlFor),
     // 6. canonical bounds -> framing metadata.
     framing: framingFor(entry),
     ...(focusPointFor(entry) ? { focusPoint: focusPointFor(entry) } : {}),
     label: entry.layTerm ?? entry.anatomicalLabel,
-    // 2. source mesh id as provenance only.
-    provenance: {
-      meshName: entry.meshName,
-      dataset: entry.source.dataset,
-      release: entry.source.release,
-      conceptId: entry.source.conceptId ?? null,
-    },
+    // 2. source mesh id as provenance only. A composite has several, and they are
+    //    NOT collapsed into one claim: seven vertebrae are seven concepts, and a
+    //    provenance field that could only hold one would force exactly the
+    //    fabrication this model exists to prevent.
+    provenance: provenanceFor(entry),
   };
 }
 

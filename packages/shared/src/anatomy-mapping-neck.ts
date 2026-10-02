@@ -79,58 +79,79 @@ export const NECK_MAPPING: readonly MappingEntry[] = [
     ],
   },
   {
-    // Recorded explicitly rather than left out, because absence from the table would be
-    // a claim that nothing is wrong with it.
-    asiId: 'asi:neck.upper-trapezius',
-    candidates: [
-      {
-        meshName: 'SHARED:asi:shoulder.trapezius-upper',
-        fmaConceptId: null,
-        side: 'not_applicable',
-        sourceLabel:
-          'already bound to asi:shoulder.trapezius-upper as the ascending part of trapezius (FMA33583 left / FMA33581 right)',
-      },
-    ],
-    expectAbsent: true,
-  },
-  {
+    // THREE source concepts per side, so the canonical concept is a COMPOSITE of three
+    // real meshes rather than one muscle wearing a plural label.
     asiId: 'asi:neck.scalenes',
+    composite: {
+      selectable: false,
+      reason:
+        'the source models anterior, medius and posterior scalenes as three separate concepts per side, so one canonical id resolves to three sourced meshes',
+    },
     candidates: [
-      {
-        meshName: 'UNAVAILABLE:three-concepts-per-side',
-        fmaConceptId: null,
-        side: 'not_applicable',
-        sourceLabel:
-          'scalenus anterior FMA13393/FJ1570 and FMA13392/FJ1592, scalenus medius FMA13391/FJ1571 and FMA13390/FJ1593, scalenus posterior FMA13389/FJ1572 and FMA13388/FJ1594',
-      },
+      // NO M suffix: like the sternocleidomastoid pair, the source states the side in
+      // words and the suffix is absent. Verified against centroid x as well.
+      { meshName: 'FJ1570', fmaConceptId: '13393', side: 'left', sourceLabel: 'left scalenus anterior' },
+      { meshName: 'FJ1571', fmaConceptId: '13391', side: 'left', sourceLabel: 'left scalenus medius' },
+      { meshName: 'FJ1572', fmaConceptId: '13389', side: 'left', sourceLabel: 'left scalenus posterior' },
+      { meshName: 'FJ1592', fmaConceptId: '13392', side: 'right', sourceLabel: 'right scalenus anterior' },
+      { meshName: 'FJ1593', fmaConceptId: '13390', side: 'right', sourceLabel: 'right scalenus medius' },
+      { meshName: 'FJ1594', fmaConceptId: '13388', side: 'right', sourceLabel: 'right scalenus posterior' },
     ],
-    expectAbsent: true,
   },
   {
+    // SIX concepts on the left and FOUR on the right. The source has no
+    // FJ1567M/FJ1568M, so rectus capitis posterior major and minor are LEFT ONLY --
+    // confirmed by the bridge and by centroid x (+19.1 and +11.8, both positive).
+    //
+    // Declared as a composite anyway, and the pipeline's all-or-nothing rule does the
+    // rest: the left build binds all six, the right build binds only four and is
+    // reported INCOMPLETE rather than shipped as a whole suboccipital set. Mirroring
+    // the left onto the right would be the forbidden substitution, and dropping the two
+    // missing muscles silently would claim a completeness the source does not have.
     asiId: 'asi:neck.suboccipital',
+    composite: {
+      selectable: false,
+      reason:
+        'the source models six suboccipital concepts separately; the left set is complete and the right set is missing rectus capitis posterior major and minor',
+      // Without this the pipeline sees four right-sided concepts come back, finds all
+      // four present, and calls the right side COMPLETE. It is complete as a set of
+      // right-sided muscles and still an incomplete representation of the concept the
+      // user pointed at -- so the right neck scene would ship a "suboccipital muscles"
+      // selection quietly missing two of them.
+      absentSides: ['right'],
+    },
     candidates: [
-      {
-        meshName: 'UNAVAILABLE:composite',
-        fmaConceptId: null,
-        side: 'not_applicable',
-        sourceLabel:
-          'six concepts: obliquus capitis inferior FMA32537/FJ1563 and FMA32536/FJ1584, obliquus capitis superior FMA32535/FJ1564 and FMA32534/FJ1585, rectus capitis posterior major FMA32531/FJ1567 (left only -- no right mesh exists in the archive), rectus capitis posterior minor FMA32533/FJ1568 (left only), rectus capitis anterior FMA46314/FJ1566 and FMA46313/FJ1588, rectus capitis lateralis FMA46318/FJ1569 and FMA46317/FJ1591',
-      },
+      { meshName: 'FJ1563', fmaConceptId: '32537', side: 'left', sourceLabel: 'left obliquus capitis inferior' },
+      { meshName: 'FJ1564', fmaConceptId: '32535', side: 'left', sourceLabel: 'left obliquus capitis superior' },
+      { meshName: 'FJ1567', fmaConceptId: '32531', side: 'left', sourceLabel: 'left rectus capitis posterior major' },
+      { meshName: 'FJ1568', fmaConceptId: '32533', side: 'left', sourceLabel: 'left rectus capitis posterior minor' },
+      { meshName: 'FJ1566', fmaConceptId: '46314', side: 'left', sourceLabel: 'left rectus capitis anterior' },
+      { meshName: 'FJ1569', fmaConceptId: '46318', side: 'left', sourceLabel: 'left rectus capitis lateralis' },
+      { meshName: 'FJ1584', fmaConceptId: '32536', side: 'right', sourceLabel: 'right obliquus capitis inferior' },
+      { meshName: 'FJ1585', fmaConceptId: '32534', side: 'right', sourceLabel: 'right obliquus capitis superior' },
+      { meshName: 'FJ1588', fmaConceptId: '46313', side: 'right', sourceLabel: 'right rectus capitis anterior' },
+      { meshName: 'FJ1591', fmaConceptId: '46317', side: 'right', sourceLabel: 'right rectus capitis lateralis' },
     ],
-    expectAbsent: true,
   },
   {
+    // SEVEN source meshes, all midline. A user who points at their neck has pointed at
+    // the whole cervical spine, which is exactly why this is one canonical selection
+    // over seven real components rather than seven concepts or one vertebra.
     asiId: 'asi:neck.cervical-spine',
+    composite: {
+      selectable: false,
+      reason:
+        'the source models each cervical vertebra separately (atlas, axis, C3-C7); one canonical selection covers all seven',
+    },
     candidates: [
-      {
-        meshName: 'UNAVAILABLE:seven-vertebra-meshes',
-        fmaConceptId: null,
-        side: 'midline',
-        sourceLabel:
-          'atlas FMA12519/FJ3176, axis FMA12520/FJ3177, third cervical vertebra FMA12521/FJ3161, fourth FMA12522/FJ3164, fifth FMA12523/FJ3167, sixth FMA12524/FJ3170, seventh FMA12525/FJ3172',
-      },
+      { meshName: 'FJ3176', fmaConceptId: '12519', side: 'midline', sourceLabel: 'atlas' },
+      { meshName: 'FJ3177', fmaConceptId: '12520', side: 'midline', sourceLabel: 'axis' },
+      { meshName: 'FJ3161', fmaConceptId: '12521', side: 'midline', sourceLabel: 'third cervical vertebra' },
+      { meshName: 'FJ3164', fmaConceptId: '12522', side: 'midline', sourceLabel: 'fourth cervical vertebra' },
+      { meshName: 'FJ3167', fmaConceptId: '12523', side: 'midline', sourceLabel: 'fifth cervical vertebra' },
+      { meshName: 'FJ3170', fmaConceptId: '12524', side: 'midline', sourceLabel: 'sixth cervical vertebra' },
+      { meshName: 'FJ3172', fmaConceptId: '12525', side: 'midline', sourceLabel: 'seventh cervical vertebra' },
     ],
-    expectAbsent: true,
   },
   {
     asiId: 'asi:neck.thyroid',
@@ -178,24 +199,9 @@ export const NECK_MAPPING: readonly MappingEntry[] = [
  */
 export const UNMAPPABLE_NECK: readonly { asiId: string; reason: string }[] = [
   {
-    asiId: 'asi:neck.cervical-spine',
-    reason:
-      'the source carries seven separate vertebrae (atlas, axis, C3-C7), each its own FMA concept; one canonical id cannot take seven meshes, and binding one vertebra would show a fraction of the structure under a label claiming all of it',
-  },
-  {
-    asiId: 'asi:neck.scalenes',
-    reason:
-      'the source has three scalene concepts per side (anterior, medius, posterior); one canonical id cannot take six meshes, so the composite is reported unsupported rather than approximated by one of them',
-  },
-  {
     asiId: 'asi:neck.suboccipital',
     reason:
-      'the source has six suboccipital concepts, and two of them (rectus capitis posterior major and minor) exist only on the left -- the archive has no FJ1567M or FJ1568M -- so the set cannot even be described as bilateral',
-  },
-  {
-    asiId: 'asi:neck.upper-trapezius',
-    reason:
-      'not a gap in the source: the ascending part of trapezius is already bound to asi:shoulder.trapezius-upper, and one source mesh cannot serve two canonical ids',
+      'the left set is complete (six concepts) and the RIGHT side is not: rectus capitis posterior major and minor have no right-side mesh in the archive at all (no FJ1567M or FJ1568M), so the right build is reported incomplete rather than mirrored or quietly short',
   },
   {
     asiId: 'asi:neck.thyroid',
@@ -205,7 +211,7 @@ export const UNMAPPABLE_NECK: readonly { asiId: string; reason: string }[] = [
   {
     asiId: 'asi:neck.brachial-plexus',
     reason:
-      'no brachial plexus concept exists; the only "plexus" in the bridge is the choroid plexus, and BodyParts3D carries nerves as vessels rather than as plexuses',
+      'no brachial plexus concept exists; the only plexus in the bridge is the choroid plexus, and BodyParts3D carries nerves as vessels rather than as plexuses',
   },
   {
     asiId: 'asi:neck.nuchal-ligament',
@@ -213,3 +219,48 @@ export const UNMAPPABLE_NECK: readonly { asiId: string; reason: string }[] = [
       'no nuchal concept exists anywhere in the bridge; no concept name contains "nuchal"',
   },
 ];
+
+/**
+ * Retired canonical ids, and the ONE canonical identity that replaces them.
+ *
+ * ## WHY THIS EXISTS
+ *
+ * The neck audit found `asi:shoulder.trapezius-upper` and `asi:neck.upper-trapezius`:
+ * two canonical ids, the same label "Upper trapezius", and -- from the source audit --
+ * the SAME source concept (ascending part of trapezius, FMA33583 left / FMA33581 right).
+ * Two ids for one anatomical structure is not a modelling convenience, it is two
+ * persisted truths about one thing, and a record could name either.
+ *
+ * ## THE RULE BEHIND IT
+ *
+ *   canonical anatomical identity  !=  region / sub-region membership
+ *
+ * A structure belongs to as many regions and sub-regions as it does, and has exactly
+ * ONE id and ONE source provenance. `asi:shoulder.trapezius-upper` is now listed in the
+ * neck sub-regions too, so a user pointing at the top of their shoulder OR the back of
+ * their neck reaches the same structure, the same mesh and the same provenance.
+ *
+ * ## WHY THE SURVIVING ID KEEPS THE `shoulder` PREFIX
+ *
+ * The prefix records where the user first meets the structure, not exclusive
+ * ownership of it. Renaming it to something region-neutral would be tidier, but
+ * `asi:shoulder.trapezius-upper` already appears in SHIPPED production manifests and
+ * changing it now would migrate a real id for a cosmetic gain. The alternative -- an
+ * alias layer -- is kept anyway, and asserted, because an alias that is never checked
+ * is just a comment.
+ *
+ * `neck.upper-trapezius` has never been bound to geometry and appears in no stored
+ * record, so retiring it costs nothing.
+ */
+export const RETIRED_CANONICAL_IDS: Readonly<Record<string, { canonical: string; why: string }>> = {
+  'asi:neck.upper-trapezius': {
+    canonical: 'asi:shoulder.trapezius-upper',
+    why:
+      'the same anatomical structure as the shoulder id, from the same verified source concept; keeping two ids would have made one structure into two persisted truths',
+  },
+};
+
+/** Resolve a possibly-retired id to the one canonical identity that now holds it. */
+export function canonicalStructureId(asiId: string): string {
+  return RETIRED_CANONICAL_IDS[asiId]?.canonical ?? asiId;
+}

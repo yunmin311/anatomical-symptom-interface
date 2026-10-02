@@ -107,11 +107,35 @@ export const GeometrySchema = z.object({
 export type AssetGeometry = z.infer<typeof GeometrySchema>;
 
 /**
- * One manifest entry: exactly one mesh, bound to exactly one `asiId`.
+ * One manifest ENTRY: exactly one canonical `asiId`, bound to one or more source meshes.
  *
  * `asiId` must already exist in the domain. A manifest cannot introduce a
  * structure the product does not know about, because nothing else would be able
  * to resolve it and it would be invisible to the interview engine.
+ *
+ * ## WHY AN ENTRY IS NO LONGER ONE MESH
+ *
+ * It used to be, and the assumption was false the moment a second region was built.
+ * The neck audit found real source geometry for concepts our ontology models more
+ * coarsely than the source does:
+ *
+ *   asi:neck.cervical-spine  -> atlas + axis + C3 + C4 + C5 + C6 + C7  (7 meshes)
+ *   asi:neck.scalenes         -> anterior + medius + posterior, per side
+ *
+ * Those are not "the source is missing". They are one canonical concept resolving to
+ * several externally sourced elements, and the alternative -- binding C1 and calling it
+ * "the cervical spine" -- would show a user who pointed at their whole neck one
+ * vertebra under a label claiming seven.
+ *
+ * So a composite entry carries its components explicitly, and each component keeps its
+ * OWN provenance: mesh id, source concept, laterality, file, geometry and bounds. The
+ * parent keeps the aggregate, which is what a viewer needs to frame it, and is
+ * explicitly NOT a source claim about a single mesh.
+ *
+ * `selectable` on the composite says whether the components are themselves separately
+ * selectable canonical structures (the deltoid parts are) or internal parts of one
+ * selection (cervical vertebrae are). It is what stops "make composites work" from
+ * quietly turning every source mesh into a user-facing concept.
  *
  * STRICT on purpose. The default Zod object silently strips keys it does not
  * recognise, which for a generated file is the wrong failure: a pipeline that
@@ -122,10 +146,40 @@ export type AssetGeometry = z.infer<typeof GeometrySchema>;
  * clinical claim -- a `selectedByUser`, a `severity` or a `diagnosis` is a
  * parse error rather than a stripped extra.
  */
+
+/**
+ * One externally sourced element of a composite.
+ *
+ * A complete provenance record in its own right. Collapsing these into one
+ * "the vertebrae" source claim is precisely the fabrication the composite model
+ * exists to prevent: the seven meshes have seven different FMA concepts and a
+ * clinician citing one is not citing the other six.
+ */
+export const AssetComponentSchema = z.object({
+  meshName: z.string().min(1),
+  fma: FmaBindingSchema,
+  source: SourceSchema,
+  laterality: LateralitySchema,
+  geometry: GeometrySchema,
+  bounds: BoundsSchema,
+  /** Path to the generated .glb, relative to the asset root. */
+  file: z.string().min(1),
+  /** The SOURCE's own name for this element, kept verbatim as provenance. */
+  sourceLabel: z.string().min(1).nullish(),
+}).strict();
+export type AssetComponent = z.infer<typeof AssetComponentSchema>;
+
 export const AssetManifestEntrySchema = z.object({
   asiId: z.string().regex(/^asi:/, 'an asset id must be an asi:* id, never a source id'),
-  /** Name in the source dataset. Provenance only; never used as an identity. */
-  meshName: z.string().min(1),
+  /**
+   * The single source mesh this entry is built from, when it is not a composite.
+   *
+   * Null exactly when `composite` is present, and the cross-checks enforce that in
+   * both directions: a composite cannot also claim one mesh, and a non-composite
+   * cannot omit it. A single field that means "sometimes one, sometimes many" would
+   * make every reader re-derive the rule.
+   */
+  meshName: z.string().min(1).nullish(),
   region: BodyRegionSchema,
   subRegionIds: z.array(z.string().min(1)).min(1),
   layer: TissueLayerSchema,
@@ -134,13 +188,36 @@ export const AssetManifestEntrySchema = z.object({
   /** Plain-language name. Falls back to the anatomical label when unwritten. */
   layTerm: z.string().min(1).nullish(),
   laterality: LateralitySchema,
-  fma: FmaBindingSchema,
-  source: SourceSchema,
+  /**
+   * Single-mesh provenance, for the common case.
+   *
+   * Null on a composite, where claiming one source concept would be a lie: seven
+   * vertebrae are seven concepts.
+   */
+  fma: FmaBindingSchema.nullish(),
+  source: SourceSchema.nullish(),
   licence: LicenceSchema,
   geometry: GeometrySchema,
   bounds: BoundsSchema,
-  /** Path to the generated .glb, relative to the asset root. */
-  file: z.string().min(1),
+  /** Path to the generated .glb, relative to the asset root. Absent on a composite. */
+  file: z.string().min(1).nullish(),
+  /** Present when this canonical concept resolves to several sourced elements. */
+  composite: z
+    .object({
+      /**
+       * Whether the components are ALSO separately selectable canonical structures.
+       *
+       * True for the deltoid, where each part has its own `asi:` id because a
+       * clinician names them. False for cervical vertebrae, which are parts of the
+       * one thing a user pointed at.
+       */
+      selectable: z.boolean(),
+      /** Why this is a composite, in words from the mapping. Never inferred. */
+      reason: z.string().min(1),
+      components: z.array(AssetComponentSchema).min(2),
+    })
+    .strict()
+    .nullish(),
 }).strict();
 export type AssetManifestEntry = z.infer<typeof AssetManifestEntrySchema>;
 
@@ -167,7 +244,8 @@ export type AssetManifest = z.infer<typeof AssetManifestSchema>;
 export interface ManifestIssue {
   severity: 'error' | 'warning';
   asiId?: string;
-  meshName?: string;
+  /** Absent on a composite parent, which has no single mesh of its own. */
+  meshName?: string | null;
   message: string;
 }
 
@@ -243,10 +321,65 @@ export function validateManifest(
     }
     seenAsi.add(e.asiId);
 
-    if (seenMesh.has(e.meshName)) {
-      issues.push({ severity: 'error', meshName: e.meshName, message: 'duplicate meshName in the manifest' });
+// A mesh may be used once across the WHOLE manifest, whether it is a plain entry
+    // or a composite component. Checked in one set on purpose: allowing the two to be
+    // tracked separately is exactly how one source element ends up backing two
+    // canonical identities.
+    const meshesForEntry = [e.meshName, ...(e.composite?.components.map((c) => c.meshName) ?? [])].filter(
+      (name): name is string => Boolean(name),
+    );
+    for (const name of meshesForEntry) {
+      if (seenMesh.has(name)) {
+        issues.push({ severity: 'error', asiId: e.asiId, meshName: name, message: 'mesh is used more than once in the manifest' });
+      }
+      seenMesh.add(name);
     }
-    seenMesh.add(e.meshName);
+
+    // A composite has no single mesh, and a non-composite cannot pretend it has one.
+    // Checked in both directions because either half alone is exploitable: allow a
+    // composite to also carry `meshName` and a real component could be hidden from the
+    // per-component provenance checks; allow a non-composite to omit it and an entry
+    // could be a composite that nobody validated.
+    if (e.composite && e.meshName) {
+      issues.push({
+        severity: 'error', asiId: e.asiId, meshName: e.meshName,
+        message: 'a composite entry also claims a single meshName; the components are the truth',
+      });
+    }
+    if (!e.composite && !e.meshName) {
+      issues.push({ severity: 'error', asiId: e.asiId, message: 'a non-composite entry has no meshName' });
+    }
+    if (!e.composite && (!e.fma || !e.source)) {
+      issues.push({
+        severity: 'error', asiId: e.asiId, meshName: e.meshName,
+        message: 'a non-composite entry must carry its own fma and source provenance',
+      });
+    }
+
+    // Every component carries its own provenance.
+    for (const component of e.composite?.components ?? []) {
+      if (component.geometry.triangles > budget.maxTrianglesPerMesh) {
+        issues.push({
+          severity: 'error', asiId: e.asiId, meshName: component.meshName,
+          message: `component ${component.meshName} has ${component.geometry.triangles} triangles, over the per-mesh budget of ${budget.maxTrianglesPerMesh}`,
+        });
+      }
+      if (options.fileSizes) {
+        const bytes = options.fileSizes.get(component.file);
+        if (bytes === undefined) {
+          issues.push({
+            severity: 'error', asiId: e.asiId, meshName: component.meshName,
+            message: `component mesh file not found: ${component.file}`,
+          });
+        }
+      }
+      if (component.fma.status !== 'verified') {
+        issues.push({
+          severity: 'warning', asiId: e.asiId, meshName: component.meshName,
+          message: `component ${component.meshName} FMA binding is unverified`,
+        });
+      }
+    }
 
     if (!manifest.regions.includes(e.region)) {
       issues.push({ severity: 'error', asiId: e.asiId, meshName: e.meshName, message: `entry region ${e.region} is not listed in manifest.regions` });
@@ -262,7 +395,9 @@ export function validateManifest(
     }
     totalTriangles += e.geometry.triangles;
 
-    if (options.fileSizes) {
+    // A composite's own files are checked per component above; its aggregate budget
+    // still counts toward the manifest total.
+    if (options.fileSizes && e.file) {
       const bytes = options.fileSizes.get(e.file);
       if (bytes === undefined) {
         issues.push({ severity: 'error', asiId: e.asiId, meshName: e.meshName, message: `mesh file not found: ${e.file}` });
@@ -279,7 +414,12 @@ export function validateManifest(
 
   if (options.fileSizes) {
     let totalBytes = 0;
-    for (const e of manifest.entries) totalBytes += options.fileSizes.get(e.file) ?? 0;
+    // Every generated file, including composite components, counts against the
+    // byte budget. Counting only `entry.file` would let a composite hide its real
+    // weight from the budget that exists to bound exactly that.
+    for (const e of manifest.entries)
+      for (const file of [e.file, ...(e.composite?.components.map((c) => c.file) ?? [])])
+        if (file) totalBytes += options.fileSizes.get(file) ?? 0;
     if (budget.maxTotalBytes && totalBytes > budget.maxTotalBytes) {
       issues.push({
         severity: 'error',
@@ -291,7 +431,7 @@ export function validateManifest(
   // A mesh with an unverified FMA binding is expected for generated output, but it
   // is worth surfacing so it cannot quietly become the norm unnoticed.
   for (const e of manifest.entries) {
-    if (e.fma.status === 'unverified') {
+    if (e.fma?.status === 'unverified') {
       issues.push({ severity: 'warning', asiId: e.asiId, meshName: e.meshName, message: 'FMA binding is unverified' });
     }
   }

@@ -64,11 +64,38 @@ import {
  * `satisfies Record<...>` so a missing region is caught at build time rather than at
  * the moment a user opens that part of the body.
  */
-type ProductionSide = 'left' | 'right';
+/**
+ * The two sides a scene can be built for, plus the two that are not sides at all.
+ *
+ * A separate type from `Side` on purpose: `Side` is the RECORD's vocabulary and
+ * includes 'unknown' and 'midline', neither of which is something a build can be asked
+ * for. A `midline` build exists -- the cervical vertebrae are real, midline geometry --
+ * but it is a build choice, not a side a user can be on.
+ */
+type ProductionSide = 'left' | 'right' | 'midline';
 
-const GENERATED: Readonly<
-  Record<string, Readonly<Record<ProductionSide, { manifest: AssetManifest; assetRoot: string }>>>
-> = {
+/**
+ * The production scene registry, typed on `BodyRegion`.
+ *
+ * `Partial`, and that is the whole design: the registry holds only the regions that
+ * currently have real built geometry, so a region is added by building it, not by
+ * declaring it. A `Record<BodyRegion, ...>` would force an entry for lower_back and
+ * knee today, and the cheapest way to satisfy that is a placeholder scene -- which is
+ * the fabricated-anatomy failure this whole architecture exists to prevent.
+ *
+ * The keys are typed, so `sceneFor('sholder', 'left')` is a compile error rather than a
+ * scene that quietly returns whatever `PRODUCTION_SCENES['sholder']` happens to be.
+ * The previous version was `Record<string, ...>` and its comment claimed the opposite;
+ * the claim was false and is now enforced.
+ *
+ * Runtime input still validates rather than casting: `asBodyRegion` below is the only
+ * way a string becomes one, and it returns undefined for anything it does not know.
+ */
+type ProductionSceneRegistry = Partial<
+  Record<BodyRegion, Partial<Record<ProductionSide, { manifest: AssetManifest; assetRoot: string }>>>
+>;
+
+const GENERATED: ProductionSceneRegistry = {
   shoulder: {
     left: { manifest: SHOULDER_LEFT, assetRoot: SHOULDER_LEFT_ROOT },
     right: { manifest: SHOULDER_RIGHT, assetRoot: SHOULDER_RIGHT_ROOT },
@@ -79,8 +106,20 @@ const GENERATED: Readonly<
   },
 };
 
-/** Regions with real, built geometry. Read from the table, so it cannot drift. */
-export const PRODUCTION_REGIONS: readonly string[] = Object.keys(GENERATED);
+/**
+ * Parse an untrusted string into a `BodyRegion`.
+ *
+ * The ONLY conversion from string to `BodyRegion` in this file. It returns undefined
+ * for anything unrecognised rather than casting, because a cast would let a typo
+ * through the type system and into a scene lookup -- which is exactly what typing the
+ * registry was supposed to prevent.
+ */
+export function asBodyRegion(value: string | null | undefined): BodyRegion | undefined {
+  return typeof value === 'string' && value in GENERATED ? (value as BodyRegion) : undefined;
+}
+
+/** Regions with real, built geometry, as a TYPED collection. */
+export const PRODUCTION_REGIONS: readonly BodyRegion[] = Object.keys(GENERATED) as BodyRegion[];
 
 /**
  * The synthetic fixture. Rendering, interaction, picking and adapter tests only.
@@ -99,7 +138,7 @@ export const FIXTURE_SCENE: RendererSceneManifest = FIXTURE_MANIFEST;
  * activate its anatomy assets is a different problem from a build with a broken one,
  * and the message should say which.
  */
-function buildProductionScene(region: string, side: ProductionSide): RendererSceneManifest {
+function buildProductionScene(region: BodyRegion, side: ProductionSide): RendererSceneManifest {
   let canonical: AssetManifest;
   const source = GENERATED[region]?.[side];
   if (!source)
@@ -125,16 +164,24 @@ function buildProductionScene(region: string, side: ProductionSide): RendererSce
         'production scene. Run scripts/embed-anatomy-manifest.mjs on a real generated manifest.',
     );
 
-  // The build flag and the manifest have to agree. The side is a fact the source
-  // mapping established when it chose which real mesh to load; a `--side right`
-  // build whose manifest says `left` is a mislabeled build, and shipping it would put
-  // right-labelled anatomy on screen with left provenance.
-  const claimed = [...new Set(canonical.entries.map((e) => e.laterality))];
-  if (claimed.length !== 1 || claimed[0] !== side)
+  // Per-ENTRY, not per-manifest, and for the same reason the embed gate checks it that
+  // way: a left neck scene legitimately contains left structures AND the midline
+  // cervical spine, because a person looking at their left neck still has vertebrae
+  // behind the muscles.
+  //
+  // The rule that must still hold is the important one: no entry may claim the OTHER
+  // side. That is a real error -- right anatomy in a left scene is wrong anatomy on
+  // screen -- and it is the only thing this check is for.
+  const wrongSide = canonical.entries.filter(
+    (e) => e.laterality !== side && e.laterality !== 'midline',
+  );
+  if (wrongSide.length)
     throw new Error(
-      `the generated ${side} manifest carries laterality ${claimed.join('/')}. The side is a ` +
-        `fact from the source mapping, not a label, so this build is refused rather than ` +
-        `displayed. Rebuild it with scripts/build-anatomy.mjs --side ${side}.`,
+      `the generated ${side} manifest carries ${wrongSide.length} entr${
+        wrongSide.length === 1 ? 'y' : 'ies'
+      } of another side: ${wrongSide.map((e) => `${e.asiId}=${e.laterality}`).join(', ')}. ` +
+        `The side is a fact from the source mapping, not a label, so this build is refused ` +
+        `rather than displayed. Rebuild it with scripts/build-anatomy.mjs --side ${side}.`,
     );
 
   const scene = toRendererScene(canonical, { assetRoot });
@@ -178,16 +225,24 @@ export function assertProductionSceneIsReal(scene: RendererSceneManifest): void 
  * Nothing about that would look wrong, which is the reason the key is typed rather
  * than assembled from strings.
  */
-export const PRODUCTION_SCENES: Readonly<Record<string, Readonly<Record<ProductionSide, RendererSceneManifest>>>> =
-  Object.fromEntries(
-    PRODUCTION_REGIONS.map((region) => [
-      region,
-      {
-        left: buildProductionScene(region, 'left'),
-        right: buildProductionScene(region, 'right'),
-      },
-    ]),
-  );
+export const PRODUCTION_SCENES: Readonly<
+  Partial<Record<BodyRegion, Partial<Record<ProductionSide, RendererSceneManifest>>>>
+> = Object.fromEntries(
+  PRODUCTION_REGIONS.map((region) => [
+    region,
+    Object.fromEntries(
+      (['left', 'right', 'midline'] as const)
+        // A region only has the builds it was actually built for. A region with no
+        // midline geometry simply has no midline key, so `sceneFor` can say so rather
+        // than handing back a scene that claims to show midline anatomy.
+        .filter((side) => GENERATED[region]?.[side])
+        .map((side) => [
+          side,
+          buildProductionScene(region, side),
+        ]),
+    ),
+  ]),
+) as ProductionScenes;
 
 /**
  * What the viewer should show for a given region and side, and why.
@@ -213,24 +268,36 @@ export const PRODUCTION_SCENES: Readonly<Record<string, Readonly<Record<Producti
  * this becomes `scene` and nothing else has to change.
  */
 export type SceneSelection =
-  | { kind: 'scene'; region: string; side: ProductionSide; scene: RendererSceneManifest }
+  | { kind: 'scene'; region: BodyRegion; side: ProductionSide; scene: RendererSceneManifest }
   | {
       kind: 'both';
-      region: string;
+      region: BodyRegion;
       sides: readonly ProductionSide[];
       scenes: RendererSceneManifest[];
     }
-  | { kind: 'needs-side'; region: string; reason: string }
-  | { kind: 'needs-region'; region: string; reason: string }
-  | { kind: 'none'; region: string; reason: string };
+  | { kind: 'needs-side'; region: BodyRegion; reason: string }
+  | { kind: 'needs-region'; region: BodyRegion; reason: string }
+  | { kind: 'none'; region: BodyRegion; reason: string };
+
+/** The shape `PRODUCTION_SCENES` actually has: partial in both axes, by design. */
+type ProductionScenes = Readonly<
+  Partial<Record<BodyRegion, Partial<Record<ProductionSide, RendererSceneManifest>>>>
+>;
 
 /** True when a region has a built scene for both sides. */
-export function hasProductionScenes(region: string): boolean {
+export function hasProductionScenes(region: BodyRegion): boolean {
   const entry = PRODUCTION_SCENES[region];
-  return Boolean(entry && entry.left && entry.right && entry.left.entries.length > 0);
+  return Boolean(entry && (entry.left ?? entry.right));
 }
 
-export function sceneFor(region: string, side: Side): SceneSelection {
+/** Which lateralities a region has REAL geometry for. Never assumed. */
+export function productionSidesFor(region: BodyRegion): ProductionSide[] {
+  const entry = PRODUCTION_SCENES[region];
+  if (!entry) return [];
+  return (['left', 'right', 'midline'] as const).filter((side) => Boolean(entry[side]));
+}
+
+export function sceneFor(region: BodyRegion, side: Side): SceneSelection {
   const built = PRODUCTION_SCENES[region];
 
   if (!hasProductionScenes(region))
@@ -242,29 +309,36 @@ export function sceneFor(region: string, side: Side): SceneSelection {
         `is not something this tool will do. The body map and the questions below still work.`,
     };
 
-  if (side === 'left') return { kind: 'scene', region, side: 'left', scene: built!.left };
-  if (side === 'right') return { kind: 'scene', region, side: 'right', scene: built!.right };
-  if (side === 'bilateral')
-    return {
-      kind: 'both',
-      region,
-      sides: ['left', 'right'],
-      scenes: [built!.left, built!.right],
-    };
-  if (side === 'midline')
+  if (side === 'left') return { kind: 'scene', region, side: 'left', scene: built!.left! };
+  if (side === 'right') return { kind: 'scene', region, side: 'right', scene: built!.right! };
+  if (side === 'midline') {
+    // A REAL midline scene when the region has one. The cervical vertebrae are midline
+    // geometry that exists, and saying "no 3D" about them because they have no side
+    // would be the same error as refusing to load a structure because it is not
+    // left or right.
+    if (built!.midline) return { kind: 'scene', region, side: 'midline', scene: built!.midline };
     return {
       kind: 'none',
       region,
       reason:
-        'Midline structures have no side, and the assets built so far are one-sided, so there is ' +
-        'no 3D scene to show. The map and the questions still work.',
+        'Midline structures for this region have not been built yet. The map and the questions still work.',
     };
+  }
+  if (side === 'bilateral')
+    return built!.left && built!.right
+      ? { kind: 'both', region, sides: ['left', 'right'], scenes: [built!.left, built!.right] }
+      : {
+          kind: 'none',
+          region,
+          reason: `Real geometry for both sides of the ${region.replace(/_/g, ' ')} is not built, and a ` +
+            `mirrored copy of one side would not be anatomy.`,
+        };
   return {
     kind: 'needs-side',
     region,
     reason:
       'Which side? The 3D viewer shows real anatomy for one side at a time, and choosing one here ' +
-        'is not a guess this tool will make for you.',
+      'is not a guess this tool will make for you.',
   };
 }
 
@@ -277,7 +351,7 @@ export function sceneFor(region: string, side: Side): SceneSelection {
  * constant is the only path by which the wrong body part can be shown, so it is
  * deliberately hard to reach by accident.
  */
-export const ACTIVE_SCENE: RendererSceneManifest = PRODUCTION_SCENES.shoulder!.left;
+export const ACTIVE_SCENE: RendererSceneManifest = PRODUCTION_SCENES.shoulder!.left!;
 
 /**
  * Regions the production scenes actually cover, read from the built scenes rather than
@@ -308,7 +382,7 @@ export function activeStructureIds(side: Side = 'left'): string[] {
 }
 
 /** The real scenes a record side may be shown for one region. */
-export function scenesFor(region: string, side: Side): RendererSceneManifest[] {
+export function scenesFor(region: BodyRegion, side: Side): RendererSceneManifest[] {
   const selection = sceneFor(region, side);
   if (selection.kind === 'scene') return [selection.scene];
   if (selection.kind === 'both') return selection.scenes;
@@ -321,8 +395,8 @@ export function scenesFor(region: string, side: Side): RendererSceneManifest[] {
  * Read from the built scenes rather than declared as `['left', 'right']`, so a region
  * whose build is missing cannot advertise a side it cannot render.
  */
-export function availableProductionSides(region: string): ProductionSide[] {
+export function availableProductionSides(region: BodyRegion): ProductionSide[] {
   const built = PRODUCTION_SCENES[region];
   if (!built) return [];
-  return (['left', 'right'] as const).filter((side) => built[side].entries.length > 0);
+  return (['left', 'right'] as const).filter((side) => (built[side]?.entries.length ?? 0) > 0);
 }

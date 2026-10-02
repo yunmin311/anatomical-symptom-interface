@@ -39,6 +39,7 @@
  */
 import { z } from 'zod';
 import type { Structure, TissueLayer } from './anatomy.ts';
+import { LateralitySchema } from './anatomy-manifest.ts';
 
 /**
  * Why a concept cannot be represented, as a closed vocabulary.
@@ -87,13 +88,46 @@ export const Representation2DSchema = z.object({
 });
 export type Representation2D = z.infer<typeof Representation2DSchema>;
 
-export const Representation3DSchema = z.discriminatedUnion('status', [
+/**
+ * One side's worth of 3D capability.
+ *
+ * `available: false` with a reason is the case that matters, and the reason the old
+ * `sides: ['left','right']` array could not express. Real anatomy is not always
+ * symmetric: BodyParts3D carries six suboccipital concepts on the left and four on the
+ * right -- rectus capitis posterior major and minor simply have no right-side mesh. An
+ * all-or-nothing `sides` array has two dishonest answers available for that, and both
+ * were reachable: omit 'right' and the reader cannot tell "unavailable" from "not
+ * audited"; include 'right' and we claim a completeness the source does not have.
+ *
+ * So availability is per LATERALITY, and an unavailable side carries its own reason.
+ */
+export const SideCapabilitySchema = z.discriminatedUnion('available', [
+  z.object({
+    available: z.literal(true),
+    /** How many external elements this side resolves to. Never assumed to be one. */
+    componentCount: z.number().int().positive(),
+  }),
+  z.object({
+    available: z.literal(false),
+    /** Why this side is not represented, when it is not represented. */
+    reason: z.string().min(1).nullish(),
+  }),
+]);
+export type SideCapability = z.infer<typeof SideCapabilitySchema>;
+
+export const Representation3DSchema = z.union([
   z.object({
     status: z.literal('available'),
-    /** How many external elements make it up. Never assumed to be one. */
-    elementCount: z.number().int().positive(),
-    /** Which sides the available geometry covers, from the source's own naming. */
-    sides: z.array(z.enum(['left', 'right'])).min(1),
+    /**
+     * Capability per laterality, keyed by the SAME vocabulary the canonical manifest
+     * uses. Deliberately not a second enum: a structure whose geometry is midline says
+     * `midline`, and one that is a single whole-body concept says `not_applicable`.
+     *
+     * At least one side must be available, or `status` should be `unavailable` and say
+     * why -- "available" with nothing available is a contradiction a reader would have
+     * to notice.
+     */
+    sides: z.record(LateralitySchema, SideCapabilitySchema),
   }),
   z.object({
     status: z.literal('unavailable'),
@@ -101,7 +135,19 @@ export const Representation3DSchema = z.discriminatedUnion('status', [
     /** Why, in words. The reason code is the checkable part; this is for a human. */
     detail: z.string(),
   }),
-]);
+]).superRefine((value, ctx) => {
+  // "available" with no laterality available is a contradiction, and a reader would
+  // have to notice it. Checked here because a union member cannot carry its own
+  // refinement: `discriminatedUnion` rejects a refined member, and the alternative --
+  // leaving it unchecked -- is how a declaration ends up claiming 3D and rendering
+  // nothing.
+  if (value.status !== 'available') return;
+  if (!Object.values(value.sides).some((capability) => capability.available))
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: 'a 3D representation is marked available but no laterality is available',
+    });
+});
 export type Representation3D = z.infer<typeof Representation3DSchema>;
 
 export const RepresentationSchema = z.object({
@@ -128,103 +174,98 @@ export const REPRESENTATION_DECLARATIONS: Readonly<Record<string, Representation
   // --- Bound to real BodyParts3D 4.0 elements, verified against the archive ---
   'asi:shoulder.supraspinatus-tendon': {
     twoD: { available: true, placeholder: true },
-    threeD: { status: 'available', elementCount: 1, sides: ['left', 'right'] },
+    threeD: { status: 'available', sides: { left: { available: true, componentCount: 1 }, right: { available: true, componentCount: 1 } } },
   },
   'asi:shoulder.infraspinatus': {
     twoD: { available: true, placeholder: true },
-    threeD: { status: 'available', elementCount: 1, sides: ['left', 'right'] },
+    threeD: { status: 'available', sides: { left: { available: true, componentCount: 1 }, right: { available: true, componentCount: 1 } } },
   },
   'asi:shoulder.teres-minor': {
     twoD: { available: true, placeholder: true },
-    threeD: { status: 'available', elementCount: 1, sides: ['left', 'right'] },
+    threeD: { status: 'available', sides: { left: { available: true, componentCount: 1 }, right: { available: true, componentCount: 1 } } },
   },
   'asi:shoulder.subscapularis': {
     twoD: { available: true, placeholder: true },
-    threeD: { status: 'available', elementCount: 1, sides: ['left', 'right'] },
+    threeD: { status: 'available', sides: { left: { available: true, componentCount: 1 }, right: { available: true, componentCount: 1 } } },
   },
   'asi:shoulder.trapezius-upper': {
     twoD: { available: true, placeholder: true },
-    threeD: { status: 'available', elementCount: 1, sides: ['left', 'right'] },
+    threeD: { status: 'available', sides: { left: { available: true, componentCount: 1 }, right: { available: true, componentCount: 1 } } },
   },
   'asi:shoulder.scapula': {
     twoD: { available: true, placeholder: true },
-    threeD: { status: 'available', elementCount: 1, sides: ['left', 'right'] },
+    threeD: { status: 'available', sides: { left: { available: true, componentCount: 1 }, right: { available: true, componentCount: 1 } } },
   },
   'asi:shoulder.biceps-long-head-tendon': {
     twoD: { available: true, placeholder: true },
-    threeD: { status: 'available', elementCount: 1, sides: ['left', 'right'] },
+    threeD: { status: 'available', sides: { left: { available: true, componentCount: 1 }, right: { available: true, componentCount: 1 } } },
   },
 
   // --- neck ---
   //
-  // Two of the nine are available, and the seven gaps below are the point of the
-  // exercise rather than an embarrassment. Each reason says what the archive actually
-  // contains, so a reader can check it instead of taking the gap on trust.
+  // Nine concepts, five of them available and four not, and the gaps are the point of
+  // the exercise rather than an embarrassment. Each reason says what the archive
+  // actually contains, so a reader can check it rather than take the gap on trust.
   //
-  // The interesting ones are the composites. The source is FINER than we are: three
-  // scalene concepts per side, six suboccipital concepts, seven vertebrae. One canonical
-  // id cannot take those meshes, and binding one of them would show a fraction of the
-  // structure under a label claiming all of it -- so they are `composite-unsupported`.
+  // Three are COMPOSITES -- one canonical concept over several sourced meshes -- and
+  // the per-laterality shape is what makes the suboccipital asymmetry expressible: six
+  // concepts on the left, four on the right, because rectus capitis posterior major and
+  // minor have no right-side mesh in the archive. The old `sides: ['left','right']`
+  // array could only have said "both" (a lie) or "neither" (also a lie).
   'asi:neck.sternocleidomastoid': {
     twoD: { available: true, placeholder: true },
-    threeD: { status: 'available', elementCount: 1, sides: ['left', 'right'] },
+    threeD: {
+      status: 'available',
+      sides: {
+        left: { available: true, componentCount: 1 },
+        right: { available: true, componentCount: 1 },
+      },
+    },
   },
   'asi:neck.levator-scapulae': {
     twoD: { available: true, placeholder: true },
-    threeD: { status: 'available', elementCount: 1, sides: ['left', 'right'] },
+    threeD: {
+      status: 'available',
+      sides: {
+        left: { available: true, componentCount: 1 },
+        right: { available: true, componentCount: 1 },
+      },
+    },
   },
   'asi:neck.cervical-spine': {
     twoD: { available: true, placeholder: true },
     threeD: {
-      status: 'unavailable',
-      reason: 'composite-unsupported',
-      detail:
-        'the source carries seven separate vertebrae meshes (atlas FMA12519, axis FMA12520, C3-C7) and one canonical id cannot take seven meshes',
+      status: 'available',
+      // MIDLINE, and one structure rather than a left copy and a right copy. Seven
+      // source vertebrae, seven separate FMA claims, one canonical selection.
+      sides: { midline: { available: true, componentCount: 7 } },
     },
   },
   'asi:neck.scalenes': {
     twoD: { available: true, placeholder: true },
     threeD: {
-      status: 'unavailable',
-      reason: 'composite-unsupported',
-      detail:
-        'the source has three scalene concepts per side (anterior, medius, posterior); binding one would show a third of the muscle as all of it',
+      status: 'available',
+      sides: {
+        left: { available: true, componentCount: 3 },
+        right: { available: true, componentCount: 3 },
+      },
     },
   },
   'asi:neck.suboccipital': {
     twoD: { available: true, placeholder: true },
     threeD: {
-      status: 'unavailable',
-      reason: 'composite-unsupported',
-      detail:
-        'the source has six suboccipital concepts, and two of them (rectus capitis posterior major and minor) exist only on the left -- the archive has no FJ1567M or FJ1568M -- so the set is not even bilateral',
-    },
-  },
-  'asi:neck.upper-trapezius': {
-    twoD: { available: true, placeholder: true },
-    threeD: {
-      status: 'unavailable',
-      reason: 'not-yet-sourced',
-      detail:
-        'the source concept exists and is already bound to asi:shoulder.trapezius-upper (ascending part of trapezius, FMA33583/FMA33581); one mesh cannot serve two canonical ids',
-    },
-  },
-  'asi:neck.thyroid': {
-    twoD: { available: true, placeholder: true },
-    threeD: {
-      status: 'unavailable',
-      reason: 'no-source-concept',
-      detail:
-        'no thyroid gland concept exists in the archive; it has the inferior thyroid artery and the cricothyroid ligament, which are different structures',
-    },
-  },
-  'asi:neck.brachial-plexus': {
-    twoD: { available: true, placeholder: true },
-    threeD: {
-      status: 'unavailable',
-      reason: 'no-source-concept',
-      detail:
-        'no brachial plexus concept exists; the only plexus in the source is the choroid plexus, and BodyParts3D carries nerves as vessels rather than plexuses',
+      status: 'available',
+      sides: {
+        left: { available: true, componentCount: 6 },
+        // NOT AVAILABLE, and said so per side. The source has four of the six on the
+        // right; mirroring the left or shipping a short set are both forbidden, so the
+        // honest answer is that the right side is not represented.
+        right: {
+          available: false,
+          reason:
+            'rectus capitis posterior major and minor have no right-side mesh in the archive (no FJ1567M or FJ1568M), so the right set is four of six concepts',
+        },
+      },
     },
   },
   'asi:neck.nuchal-ligament': {
@@ -246,15 +287,15 @@ export const REPRESENTATION_DECLARATIONS: Readonly<Record<string, Representation
   // made once with invented filenames.
   'asi:shoulder.deltoid-clavicular-part': {
     twoD: { available: false, placeholder: false },
-    threeD: { status: 'available', elementCount: 1, sides: ['left', 'right'] },
+    threeD: { status: 'available', sides: { left: { available: true, componentCount: 1 }, right: { available: true, componentCount: 1 } } },
   },
   'asi:shoulder.deltoid-acromial-part': {
     twoD: { available: false, placeholder: false },
-    threeD: { status: 'available', elementCount: 1, sides: ['left', 'right'] },
+    threeD: { status: 'available', sides: { left: { available: true, componentCount: 1 }, right: { available: true, componentCount: 1 } } },
   },
   'asi:shoulder.deltoid-spinal-part': {
     twoD: { available: false, placeholder: false },
-    threeD: { status: 'available', elementCount: 1, sides: ['left', 'right'] },
+    threeD: { status: 'available', sides: { left: { available: true, componentCount: 1 }, right: { available: true, componentCount: 1 } } },
   },
 
   // --- Concepts that exist, with no valid 3D in the current source ---
@@ -407,24 +448,43 @@ export function declaredRepresentationGaps(): {
 export function assertSidesMatch(
   asiId: string,
   declared: Representation3D,
-  produced: readonly ('left' | 'right')[],
+  produced: readonly { laterality: string; componentCount: number }[],
 ): void {
   if (declared.status !== 'available') return;
-  const missing = declared.sides.filter((s) => !produced.includes(s));
-  if (missing.length)
-    throw new Error(
-      `${asiId} declares 3D for ${declared.sides.join(' and ')} but the build produced only ` +
-        `${produced.join(' and ') || 'nothing'}. Missing: ${missing.join(', ')}.`,
-    );
-  const unclaimed = produced.filter((s) => !declared.sides.includes(s));
-  if (unclaimed.length)
-    throw new Error(
-      `${asiId} has real geometry for ${unclaimed.join(' and ')} but declares only ` +
-        `${declared.sides.join(' and ')}. If the source really produced it, the declaration is ` +
-        `understating what exists.`,
-    );
+  const producedBySide = new Map(produced.map((p) => [p.laterality, p.componentCount]));
+
+  // A side declared available must actually have been built, with the component count
+  // the declaration claims. Checking the COUNT matters as soon as a structure is a
+  // composite: "left is available" would pass for a left build that lost two of its
+  // seven components, which is the exact failure the composite rules exist to stop.
+  for (const [side, capability] of Object.entries(declared.sides) as [string, SideCapability][]) {
+    if (!capability.available) continue;
+    const count = producedBySide.get(side);
+    if (count === undefined)
+      throw new Error(
+        `${asiId} declares 3D available for ${side} but no ${side} build contains it.`,
+      );
+    if (count !== capability.componentCount)
+      throw new Error(
+        `${asiId} declares ${capability.componentCount} ${side} component(s) but the ${side} build ` +
+          `produced ${count}. A partial composite is a different structure from a complete one.`,
+      );
+  }
+
+  // And a side that WAS built must be declared, available or not. This is the direction
+  // that catches a real omission: the source has four right suboccipital meshes and the
+  // declaration says nothing about the right at all, so a reader cannot tell whether
+  // that was audited or overlooked.
+  for (const side of producedBySide.keys()) {
+    if (!(side in declared.sides))
+      throw new Error(
+        `${asiId} has real ${side} geometry but the declaration does not mention ${side}. ` +
+          `Declare it available, or unavailable with a reason.`,
+      );
+  }
 }
 
+/**
 /**
  * The sides a declaration may claim, derived from what the pipeline actually built.
  *
@@ -440,24 +500,25 @@ export function assertSidesMatch(
  */
 export function producedSides(
   asiId: string,
-  manifests: readonly { entries: readonly { asiId: string; laterality: string }[] }[],
-): ('left' | 'right')[] {
-  const sides: ('left' | 'right')[] = [];
+  manifests: readonly {
+    entries: readonly { asiId: string; laterality: string; composite?: { components: unknown[] } | null }[];
+  }[],
+): { laterality: string; componentCount: number }[] {
+  const out = new Map<string, number>();
   for (const manifest of manifests) {
     const match = manifest.entries.find((e) => e.asiId === asiId);
-    if (match && (match.laterality === 'left' || match.laterality === 'right'))
-      if (!sides.includes(match.laterality)) sides.push(match.laterality);
+    if (!match) continue;
+    const count = match.composite?.components.length ?? 1;
+    const existing = out.get(match.laterality);
+    if (existing !== undefined) continue;
+    out.set(match.laterality, count);
   }
-  return sides.sort();
+  return [...out.entries()]
+    .map(([laterality, componentCount]) => ({ laterality, componentCount }))
+    .sort((a, b) => a.laterality.localeCompare(b.laterality));
 }
 
-/**
- * Tissue layers a representation may occupy, for callers that need to reason about
- * what a gap means for depth visibility.
- *
- * Kept as a helper rather than a field because layer is anatomy, not representation,
- * and duplicating it per declaration would let the two drift.
- */
+/** The tissue layer a structure belongs to. */
 export function layerOf(structure: Structure): TissueLayer {
   return structure.layer;
 }

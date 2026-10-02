@@ -1,8 +1,8 @@
 import { useEffect, useRef, useState } from 'react';
 import { AnatomyWorkspace } from './workspace.ts';
 import type { WorkspaceStatus } from './workspace.ts';
-import type { Side } from '@asi/shared';
-import { sceneFor } from './active-scene.ts';
+import type { BodyRegion, Side } from '@asi/shared';
+import { asBodyRegion, sceneFor } from './active-scene.ts';
 import { AnatomyAttribution } from '../ui/AnatomyAttribution.tsx';
 import type { PickResult } from './types.ts';
 import { anatomy } from '../state/session.ts';
@@ -47,7 +47,7 @@ export function Body3d({
    * a side could render a neck for a shoulder complaint, and nothing about that would
    * look wrong until someone read the attribution.
    */
-  region: string;
+  region: BodyRegion;
   /**
    * Full workspace status. The caller needs the fallback REASON, not just a
    * boolean, to tell "still starting" apart from "gave up": switching surfaces
@@ -66,7 +66,13 @@ export function Body3d({
 
   // Which scene the record's side calls for, decided once per side so the effect below
   // remounts when the side changes rather than on every render.
-  const selection = sceneFor(region, side);
+  // The record's region is validated rather than cast. A record from an older build, a
+  // hand-edited DB row, or a bad API body could carry a region this build does not
+  // know, and `asBodyRegion` returning undefined is what stops that reaching a scene
+  // lookup -- where it would silently resolve to "no anatomy for that region" and look
+  // like an honest answer rather than a parse failure.
+  const known = asBodyRegion(region);
+  const selection = sceneFor(known ?? region, side);
   const mountable = selection.kind === 'scene' ? selection.scene : null;
   // `both` mounts one scene at a time too; the viewer shows a side, and the toolbar says
   // which. So it is mountable, and it is the only case with no `reason`.

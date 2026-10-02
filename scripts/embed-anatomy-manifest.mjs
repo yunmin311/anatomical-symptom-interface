@@ -107,17 +107,40 @@ async function main() {
   console.log(`[anatomy] region            ${REGION}`);
   console.log(`[anatomy] side              ${SIDE}`);
   console.log(`[anatomy] manifest           ${manifest.entries.length} entries`);
-  const laterals = [...new Set(manifest.entries.map((e) => e.laterality))].sort();
-  const units = [...new Set(manifest.entries.map((e) => e.geometry.units))].sort();
-  if (laterals.length !== 1 || laterals[0] !== SIDE) {
+  // Per-ENTRY, not per-manifest. A build is not one laterality: a left neck scene
+  // legitimately contains left structures AND the midline cervical spine as context.
+  //
+  // The earlier check compared the SET of lateralities against --side and refused the
+  // build. That was correct while every entry really was one side, and became wrong the
+  // moment a midline composite existed -- the guard was right to fire and its rule was
+  // the thing that needed changing.
+  //
+  // What must still hold: every entry's laterality is either this build's side or
+  // midline, and nothing claims a side the build is not. A right-side entry in a left
+  // build is the error this is here to catch.
+  const wrongSide = manifest.entries.filter(
+    (e) => e.laterality !== SIDE && e.laterality !== 'midline',
+  );
+  if (wrongSide.length) {
     console.error(
-      `[anatomy] REFUSING a ${SIDE} build whose manifest says laterality ${laterals.join('/')}.`,
+      `[anatomy] REFUSING a ${SIDE} build containing ${wrongSide.length} entr${
+        wrongSide.length === 1 ? 'y' : 'ies'
+      } of another side: ${wrongSide.map((e) => `${e.asiId}=${e.laterality}`).join(', ')}`,
     );
     console.error('[anatomy] the side is a fact from the source mapping, not a build flag.');
     process.exitCode = 1;
     return;
   }
-  console.log(`[anatomy] laterality         ${laterals.join(', ')} (verified)`);
+  const laterals = [...new Set(manifest.entries.map((e) => e.laterality))].sort();
+  const units = [...new Set(manifest.entries.map((e) => e.geometry.units))].sort();
+  const composites = manifest.entries.filter((e) => e.composite);
+  console.log(`[anatomy] laterality         ${laterals.join(', ')} (verified per entry)`);
+  console.log(
+    `[anatomy] composites          ${composites.length}` +
+      (composites.length
+        ? ` (${composites.map((e) => `${e.asiId.split(':')[1]} x${e.composite.components.length}`).join(', ')})`
+        : ''),
+  );
   console.log(`[anatomy] units             ${units.join(', ')}`);
   console.log(`[anatomy] dataset            ${manifest.licence.id}`);
   console.log(`[anatomy] synthetic          ${synthetic ? 'YES (test path)' : 'no'}`);

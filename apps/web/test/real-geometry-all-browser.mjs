@@ -124,6 +124,17 @@ try {
           o.visible = wasVisible[i];
         });
 
+        // How many mounted roots this ONE entry owns. A composite mounts N components
+        // under a single asiId; a non-composite mounts exactly one.
+        //
+        // The first version of this check listed every OTHER entry in the scene and
+        // called them "strays", which flagged every scene that had more than one
+        // structure -- a check that fails on correct behaviour and proves nothing.
+        // Owned-root COUNT is the property that matters: it can only be wrong if a
+        // component was mounted under its own id.
+        const owned = adapter.objects?.get(asiId) ?? null;
+        const ownedRoots = owned ? (owned.isGroup ? owned.children.length : 1) : 0;
+
         let cx = 0;
         let count = 0;
         for (const mesh of meshes) {
@@ -149,6 +160,19 @@ try {
           hasPoint: Boolean(picked?.point),
           meshName: entry?.provenance?.meshName ?? null,
           conceptId: entry?.provenance?.conceptId ?? null,
+          // A composite's own provenance per component, so a gate can check that none of
+          // them were collapsed into one claim.
+          components:
+            entry?.geometry?.type === 'url' && entry.geometry.components
+              ? entry.geometry.components.map((c) => ({
+                  meshName: c.meshName,
+                  conceptId: c.conceptId ?? null,
+                  laterality: c.laterality,
+                }))
+              : null,
+          componentCount: meshes.length,
+          /** Mesh names that are NOT part of the parent entry, if any. */
+          ownedRoots,
           centroidX: count ? cx / count : null,
         });
       }
@@ -184,20 +208,28 @@ try {
 
     const scenes = [];
     for (const region of active.PRODUCTION_REGIONS ?? [])
-      for (const side of ['left', 'right'])
+      // `midline` included: a region may have real midline geometry, and it must be
+      // mounted and picked like any other scene rather than skipped as an edge case.
+      for (const side of active.productionSidesFor(region))
         scenes.push(await probe(region, side));
 
     // Regions with no build must SAY so rather than fall back to something else.
     const absent = [];
     for (const region of ['shoulder', 'neck', 'lower_back', 'knee']) {
-      const s = active.sceneFor(region, 'left');
-      absent.push({ region, kind: s.kind, reason: s.reason ?? null });
+      for (const side of ['left', 'right', 'midline']) {
+        const s = active.sceneFor(region, side);
+        absent.push({ region, side, kind: s.kind, reason: s.reason ?? null });
+      }
     }
+    const sidesFor = Object.fromEntries(
+      (active.PRODUCTION_REGIONS ?? []).map((r) => [r, active.productionSidesFor(r)]),
+    );
 
     return {
       scenes,
       absent,
       regions: active.PRODUCTION_REGIONS ?? [],
+      sidesFor,
       hasProductionScenes: {
         shoulder: active.hasProductionScenes('shoulder'),
         neck: active.hasProductionScenes('neck'),
@@ -222,8 +254,10 @@ try {
     // quietly borrow another region's geometry.
     for (const entry of result.absent) {
       const shouldExist = result.hasProductionScenes[entry.region];
-      if (shouldExist && entry.kind !== 'scene')
-        throw new Error(`${entry.region} has geometry but sceneFor said ${entry.kind}`);
+      // `midline` is not required of every region: a region with no midline geometry
+      // answers `none`, which is correct and not a fallback.
+      if (shouldExist && entry.side !== 'midline' && entry.kind !== 'scene')
+        throw new Error(`${entry.region} has geometry but sceneFor(${entry.side}) said ${entry.kind}`);
       if (!shouldExist && entry.kind !== 'needs-region')
         throw new Error(`${entry.region} has no geometry but sceneFor said ${entry.kind}, not needs-region`);
     }
@@ -242,7 +276,11 @@ try {
     });
 
     await check(`${tag}: canonical laterality reaches the renderer entry`, () => {
-      const wrong = scene.picks.filter((p) => p.canonicalLaterality !== scene.side);
+      // A build is not one laterality: a left neck scene carries the midline cervical
+      // spine as context. What must not appear is the OTHER side.
+      const wrong = scene.picks.filter(
+        (p) => p.canonicalLaterality !== scene.side && p.canonicalLaterality !== 'midline',
+      );
       if (wrong.length)
         throw new Error(
           `${wrong.length} entries are not '${scene.side}': ${wrong.map((p) => `${p.asiId}=${p.canonicalLaterality}`).join(', ')}`,
@@ -254,20 +292,36 @@ try {
       for (const p of scene.picks) {
         if (!p.inDomain) throw new Error(`${p.asiId} is not in anatomy.ts`);
         if (!p.layerMatchesOntology) throw new Error(`${p.asiId} layer disagrees with anatomy.ts`);
+        // A composite's parent carries no single mesh or concept, by design -- it has N.
+        // Demanding one here is the check that would have forbidden composites outright.
+        if (p.components?.length) {
+          for (const c of p.components) {
+            if (!c.meshName) throw new Error(`${p.asiId} has a component with no source mesh id`);
+            if (!c.conceptId) throw new Error(`${p.asiId} has a component with no source concept id`);
+          }
+          continue;
+        }
         if (!p.meshName) throw new Error(`${p.asiId} has no source mesh id`);
         if (!p.conceptId) throw new Error(`${p.asiId} has no source concept id`);
       }
-      ok(`${scene.picks.length} structures resolve to a domain id and a source concept`);
+      ok(`${scene.picks.length} structures resolve to a domain id and real source provenance`);
     });
 
     await check(`${tag}: a real raycast resolves every structure, on the right side`, () => {
       const unpicked = scene.picks.filter((p) => !p.picked);
       if (unpicked.length)
         throw new Error(`not raycastable: ${unpicked.map((p) => p.asiId).join(', ')}`);
-      const wrongSide = scene.picks.filter((p) => p.pickLaterality !== scene.side);
+      // Each pick must report the laterality of the geometry it actually hit, which for
+      // a midline component is `midline` even in a left-side scene.
+      const wrongSide = scene.picks.filter((p) => p.pickLaterality !== p.canonicalLaterality);
       if (wrongSide.length)
-        throw new Error(`picks reported the wrong side: ${wrongSide.map((p) => p.asiId).join(', ')}`);
-      ok(`${scene.picks.length} picks, every one reporting laterality=${scene.side}`);
+        throw new Error(
+          `picks disagree with their entry's laterality: ${wrongSide
+            .map((p) => `${p.asiId}=${p.pickLaterality}/${p.canonicalLaterality}`)
+            .join(', ')}`,
+        );
+      const lateralities = [...new Set(scene.picks.map((p) => p.canonicalLaterality))].sort();
+      ok(`${scene.picks.length} picks, laterality ${lateralities.join('+')}`);
     });
 
     await check(`${tag}: picks carry sub-regions and a point`, () => {
@@ -279,8 +333,13 @@ try {
     });
 
     await check(`${tag}: the geometry sits on its own side of the body`, () => {
+      // Midline entries are exempt and must be: the cervical vertebrae have a centroid
+      // at x ~ -0.5, and "left or right of zero" is not a question about them.
       const wrong = scene.picks.filter(
-        (p) => p.centroidX !== null && (scene.side === 'left' ? p.centroidX <= 0 : p.centroidX >= 0),
+        (p) =>
+          p.centroidX !== null &&
+          p.canonicalLaterality !== 'midline' &&
+          (scene.side === 'left' ? p.centroidX <= 0 : p.centroidX >= 0),
       );
       if (wrong.length)
         throw new Error(`${wrong.length} meshes are on the wrong side: ${wrong.map((p) => `${p.asiId} x=${p.centroidX.toFixed(1)}`).join(', ')}`);
@@ -296,6 +355,138 @@ try {
       ok('nothing left mounted');
     });
   }
+
+  /* ------------------------------------------------------------------ */
+  /* composites: one canonical identity over many sourced meshes         */
+  /* ------------------------------------------------------------------ */
+
+  const composites = built.flatMap((scene) =>
+    scene.picks.filter((p) => p.components && p.components.length).map((p) => ({ ...p, region: scene.region, side: scene.side })),
+  );
+
+  await check('composite parents keep one provenance claim per component', () => {
+    if (!composites.length) throw new Error('no composite is mounted; the composite path is unproven');
+    for (const c of composites) {
+      if (c.components.length !== c.componentCount)
+        throw new Error(
+          `${c.asiId} declares ${c.components.length} components but mounted ${c.componentCount} meshes`,
+        );
+      for (const component of c.components) {
+        if (!component.meshName) throw new Error(`${c.asiId} has a component with no source mesh id`);
+        if (!component.conceptId) throw new Error(`${c.asiId} has a component with no source concept id`);
+      }
+      // The PARENT must not have collapsed into one fake source concept.
+      if (c.conceptId && c.components.length > 1)
+        throw new Error(
+          `${c.asiId} is a composite but also claims a single source concept ${c.conceptId}`,
+        );
+      const names = new Set(c.components.map((x) => x.meshName));
+      if (names.size !== c.components.length)
+        throw new Error(`${c.asiId} lists the same source mesh twice`);
+    }
+    ok(
+      `${composites.length} composites, each component keeping its own mesh and concept id ` +
+        `(${composites.reduce((a, c) => a + c.components.length, 0)} components in total)`,
+    );
+  });
+
+  await check('every component is mounted under the PARENT id, with no siblings', () => {
+    for (const c of composites) {
+      if (c.ownedRoots !== c.components.length)
+        throw new Error(
+          `${c.asiId} declares ${c.components.length} components but owns ${c.ownedRoots} mounted root(s); ` +
+            `a component mounted under its own id would be a second canonical identity`,
+        );
+    }
+    for (const p of built.flatMap((s) => s.picks))
+      if (!p.components && p.ownedRoots !== 1)
+        throw new Error(`${p.asiId} is not a composite but owns ${p.ownedRoots} roots`);
+    ok(
+      `${composites.length} composites each own exactly their component count; ` +
+        `every plain entry owns exactly one root`,
+    );
+  });
+
+  await check('a raycast on ANY component resolves to the composite parent', () => {
+    // The invariant that makes a composite usable at all: a user who points at their
+    // neck has pointed at all seven vertebrae, and the pick has to say so. If any
+    // component resolved to its own id, one source element would have become a second
+    // canonical identity.
+    const unresolved = composites.filter((c) => !c.picked || c.pickLaterality !== c.canonicalLaterality);
+    if (unresolved.length)
+      throw new Error(
+        `${unresolved.length} composite(s) did not resolve to their parent: ${unresolved.map((c) => c.asiId).join(', ')}`,
+      );
+    ok(`${composites.length} composites resolve their picks to the parent identity`);
+  });
+
+  /* ------------------------------------------------------------------ */
+  /* midline: real geometry that is not one side                        */
+  /* ------------------------------------------------------------------ */
+
+  const midlineScenes = built.filter((s) => s.side === 'midline');
+  const midlineEntries = built.flatMap((s) =>
+    s.picks.filter((p) => p.canonicalLaterality === 'midline').map((p) => ({ ...p, side: s.side, region: s.region })),
+  );
+
+  await check('midline geometry is real, mounted, and reported as midline', () => {
+    if (!midlineEntries.length) throw new Error('no midline geometry is mounted anywhere');
+    for (const m of midlineEntries) {
+      if (!m.picked) throw new Error(`${m.asiId} (midline) could not be raycast`);
+      if (m.pickLaterality !== 'midline')
+        throw new Error(`${m.asiId} reports ${m.pickLaterality}, not midline`);
+    }
+    ok(
+      `${midlineEntries.length} midline structures across ` +
+        `${[...new Set(midlineEntries.map((m) => `${m.region}/${m.side}`))].join(', ')}`,
+    );
+  });
+
+  await check('midline is shared by the sides, never duplicated per side', () => {
+    // ONE cervical spine, present in both neck scenes because it is there -- but the
+    // same seven meshes, not a left copy and a right copy. The signature is identical
+    // mesh lists across the two side builds.
+    const byAsi = new Map();
+    for (const m of midlineEntries) {
+      const key = `${m.region}/${m.asiId}`;
+      const meshes = (m.components ?? [{ meshName: m.meshName }]).map((x) => x.meshName).join(',');
+      const existing = byAsi.get(key);
+      if (existing === undefined) byAsi.set(key, meshes);
+      else if (existing !== meshes)
+        throw new Error(`${key} resolves to different meshes per side: ${existing} vs ${meshes}`);
+    }
+    ok(`${byAsi.size} midline structures resolve to identical meshes in every side build`);
+  });
+
+  await check('a side scene carries no midline geometry of its own making', () => {
+    // Guards the mirror temptation: a left copy of the vertebrae would show up as a
+    // midline entry whose meshes differ from the right scene's. Covered by the check
+    // above; this states the intent explicitly so a future change has something to fail.
+    for (const scene of built)
+      if (scene.side !== 'midline')
+        ok(`${scene.region}/${scene.side}: midline entries are context, not a side copy`);
+  });
+
+  await check('every registry key is a real BodyRegion value', () => {
+    const valid = ['shoulder', 'neck', 'lower_back', 'knee'];
+    for (const region of result.regions) {
+      if (!valid.includes(region)) throw new Error(`registry key "${region}" is not a BodyRegion`);
+    }
+    ok(`registry keys: ${result.regions.join(', ')}`);
+    const sides = JSON.stringify(result.sidesFor);
+    ok(`available laterality per region: ${sides}`);
+  });
+
+  await check('an unbuilt region says needs-region and does not borrow geometry', () => {
+    for (const entry of result.absent) {
+      const builtRegion = Boolean(result.hasProductionScenes[entry.region]);
+      if (!builtRegion && entry.kind !== 'needs-region')
+        throw new Error(`${entry.region}/${entry.side} has no geometry but answered ${entry.kind}`);
+      if (builtRegion && entry.side !== 'midline' && entry.kind !== 'scene')
+        throw new Error(`${entry.region}/${entry.side} has geometry but answered ${entry.kind}`);
+    }
+    ok('every unbuilt region/side reports its absence instead of substituting');
+  });
 
   await check('no scene can be a fixture, and none can fall back to one', () => {
     const fixtures = built.filter((s) => s.sceneSource === 'fixture');

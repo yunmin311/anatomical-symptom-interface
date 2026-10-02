@@ -105,6 +105,45 @@ export interface MappingEntry {
    * have.
    */
   expectAbsent?: boolean;
+  /**
+   * This canonical concept is assembled from SEVERAL source meshes.
+   *
+   * Needed because the source is often finer than our ontology: `cervical spine` is
+   * seven vertebrae, `scalenes` is three muscles per side. Neither is a missing source
+   * -- both are one canonical concept resolving to many sourced elements, and each
+   * element keeps its own mesh id and FMA claim.
+   *
+   * `selectable` distinguishes the two cases that look identical in the geometry:
+   *   - true  -- the components are ALSO separately selectable canonical structures.
+   *              The deltoid parts each have their own `asi:` id because a clinician
+   *              names them, so they are bound individually AND grouped here.
+   *   - false -- the components are internal parts of one selection. Cervical
+   *              vertebrae are not something a user points at on their own.
+   *
+   * Without this flag, "support composites" would quietly promote every source mesh to
+   * a user-facing concept, which is the opposite of what a canonical identity is for.
+   */
+  composite?: {
+    selectable: boolean;
+    /** Why this is a composite, in words. Never inferred from a label. */
+    reason: string;
+    /**
+     * Sides where a required component is genuinely ABSENT from the source.
+     *
+     * The pipeline cannot know this on its own: it sees that four of the six
+     * suboccipital concepts came back for a right build and, with nothing to compare
+     * against, calls that complete. It is complete as a set of RIGHT-sided muscles and
+     * still an incomplete representation of the concept the user pointed at, and the
+     * difference matters -- one of them would ship a "suboccipital muscles" selection
+     * that is quietly missing two of them.
+     *
+     * So the knowledge lives HERE, in the mapping, because that is where the archive
+     * audit read it. A build of a listed side is reported INCOMPLETE and binds nothing,
+     * so the right neck scene simply has no suboccipital selection rather than a
+     * flattering one.
+     */
+    absentSides?: readonly SourceSide[];
+  };
 }
 
 /**

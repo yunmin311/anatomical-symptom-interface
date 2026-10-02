@@ -166,6 +166,28 @@ const structure = (
   coding: { status: 'unverified' },
 });
 
+/**
+ * Canonical anatomical identity is NOT region membership.
+ *
+ * One structure can belong to several regions and sub-regions, and then it has exactly
+ * ONE id and ONE source provenance. The first case this actually bit was the upper
+ * trapezius: the shoulder and the neck both declared it, under two different ids, with
+ * the same label, and the source audit showed both resolved to the SAME source concept
+ * (ascending part of trapezius). Two ids for one structure is not a modelling
+ * convenience -- it is two persisted truths about one thing, and a record could name
+ * either and be "right".
+ *
+ * So `shoulder.trapezius-upper` is now listed in the neck sub-regions as well. The
+ * `shoulder` prefix records where the user first meets the structure, not exclusive
+ * ownership of it. The retired id and the reason are in
+ * `anatomy-mapping-neck.ts` (`RETIRED_CANONICAL_IDS`), and `canonicalStructureId`
+ * resolves it, so anything holding the old value still lands on the one canonical
+ * identity.
+ *
+ * The consequence for storage: `location.userSelectedStructureIds` holds canonical
+ * structure identities, and one structure selected from two regions is still ONE entry.
+ *
+
 /* ------------------------------------------------------------------ */
 /* Region definitions — V1 scope: shoulder, neck, lower back, knee      */
 /* ------------------------------------------------------------------ */
@@ -283,7 +305,7 @@ const NECK: RegionDefinition = {
       mapId: 'neck-lateral',
       structures: [
         structure('neck.scalenes', 'Scalene muscles', 'muscle', 'lateral', 'the muscles along the side of the neck down to the ribs'),
-        structure('neck.upper-trapezius', 'Upper trapezius', 'muscle', 'lateral', 'the muscle from the neck to the top of the shoulder'),
+        structure('shoulder.trapezius-upper', 'Upper trapezius', 'muscle', 'lateral', 'the muscle from the neck to the top of the shoulder'),
         structure('neck.brachial-plexus', 'Brachial plexus', 'nerve', 'deep', 'the network of nerves from the neck into the arm', ['nerve root', 'cervical nerve root']),
         structure('neck.cervical-spine', 'Cervical spine', 'bone', 'deep', 'the neck bones'),
         structure('neck.sternocleidomastoid', 'Sternocleidomastoid', 'muscle', 'lateral', 'the band running from behind the ear to the collarbone', ['SCM']),
@@ -294,7 +316,7 @@ const NECK: RegionDefinition = {
       label: 'Back of neck',
       mapId: 'neck-posterior',
       structures: [
-        structure('neck.upper-trapezius', 'Upper trapezius', 'muscle', 'posterior', 'the muscle from the neck to the top of the shoulder'),
+        structure('shoulder.trapezius-upper', 'Upper trapezius', 'muscle', 'posterior', 'the muscle from the neck to the top of the shoulder'),
         structure('neck.levator-scapulae', 'Levator scapulae', 'muscle', 'posterior', 'the muscle from the neck to the shoulder blade'),
         structure('neck.suboccipital', 'Suboccipital muscles', 'muscle', 'posterior', 'the small muscles at the base of the skull'),
         structure('neck.cervical-spine', 'Cervical spine', 'bone', 'deep', 'the neck bones'),
