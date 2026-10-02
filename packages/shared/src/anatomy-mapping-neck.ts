@@ -264,3 +264,34 @@ export const RETIRED_CANONICAL_IDS: Readonly<Record<string, { canonical: string;
 export function canonicalStructureId(asiId: string): string {
   return RETIRED_CANONICAL_IDS[asiId]?.canonical ?? asiId;
 }
+
+/**
+ * Canonicalise a list of user-selected structure ids: retired ids resolved, order kept.
+ *
+ * ## WHY IT LIVES HERE AND NOT IN THE FIELD VALIDATOR
+ *
+ * The obvious place is the `location.userSelectedStructureIds` schema, and it was there
+ * first. That was wrong. The raw field store behind that field is a faithful log of
+ * what arrived, and rewriting the value on the way in destroys the evidence that a
+ * retired id was ever written -- which for a record about a body is worth keeping.
+ *
+ * So the store stays verbatim and this runs in the projection, on every read. That also
+ * makes it idempotent, so a record written before a retirement keeps resolving without
+ * a migration, and a retired id can never persist as a second truth about one structure.
+ *
+ * Deduplicated AND order-preserving as a side effect. The order is the order the user
+ * pointed, rendered to a clinician as "areas you pointed to", so it is never sorted.
+ * First-occurrence-wins keeps the FIRST when two ids canonicalise onto one, which is the
+ * earlier thing the user chose.
+ */
+export function canonicalStructureIdList(ids: readonly string[]): string[] {
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const raw of ids) {
+    const id = canonicalStructureId(raw);
+    if (seen.has(id)) continue;
+    seen.add(id);
+    out.push(id);
+  }
+  return out;
+}

@@ -541,7 +541,19 @@ export function structureIdPrefix(region: BodyRegion): string {
   return STRUCTURE_PREFIX[region];
 }
 
+/**
+ * Does this structure belong to this region?
+ *
+ * Read from the ONTOLOGY, not the id prefix. The prefix is not authoritative and this
+ * was a live bug: it answered `false` for `asi:shoulder.trapezius-upper` in the neck,
+ * because the prefix says `shoulder`. That structure IS in the neck -- a user who says
+ * "the muscle from my neck to my shoulder" is naming it -- and a prefix answer meant
+ * grounding could never propose it for a neck complaint.
+ *
+ * `structureIdPrefix` stays for callers that genuinely want the naming convention, such
+ * as a hint, and it is no longer load-bearing for membership anywhere.
+ */
 export function structureBelongsToRegion(id: string, region: BodyRegion): boolean {
-  return id.startsWith(STRUCTURE_PREFIX[region]);
+  return REGIONS[region].subRegions.some((s) => s.structures.some((st) => st.id === id));
 }
 
