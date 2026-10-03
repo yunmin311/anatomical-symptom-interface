@@ -39,7 +39,7 @@ import {
   type AnswerInput,
   type FieldMutationInput,
 } from '@asi/shared';
-import { env, gate, hasModel, releaseProfile } from './env.ts';
+import { env, gate, hasModel, releaseProfile, PREVIEW_NOTICE } from './env.ts';
 import { createOrchestrator } from './orchestrator/index.ts';
 import { spatialHistoryWithEmptyRegions } from './db/spatial.ts';
 import { BUILT_MANIFESTS } from './anatomy-manifests.ts';
@@ -153,6 +153,26 @@ app.get('/api/health', (c) =>
     totalSafetyRules: totalRuleCount(),
     blockingSafetyRules: gate.blocking,
     writableFields: writablePaths().length,
+    /*
+     * WHICH BUILD IS RUNNING, and what it is for.
+     *
+     * Additive, and deliberately so: every field above keeps its name, type and meaning,
+     * because CI's release-safety check reads them and a rename there would turn a green
+     * build red for no good reason.
+     *
+     * A preview deployment is the case this exists for. Without it, a reviewer holding a
+     * preview URL has no way to ask the service whether it is a preview, and a service that
+     * cannot name its own commit cannot be told apart from the build before it. Both are
+     * answerable now by asking `/api/health` rather than by trusting whoever deployed it.
+     */
+    build: {
+      commit: env.ASI_BUILD_COMMIT,
+      deployKind: env.ASI_DEPLOY_KIND,
+    },
+    /** Present only on a preview, so its ABSENCE is itself a statement. */
+    ...(env.ASI_DEPLOY_KIND === 'preview'
+      ? { previewNotice: PREVIEW_NOTICE, clinicalReview: 'not-reviewed' }
+      : {}),
     env: { model: env.ASI_MODEL, logLevel: env.ASI_LOG_LEVEL },
   }),
 );
