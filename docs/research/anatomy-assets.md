@@ -6,7 +6,9 @@ and what does it cost to make one usable?
 **Status: DONE, for all four V1 regions.** BodyParts3D, GLB under CC BY 4.0 (Option A
 below). The archive was obtained, verified by SHA-256, and run through
 `scripts/build-anatomy.mjs` for **shoulder, neck, lower_back and knee** — each audited mesh
-by mesh against the archive BEFORE any mapping was trusted. 82 production GLBs are committed
+by mesh against the archive BEFORE any mapping was trusted. 95 production GLBs are
+committed: 82 bilateral, plus 13 dedicated midline (7 cervical, 6 lumbar/sacral). The
+midline builds are real meshes rather than a mirrored side, so the count is not 82.
 as generated output; the multi-gigabyte archive stays out of the repo, and the exact file,
 URL, checksum and commands are in `assets/anatomy/README.md`.
 

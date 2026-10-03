@@ -121,11 +121,38 @@ a definite denial now withdraws.
 
 ---
 
+## One rule per surface, from one declaration
+
+A tool is keyed by name and carries its own `episodeId`, so it cannot literally be the HTTP
+body. It used to declare its shape twice — once in `inputSchema`, which `tools/list`
+publishes, and again inline in the handler, which is what validated the request — and the
+two had drifted. `answer_symptom_question` published a required `raw` and then parsed with
+`z.unknown()`, which is optional, so MCP accepted an answer with no raw value that HTTP
+refused with `validation_failed`.
+
+Now each tool declares its input once and both advertising and enforcing use it. Where a
+tool has to compose, it takes the shared **base shape** and the shared **presence rule**
+(`requireAnswerRaw`, `requireMutationValue`) rather than paraphrasing them.
+
+Refusals are classified in one exported function shared by the inner write-path net and the
+outer dispatch, so a refusal cannot be `field_policy_violation` on one path and
+`internal_error` on the other depending on how deep it was raised. The codes match the HTTP
+surface exactly — one error handler covers both.
+
+---
+
 ## The crossing test
 
 `packages/mcp/test/mcp.test.ts`, `one episode crosses every surface`: an assistant records
 a shoulder complaint over MCP — location, two pointed structures (one of them a retired id),
-an answer — and the same episode is then read over HTTP. Same side, same depth, same
+an answer — and the same episode is then read over HTTP.
+
+`packages/mcp/test/contract-parity.test.ts` goes further and asserts the two surfaces
+*agree*, by sending the same request through both and reading the raw field row — the API
+only exposes the projected record, and the projection canonicalises on read, so it cannot
+show what was actually stored. It covers: a missing `value`/`raw` is `validation_failed` on
+both and writes nothing; an explicit `null` is a value, not a malformed request; a retired
+id is stored canonical on both; and an id that was never known is still refused. Same side, same depth, same
 sub-region, same canonical ids **in the order they were pointed**, same answers. Then it
 runs the other way: a write over HTTP is visible over MCP, with the right provenance. Then
 one record, not two. Then the summary is byte-identical across surfaces once the generation

@@ -176,7 +176,8 @@ phase is that asset, and the semantics around it.
       head, popliteal artery. No midline geometry exists in the source, and the product says
       so rather than showing a side.
 - [x] **8. Four regions with real anatomy.** Built from BodyParts3D 4.0 (CC BY 4.0), audited
-      mesh by mesh against the archive before mapping. 82 production GLBs.
+      mesh by mesh against the archive before mapping. 95 production GLBs: 82 bilateral plus
+13 dedicated midline.
 - [x] **9. A real spatial health map.** The health map draws the body, marks every place
       from the server's read model, and opens a place by the server's `regionRowId` — the
       client never recomputes place identity, count or episode membership.

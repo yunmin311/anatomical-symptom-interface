@@ -35,7 +35,8 @@
 
 BodyParts3D, release 4.0, CC BY 4.0. The archive was obtained, checksum-verified and run
 through `scripts/build-anatomy.mjs` for all four V1 regions, audited mesh by mesh against
-the archive before any mapping was trusted. 82 production GLBs.
+the archive before any mapping was trusted. 95 production GLBs: 82 bilateral plus 13
+dedicated midline.
 
 The Blender step sketched below was **not needed**: the pipeline decimates on a grid and
 writes GLB directly, which keeps the source archive as the only large artifact and keeps the
