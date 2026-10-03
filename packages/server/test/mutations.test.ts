@@ -394,16 +394,50 @@ test('rebuild dedupes the canonical id set, preserving the order the user pointe
   assert.equal(rec.consideredStructures.find((c) => c.structureId === MENISCUS)?.selectedByUser, true);
 });
 
-test('the raw field store keeps the value it was given', () => {
+test('the raw field store holds the CANONICAL value, not what the caller sent', () => {
   const ep = newEpisode('knee');
-  const raw = [PATELLA, PATELLA];
-  store.applyMutations(ep.id, { fieldMutations: [mut('location.userSelectedStructureIds', raw, selectionProv())] });
+  // A repeat of the same structure: two spellings of one point the user made.
+  const asSent = [PATELLA, PATELLA];
+  store.applyMutations(ep.id, { fieldMutations: [mut('location.userSelectedStructureIds', asSent, selectionProv())] });
 
-  // Canonicalization belongs to the projection, not the writer: the field store
-  // stays a faithful log of what arrived, and everything that reads the record
-  // goes through the projection.
-  assert.deepEqual(store.fieldStoreFor(ep.id)['location.userSelectedStructureIds']?.value, raw);
+  /*
+   * This test used to assert the opposite -- that the store kept the value verbatim and
+   * canonicalisation happened only in the projection -- and the reason it gave was that the
+   * store is "a faithful log of what arrived".
+   *
+   * It is not a log. There is no history table and no audit trail, so there is nothing to be
+   * faithful TO: keeping the repeat preserves no evidence a reader could use, and it leaves
+   * a row holding a selection the product would otherwise have collapsed. The same argument
+   * applies to a retired id, which is why both are canonicalised on the way in now.
+   *
+   * The read-time projection still runs and is still what makes this idempotent for records
+   * written before a retirement; see `canonicalStructureIdList`.
+   */
+  assert.deepEqual(store.fieldStoreFor(ep.id)['location.userSelectedStructureIds']?.value, [PATELLA]);
   assert.deepEqual(store.getEpisode(ep.id)!.record.location.userSelectedStructureIds, [PATELLA]);
+});
+
+test('a retired id is stored canonical over HTTP as well as MCP', () => {
+  const ep = newEpisode('knee');
+  // The retired trapezius alias. A generic field mutation is the path that used to store it
+  // verbatim while MCP's select_structure canonicalised, so the same request stored different
+  // values depending on the surface it arrived on.
+  store.applyMutations(ep.id, {
+    fieldMutations: [
+      mut('location.userSelectedStructureIds', ['asi:neck.upper-trapezius'], selectionProv()),
+    ],
+  });
+
+  const stored = store.fieldStoreFor(ep.id)['location.userSelectedStructureIds']?.value;
+  assert.deepEqual(
+    stored,
+    ['asi:shoulder.trapezius-upper'],
+    'the raw row still holds a retired id, so a consumer reading field rows resolves nothing',
+  );
+  assert.deepEqual(
+    store.getEpisode(ep.id)!.record.location.userSelectedStructureIds,
+    ['asi:shoulder.trapezius-upper'],
+  );
 });
 
 test('a stale unselected flag on a selected candidate is corrected on read', () => {

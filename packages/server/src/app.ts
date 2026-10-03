@@ -23,6 +23,7 @@ import {
   BodyRegionSchema,
   CreateEpisodeRequestSchema,
   FieldPolicyError,
+  ProvenanceError,
   groundOrRefuse,
   INTERVIEW,
   LocaliseRequestSchema,
@@ -115,6 +116,12 @@ function refuse(
 function refuseThrown(c: { json: (body: unknown, status?: number) => Response }, e: unknown): Response {
   if (e instanceof FieldPolicyError)
     return refuse(c, 'field_policy_violation', e.message, 422, { field: e.path });
+  // A broken provenance rule is the SAME class of refusal as a broken field policy: the
+  // client sent something the product will not accept. It used to fall through to Hono's
+  // default handler and answer HTTP 500 `Internal Server Error`, which told the client the
+  // server had faulted and handed it a body it could not parse.
+  if (e instanceof ProvenanceError)
+    return refuse(c, 'field_policy_violation', e.message, 422, { field: e.field });
   if (e instanceof MutationRejected) return refuse(c, 'mutation_rejected', e.message, 404);
   throw e;
 }

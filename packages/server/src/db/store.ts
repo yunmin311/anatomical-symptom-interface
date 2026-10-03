@@ -30,6 +30,7 @@ import {
   SymptomRecordSchema,
   writablePaths,
   answerDerivedMutations,
+  canonicalIdentityForWrite,
 } from '@asi/shared';
 import type {
   AnswerMap,
@@ -429,6 +430,20 @@ export function applyMutations(episodeId: string, input: ApplyInput, profile: Re
         );
       }
 
+      /*
+       * CANONICALISE ANATOMICAL IDENTITIES BEFORE VALIDATION, ON EVERY SURFACE.
+       *
+       * A retired id is accepted and stored canonical, and this is where that happens --
+       * not in a client. HTTP and MCP already meet at this loop, and putting it in a client
+       * is exactly how the two came to disagree: MCP canonicalised before writing and a
+       * generic field mutation did not, so the same request stored different values
+       * depending on the door it came through.
+       *
+       * BEFORE validation, so a retired id still has to be a legal value for the field it
+       * is written to. Canonicalising afterwards would validate the wrong value.
+       */
+      const canonicalValue = canonicalIdentityForWrite(m.fieldPath, m.value);
+
       const provenance: Provenance = {
         ...m.provenance,
         capturedAt: m.provenance.capturedAt ?? now(),
@@ -445,7 +460,11 @@ export function applyMutations(episodeId: string, input: ApplyInput, profile: Re
         episodeId, m.fieldPath,
       );
       const incumbent = existing ? rowToAttributed(existing) : null;
-      const outcome = mergeField(incumbent, { value, provenance }, policy.claimClass);
+      const outcome = mergeField(
+        incumbent,
+        { value: canonicalValue, provenance },
+        policy.claimClass,
+      );
 
       if (outcome.applied && outcome.winner) {
         const p = outcome.winner.provenance;
