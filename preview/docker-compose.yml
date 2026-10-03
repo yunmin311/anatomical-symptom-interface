@@ -1,0 +1,42 @@
+# The ASI preview.
+#
+# SYNTHETIC DATA ONLY. NOT clinically reviewed, NOT approved for medical release, NOT for
+# real patients or real health data. The running service says so itself in /api/health, so a
+# reviewer can ask it rather than trust this file.
+#
+# NOT VERIFIED HERE. It needs a Docker daemon, and this repository's gates run on Node
+# directly. Compose is the portable deployment path; `preview/verify-preview.mjs` is what
+# proves a preview actually works, whichever way it was started. Always run it.
+
+services:
+  preview:
+    build:
+      context: ..
+      dockerfile: preview/Dockerfile
+      args:
+        # No .git inside the image, so the commit is passed in. Without it the service
+        # reports build.commit "unknown" and cannot be told apart from any other build.
+        ASI_BUILD_COMMIT: ${ASI_BUILD_COMMIT:-unknown}
+    image: asi-preview:v1.0.0-rc.1
+    ports:
+      # Bound to loopback on purpose. A preview full of unreviewed safety rules has no
+      # business being reachable from the network, and publishing a port here is the single
+      # easiest way to turn a demo into an incident. Put a TLS terminator and real access
+      # control in front of it before exposing it to anyone.
+      - "127.0.0.1:8080:8080"
+    environment:
+      ASI_DEPLOY_KIND: preview
+      # Development ON PURPOSE: the release profile refuses to start while safety rules are
+      # unreviewed, which is correct behaviour and not something a preview bypasses.
+      ASI_RELEASE_PROFILE: development
+      ASI_DB_PATH: /data/preview.sqlite
+      # No model key: the preview must run the deterministic path so a demo never depends on
+      # a provider being reachable.
+      ANTHROPIC_API_KEY: ""
+    volumes:
+      # Demo data is rebuilt on every start, so this is a scratch volume, not a record store.
+      - preview-data:/data
+    restart: unless-stopped
+
+volumes:
+  preview-data:
