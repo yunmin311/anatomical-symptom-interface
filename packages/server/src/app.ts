@@ -24,6 +24,7 @@ import {
   CreateEpisodeRequestSchema,
   FieldPolicyError,
   ProvenanceError,
+  UnknownStructureError,
   groundOrRefuse,
   INTERVIEW,
   LocaliseRequestSchema,
@@ -122,6 +123,14 @@ function refuseThrown(c: { json: (body: unknown, status?: number) => Response },
   // server had faulted and handed it a body it could not parse.
   if (e instanceof ProvenanceError)
     return refuse(c, 'field_policy_violation', e.message, 422, { field: e.field });
+  /*
+   * An id the ontology has never heard of, refused by the central identity boundary.
+   * 422 and `unknown_structure`, which is the same code and status MCP has always returned
+   * for this -- so the two surfaces finally answer one request identically, rather than MCP
+   * refusing an id that a generic field mutation would have stored.
+   */
+  if (e instanceof UnknownStructureError)
+    return refuse(c, 'unknown_structure', e.message, 422, { structureId: e.structureId });
   if (e instanceof MutationRejected) return refuse(c, 'mutation_rejected', e.message, 404);
   throw e;
 }

@@ -280,7 +280,9 @@ export function canonicalStructureId(asiId: string): string {
  * and a generic HTTP field mutation did not, so one request stored two different values
  * depending on which door it came through.
  *
- * So the store canonicalises on write -- see `canonicalIdentityForWrite` -- and this still
+ * So the store canonicalises on write -- see `canonicalIdentityForWrite` in
+ * `anatomy.ts`, which is also where an id that is neither current nor retired is refused
+ * -- and this still
  * runs in the projection on every read. The read pass is not redundant: it is what makes the
  * behaviour idempotent, so a record written before a retirement keeps resolving with no
  * migration, and it stops a retired id becoming a second truth about one structure.
@@ -309,61 +311,4 @@ export function canonicalStructureIdList(ids: readonly string[]): string[] {
     out.push(id);
   }
   return out;
-}
-
-/**
- * Fields whose VALUES are anatomical identities, rather than measurements or prose.
- *
- * Everything else in the record is data; these two carry ids, and an id is either the one
- * the ontology knows or it is not.
- */
-const IDENTITY_FIELD_PATHS: ReadonlySet<string> = new Set([
-  'location.userSelectedStructureIds',
-  'consideredStructures',
-]);
-
-/**
- * Canonicalise an identity value on the way IN, so both surfaces behave identically.
- *
- * ## The rule, and why this is the rule
- *
- * A retired id is ACCEPTED and STORED CANONICAL.
- *
- * The alternative -- keep whatever the caller sent and canonicalise on read -- was the
- * actual behaviour, and it had three consequences that all point the same way:
- *
- *  1. **It was not the same on both surfaces.** MCP's `select_structure` canonicalised
- *     before writing; a generic HTTP field mutation did not. So the same request stored a
- *     different value depending on which door it came through.
- *  2. **It left an unresolvable value in the store.** The field store is CURRENT-VALUE
- *     storage, not an append-only audit log -- there is no history, so "we kept what was
- *     originally sent" preserves nothing a reader could use. All it does is leave a row
- *     holding an id that resolves to no structure, which breaks any consumer that reads
- *     field rows directly instead of the projected record.
- *  3. **The documentation already promised otherwise.** `docs/api-v1.md` said retired ids
- *     are accepted and STORED canonical, which described the MCP behaviour and not the
- *     HTTP one.
- *
- * So: canonicalise once, at the boundary, in the store -- where both surfaces already
- * meet. The projection still canonicalises on read, because that is where a defence
- * belongs and it costs nothing.
- */
-export function canonicalIdentityForWrite(fieldPath: string, value: unknown): unknown {
-  if (!IDENTITY_FIELD_PATHS.has(fieldPath)) return value;
-
-  if (fieldPath === 'location.userSelectedStructureIds') {
-    if (!Array.isArray(value)) return value;
-    // Ordered-unique, first occurrence wins: the order is the order the user pointed, and
-    // a retired alias and its canonical form are the SAME point, not two.
-    return canonicalStructureIdList(value as string[]);
-  }
-
-  // consideredStructures: an array of candidates, each carrying a `structureId`.
-  if (!Array.isArray(value)) return value;
-  return (value as unknown[]).map((candidate) => {
-    if (typeof candidate !== 'object' || candidate === null) return candidate;
-    const entry = candidate as { structureId?: unknown };
-    if (typeof entry.structureId !== 'string') return candidate;
-    return { ...entry, structureId: canonicalStructureId(entry.structureId) };
-  });
 }

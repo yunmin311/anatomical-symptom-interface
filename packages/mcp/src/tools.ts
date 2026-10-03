@@ -52,6 +52,8 @@ import {
   AnswerInputBaseSchema,
   requireAnswerRaw,
   ProvenanceError,
+  UnknownStructureError,
+  isKnownStructureId,
 } from '@asi/shared';
 
 import {
@@ -115,6 +117,11 @@ export function fromThrown(e: unknown): ToolResult {
     return fail('field_policy_violation', e.message, { field: e.path });
   if (e instanceof ProvenanceError)
     return fail('field_policy_violation', e.message, { field: e.field });
+  // The CENTRAL refusal. The write path refuses an unknown anatomical id for every surface,
+  // so this is what MCP reports for one arriving through a generic field mutation -- and it
+  // is the same code the HTTP route returns for the same request.
+  if (e instanceof UnknownStructureError)
+    return fail('unknown_structure', e.message);
   if (e instanceof MutationRejected) return fail('mutation_rejected', e.message);
   return fail('internal_error', e instanceof Error ? e.message : String(e));
 }
@@ -471,15 +478,26 @@ export const TOOLS = {
       const ep = getEpisode(episodeId);
       if (!ep) return fail('episode_not_found', `No episode with id ${episodeId}.`);
 
-      // A RETIRED id resolves to a canonical one, so it must be checked against the
-      // canonical id -- otherwise a caller passing a retired id would be told the
-      // structure does not exist, when the honest answer is that the id moved.
+      /*
+       * A RETIRED id resolves to a canonical one, so it is checked against the canonical id
+       * -- otherwise a caller passing a retired id would be told the structure does not
+       * exist, when the honest answer is that the id moved.
+       *
+       * `isKnownStructureId` is the SHARED definition of "known": it resolves the alias and
+       * then asks the ontology, which is the same two steps the central write boundary takes.
+       * This loop asks it rather than calling `getStructure` itself, so the two cannot drift,
+       * and it exists only to NAME EVERY bad id in one refusal -- the store would otherwise
+       * report just the first, because it resolves ids one at a time.
+       *
+       * The refusal itself does not depend on this loop: the store refuses an unknown id on
+       * every surface, so removing these lines would not let one through.
+       */
       const resolved = structureIds.map((id) => ({
         from: id,
         to: canonicalStructureId(id),
         retired: id in RETIRED_CANONICAL_IDS,
       }));
-      const unknown = resolved.filter((r) => !getStructure(r.to));
+      const unknown = resolved.filter((r) => !isKnownStructureId(r.to));
       // No `canonicalId` here, and none is needed: retired ids were resolved on the line
       // above, so anything still unknown was never known. The hint used to fire only for a
       // retired id, which is now accepted rather than refused.

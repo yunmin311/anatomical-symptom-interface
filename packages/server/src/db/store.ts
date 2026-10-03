@@ -431,16 +431,28 @@ export function applyMutations(episodeId: string, input: ApplyInput, profile: Re
       }
 
       /*
-       * CANONICALISE ANATOMICAL IDENTITIES BEFORE VALIDATION, ON EVERY SURFACE.
+       * THE ORDER IS THE POINT. Read the chain below as one sequence:
        *
-       * A retired id is accepted and stored canonical, and this is where that happens --
-       * not in a client. HTTP and MCP already meet at this loop, and putting it in a client
-       * is exactly how the two came to disagree: MCP canonicalised before writing and a
-       * generic field mutation did not, so the same request stored different values
-       * depending on the door it came through.
+       *   canonicalise identities -> validate THAT value -> validate provenance
+       *                            -> merge -> store
        *
-       * BEFORE validation, so a retired id still has to be a legal value for the field it
-       * is written to. Canonicalising afterwards would validate the wrong value.
+       * A retired id is accepted and stored canonical, and an id the ontology has never
+       * heard of is refused. Both happen here, not in a client, because HTTP and MCP
+       * already meet at this loop -- putting either half in a client is how the two came to
+       * disagree in the first place.
+       *
+       * It happens BEFORE validation, and the validated result is what gets STORED, so the
+       * value that is checked is the value that is written. This loop used to canonicalise
+       * into `canonicalValue`, hand `assertFieldWrite` the caller's original `m.value`, and
+       * then store `canonicalValue` -- the comment claimed "before validation" while the
+       * code did not do that. It checked a value that was never going to be written, so
+       * there was no order at all: a retired id was validated in its retired spelling and
+       * stored canonically, and any constraint the schema gained about the canonical form
+       * would have been enforced against the wrong side of the mapping.
+       *
+       * `assertFieldWrite` returns the parsed value, so storing `value` stores the canonical,
+       * validated one. Non-identity fields pass through `canonicalIdentityForWrite`
+       * untouched and behave exactly as before.
        */
       const canonicalValue = canonicalIdentityForWrite(m.fieldPath, m.value);
 
@@ -450,7 +462,7 @@ export function applyMutations(episodeId: string, input: ApplyInput, profile: Re
         evidenceStatus: m.provenance.evidenceStatus ?? evidenceStatusFor(m.provenance.sourceType),
       };
 
-      const value = assertFieldWrite(m.fieldPath, m.value, provenance);
+      const value = assertFieldWrite(m.fieldPath, canonicalValue, provenance);
       assertProvenance(m.fieldPath, provenance);
 
       const existing = get<FieldRow>(
@@ -460,11 +472,10 @@ export function applyMutations(episodeId: string, input: ApplyInput, profile: Re
         episodeId, m.fieldPath,
       );
       const incumbent = existing ? rowToAttributed(existing) : null;
-      const outcome = mergeField(
-        incumbent,
-        { value: canonicalValue, provenance },
-        policy.claimClass,
-      );
+      // `value` is the canonical, schema-validated value: `assertFieldWrite` returned the
+      // parsed result. Storing `canonicalValue` instead would store the pre-validation
+      // canonicalisation and quietly drop whatever the schema did to it.
+      const outcome = mergeField(incumbent, { value, provenance }, policy.claimClass);
 
       if (outcome.applied && outcome.winner) {
         const p = outcome.winner.provenance;

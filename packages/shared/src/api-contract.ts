@@ -85,6 +85,13 @@ export const ApiErrorSchema = z.object({
   field: z.string().optional(),
   /** For `unknown_region`. */
   region: z.string().optional(),
+  /**
+   * For `unknown_structure`: the offending id, exactly as the caller sent it.
+   *
+   * Echoed rather than only described, because a retired id that was also unknown and an
+   * invented one are different mistakes and a client can only tell them apart from the value.
+   */
+  structureId: z.string().optional(),
 });
 export type ApiError = z.infer<typeof ApiErrorSchema>;
 
