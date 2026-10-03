@@ -3,16 +3,40 @@
 **Question:** where do labelled, layered, licence-clean 3D anatomy models come from,
 and what does it cost to make one usable?
 
-**Status:** decided, and the pipeline is built. **BodyParts3D → GLB under CC BY 4.0**
-(Option A below), for a **shoulder vertical slice** in Phase 1. The manifest
-contract, the source mapping and the conversion pipeline all exist and are tested;
-`scripts/build-anatomy.mjs` runs the whole thing. What is missing is one external
-input file — the `isa_BP3D_4.0_obj_99.zip` mesh archive — and the exact file, URL
-and command are in `assets/anatomy/README.md`. The mesh format is a swappable
-detail: everything above the viewer keys off `asiId`.
+**Status: DONE, for all four V1 regions.** BodyParts3D, GLB under CC BY 4.0 (Option A
+below). The archive was obtained, verified by SHA-256, and run through
+`scripts/build-anatomy.mjs` for **shoulder, neck, lower_back and knee** — each audited mesh
+by mesh against the archive BEFORE any mapping was trusted. 95 production GLBs are
+committed: 82 bilateral, plus 13 dedicated midline (7 cervical, 6 lumbar/sacral). The
+midline builds are real meshes rather than a mirrored side, so the count is not 82.
+as generated output; the multi-gigabyte archive stays out of the repo, and the exact file,
+URL, checksum and commands are in `assets/anatomy/README.md`.
 
-The 2D schematic stays the Phase 0 control and the fallback. It is not being
-replaced by this work.
+| region | left | right | midline | notes |
+|---|---|---|---|---|
+| shoulder | 10 structures / 10 GLBs | 10 / 10 | **none in the source** | |
+| neck | 5 / 18 | 4 / 16 | **cervical spine, 7 GLBs** | suboccipital is 6 left, 4 right |
+| lower_back | 4 / 9 | 4 / 9 | **lumbar spine (5) + sacrum, 6 GLBs** | |
+| knee | 5 / 5 | 5 / 5 | **none in the source** | no ligaments, menisci or bursae exist |
+
+Two real midline builds and two honest refusals. The refusals say "the source models this per
+side" — a fact about the DATASET, not a claim that the work is merely unfinished. Those two
+claims are different, and confusing them turns a roadmap into a promise.
+
+**What the audit changed about the plan's assumptions.** The `M` suffix is *not* a laterality
+convention: it holds for 1109 meshes and is violated by 655, and in the neck `FJ1573` is
+LEFT with no suffix while `FJ1595` is RIGHT. Laterality is therefore read from the source
+concept and carried through the manifest, never parsed from a filename. The audit also
+established that the archive contains **no knee ligaments and no bursae at all** — all 38 of
+its "ligament" concepts are extraocular muscles — so 14 knee concepts are reported
+unavailable rather than substituted with a neighbouring structure.
+
+The mesh format is a swappable detail: everything above the viewer keys off `asiId`.
+
+The 2D schematic stays the fallback and the keyboard/screen-reader equivalent for choosing a
+structure. It is **not** being replaced by this work, and it is still a hand-made PLACEHOLDER
+(`placeholder = true` everywhere) rather than professional medical artwork. Real 2D artwork
+has to come from a licensed external source, which has not been sourced.
 
 ## What we actually need
 

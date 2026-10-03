@@ -17,6 +17,7 @@
     "zod": "^3.24.1"
   },
   "devDependencies": {
+    "@hono/node-server": "^1.14.0",
     "@types/node": "^22.13.1",
     "typescript": "^5.9.3"
   }

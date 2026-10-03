@@ -16,6 +16,7 @@ import type { BodyRegion, ConsideredStructure, Depth, Side, Structure } from './
 import {
   REGIONS,
   getStructure,
+  getSubRegion,
   normalisePhrase,
   resolveStructureByPhrase,
   structureBelongsToRegion,
@@ -405,10 +406,28 @@ export function groundFromText(input: string): GroundingCandidate | null {
       matchedTerms.push(...hits);
     }
   }
-  // A side word plus a paired region also implies the side-specific sub-region.
+  // A side word plus a PAIRED region implies the side-specific sub-region -- but only if the
+  // ONTOLOGY actually defines one.
+  //
+  // This used to build the id by string concatenation:
+  //   `shoulder.right_paravertebral`, `knee.left_paravertebral`
+  // `left_paravertebral` / `right_paravertebral` exist ONLY in `lower_back`, whose
+  // `isPaired` is FALSE, so the branch was gated on the opposite set from the one it names.
+  // Every shoulder and knee complaint with a stated side and no area word therefore produced
+  // a sub-region that does not exist -- and it was not cosmetic: `summary.ts` rendered it
+  // into the clinician-facing Location line as "Right Shoulder (Paravertebral)", and
+  // `store.findOrCreatePlace` used it as part of PLACE IDENTITY. So a fabricated id split a
+  // real place in two on the health map.
+  //
+  // Fixed by asking the ontology, not by concatenating. `getSubRegion` is the only authority
+  // for whether a sub-region exists.
   if (!suggestedSubRegionId && (side === 'left' || side === 'right') && REGIONS[lex.region].isPaired) {
-    const sideSuffix = side === 'left' ? 'left_paravertebral' : 'right_paravertebral';
-    suggestedSubRegionId = `${lex.region}.${sideSuffix}`;
+    for (const candidate of [`${lex.region}.${side}_paravertebral`, `${lex.region}.paravertebral`]) {
+      if (getSubRegion(lex.region, candidate)) {
+        suggestedSubRegionId = candidate;
+        break;
+      }
+    }
   }
 
   // --- structure candidates -------------------------------------------

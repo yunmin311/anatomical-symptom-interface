@@ -13,6 +13,7 @@ import { z } from 'zod';
 import type { BodyRegion, Structure } from '../anatomy.ts';
 import { getStructure, structureBelongsToRegion } from '../anatomy.ts';
 import type { SymptomRecord } from '../symptom.ts';
+import { emptyRecord } from '../symptom.ts';
 import type { QuestionAnswer, AnswerMap } from '../answers.ts';
 import { isUncertain } from '../answers.ts';
 
@@ -615,7 +616,17 @@ const KNEE_QUESTIONS: InterviewQuestion[] = [
     ],
     applyTo: (record, a) => {
       // 'none' is a real negative and must clear any prior swelling.
-      if (String(a.raw) === 'none') {
+      //
+      // 'unknown' now takes the same path, and it did not before. Every option other than
+      // 'none' used to mean "swollen", so a user who answered "I am not sure" had swelling
+      // recorded as a reported symptom -- which breaks the rule that yes, no, unknown and
+      // not-asked are four different things, and put a symptom in a clinician's summary
+      // that the user explicitly declined to assert.
+      //
+      // It is not a claim the user withdrew either: it is a claim they never made. Clearing
+      // on 'unknown' is the conservative direction, because an unasserted symptom must not
+      // appear in the record as though it were reported.
+      if (String(a.raw) === 'none' || uncertain(a)) {
         if (!record.quality.includes('swelling')) return [];
         record.quality = record.quality.filter((q) => q !== 'swelling');
         return ['quality'];
@@ -690,6 +701,120 @@ const KNEE_QUESTIONS: InterviewQuestion[] = [
     },
   }),
 ];
+
+
+/* ================================================================== */
+/* Recomputing answer-derived fields from the WHOLE answer set        */
+/* ================================================================== */
+
+/**
+ * Every record field an interview `applyTo` can write.
+ *
+ * Listed rather than derived, because the whole point of this module is that the list
+ * must be closed and checkable: a recompute that missed a field would leave that field
+ * stale forever, silently.
+ *
+ * Every one of these is DERIVED FROM ANSWERS. None is written by a direct field mutation,
+ * and none is part of the location the user pointed at -- `location.*` is deliberately
+ * absent, because recomputing those from answers would erase the user's own selection.
+ */
+export const ANSWER_DERIVED_FIELD_PATHS = [
+  'quality',
+  'triggers',
+  'radiation',
+  'tendernessOnPalpation',
+  'triggerDetail',
+  'context.recentInjury',
+  'context.systemicSymptoms',
+  'function.activitiesAffected',
+  'function.unableWeighBearing',
+] as const;
+
+/** Read a dotted path out of a record. */
+function readPath(record: SymptomRecord, fieldPath: string): unknown {
+  return fieldPath
+    .split('.')
+    .reduce<unknown>(
+      (node, key) => (node as Record<string, unknown> | undefined)?.[key],
+      record as unknown as Record<string, unknown>,
+    );
+}
+
+/**
+ * The values the CURRENT answers imply, for the answer-derived fields.
+ *
+ * ## Why this exists
+ *
+ * Six interview questions were written as "an explicit yes adds these values; anything
+ * else writes nothing", on the reasoning that an unasked or uncertain answer must never
+ * change the record. That reasoning is right for UNCERTAINTY and wrong for a definite NO.
+ *
+ * The consequence was that correcting "yes, I have numbness in my leg" to "no" left
+ * `quality: ["numbness", "tingling"]` in the record, marked `user_edited`, and the
+ * clinician's summary still printed "numbness, tingling" under a heading whose safety flag
+ * had already been withdrawn. The correction was accepted, visible, and inert.
+ *
+ * ## Why not just make each question withdraw its own values
+ *
+ * Because several questions write the SAME value. `instability` is added by three
+ * questions, `numbness` by three, `swelling` by two. A per-question withdrawal would have
+ * to guess whether another answered question still holds the value, and the cheapest way
+ * to write that guess is to not withdraw at all -- which is where this started.
+ *
+ * ## What this does instead
+ *
+ * It recomputes the field from EVERY current answer, deterministically, in question order.
+ * Ownership is never guessed, because the answer set is the only source. The result does
+ * not depend on which answer arrived last, which is the property the old additive mapping
+ * lacked.
+ *
+ * Pure: it starts from an empty record and never touches the one it was given.
+ */
+export function fieldsFromAnswers(
+  region: BodyRegion,
+  answers: AnswerMap,
+): Record<string, unknown> {
+  const scratch = emptyRecord(region);
+  for (const question of INTERVIEW[region]) {
+    const answer = answers[question.id];
+    if (answer) applyAnswer(scratch, question.id, answer);
+  }
+  /*
+   * `emptyRecord` builds `function: {}` and `context: {}`, so every field INSIDE those
+   * containers resolves to `undefined` in a fresh record -- and `undefined` cannot be bound
+   * to a SQLite parameter. The first version of this recompute returned those undefined
+   * values and every answer-bearing write failed with "Provided value cannot be bound to
+   * SQLite parameter 3".
+   *
+   * So the containers are seeded with each schema's declared default. These are the same
+   * defaults the schema itself applies, written out rather than relied on through a parse,
+   * because the recompute needs a DEFINED value for "nobody has answered this yet" and
+   * undefined is not one.
+   */
+  scratch.function.unableWeighBearing ??= 'no';
+  scratch.function.activitiesAffected ??= [];
+  scratch.context.systemicSymptoms ??= ['none'];
+  scratch.context.recentInjury ??= null;
+  const out: Record<string, unknown> = {};
+  for (const path of ANSWER_DERIVED_FIELD_PATHS) out[path] = readPath(scratch, path);
+  return out;
+}
+
+/**
+ * The same values, paired with the provenance a user-stated field carries.
+ *
+ * So the recompute goes through the SAME field policy, claim class and merge as any other
+ * write. A recompute that bypassed the field store would be a second write path, which is
+ * the thing this project forbids.
+ */
+export function answerDerivedMutations(
+  region: BodyRegion,
+  answers: AnswerMap,
+  capturedAt?: string,
+): { fieldPath: string; value: unknown }[] {
+  const values = fieldsFromAnswers(region, answers);
+  return ANSWER_DERIVED_FIELD_PATHS.map((fieldPath) => ({ fieldPath, value: values[fieldPath] }));
+}
 
 /* ================================================================== */
 /* Registry                                                            */

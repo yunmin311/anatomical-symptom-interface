@@ -23,6 +23,8 @@ import {
   BodyRegionSchema,
   CreateEpisodeRequestSchema,
   FieldPolicyError,
+  ProvenanceError,
+  UnknownStructureError,
   groundOrRefuse,
   INTERVIEW,
   LocaliseRequestSchema,
@@ -115,6 +117,20 @@ function refuse(
 function refuseThrown(c: { json: (body: unknown, status?: number) => Response }, e: unknown): Response {
   if (e instanceof FieldPolicyError)
     return refuse(c, 'field_policy_violation', e.message, 422, { field: e.path });
+  // A broken provenance rule is the SAME class of refusal as a broken field policy: the
+  // client sent something the product will not accept. It used to fall through to Hono's
+  // default handler and answer HTTP 500 `Internal Server Error`, which told the client the
+  // server had faulted and handed it a body it could not parse.
+  if (e instanceof ProvenanceError)
+    return refuse(c, 'field_policy_violation', e.message, 422, { field: e.field });
+  /*
+   * An id the ontology has never heard of, refused by the central identity boundary.
+   * 422 and `unknown_structure`, which is the same code and status MCP has always returned
+   * for this -- so the two surfaces finally answer one request identically, rather than MCP
+   * refusing an id that a generic field mutation would have stored.
+   */
+  if (e instanceof UnknownStructureError)
+    return refuse(c, 'unknown_structure', e.message, 422, { structureId: e.structureId });
   if (e instanceof MutationRejected) return refuse(c, 'mutation_rejected', e.message, 404);
   throw e;
 }

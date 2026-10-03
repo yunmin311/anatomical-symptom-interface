@@ -21,8 +21,9 @@
  * ## Where the synthetic fixture went
  *
  * `FIXTURE_SCENE` below is still exported, and it is still used — by the browser
- * gates and the headless adapter tests. It is a FIXTURE, kept for rendering,
- * interaction, picking and adapter tests, and it is never what the product renders.
+ * gates and the headless adapter tests, and by NOTHING else. That list was previously
+ * incomplete: `AnatomyWorkspace` also defaulted to it, so the fixture was one omitted
+ * argument away from production. It no longer has a default, and the omission is an error.
  * `assertProductionSceneIsReal` is the guard: the production scene is rejected if it
  * carries synthetic provenance, so a fixture cannot silently become anatomy.
  *

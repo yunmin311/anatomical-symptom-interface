@@ -38,7 +38,33 @@ const SERVER_ENTRY = join(SERVER_DIR, 'src/index.ts');
  * both. The symptom is a hang, not an assertion failure, which is why this is
  * spelled out rather than left to chance.
  */
-const PORT = 8797;
+import { createServer } from 'node:net';
+
+/**
+ * A free port for this test run.
+ *
+ * Asked of the OS rather than hardcoded: a fixed port is not safe, only familiar. This
+ * machine had unrelated `python3 -m http.server` processes on 8788-8791, and the server
+ * under test could not bind -- so the test polled a health check that could never pass and
+ * reported a 501 from somebody else's server as if it were an API failure.
+ */
+const PORT = Number(process.env.ASI_TEST_PORT ?? 0) || (await freePort());
+
+function freePort(): Promise<number> {
+  return new Promise((resolve, reject) => {
+    const probe = createServer();
+    probe.once('error', reject);
+    probe.listen(0, '127.0.0.1', () => {
+      const address = probe.address();
+      if (address === null || typeof address === 'string') {
+        probe.close(() => reject(new Error('could not determine a free port')));
+        return;
+      }
+      const { port } = address;
+      probe.close(() => resolve(port));
+    });
+  });
+}
 const BASE = `http://127.0.0.1:${PORT}`;
 const DB = join(mkdtempSync(join(tmpdir(), 'asi-reopen-')), 'reopen.sqlite');
 

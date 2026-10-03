@@ -13,25 +13,37 @@ the reason the product refuses a production release rather than a formality.
 
 **What we do.** An answer is stored once, as the CURRENT value, keyed on
 `(episode, question)`. Correcting an answer REPLACES it. The replacement is marked
-`user_edited`, its `capturedAt` is the moment the corrected value was given, and
-`createdBy` is whoever made the correction.
+`user_edited` **by the store, from the row** — not from anything the client claims — so a
+client cannot assert a correction that did not happen, and cannot downgrade a real one
+either.
+
+A correction genuinely withdraws what the original recorded. The answer-derived fields are
+recomputed from the **whole** answer set on every answer write, so correcting "yes, I have
+numbness in my leg" to "no" removes numbness from the record and from the clinician's summary,
+and a safety flag that no longer fires is withdrawn with a transcript entry naming the rule.
+
+Recomputation is used rather than per-question withdrawal because several questions write
+the same value — `instability` is added by three, `numbness` by three, `swelling` by two — so
+a per-question withdrawal has to guess who still holds it, and the cheapest way to write that
+guess is to withdraw nothing. Recomputing never guesses. It writes only fields whose value
+actually CHANGED, so a field nobody mentioned never gains a provenance row and coverage still
+distinguishes "not asked" from "reported".
 
 **What we do not do.** The original answer is overwritten, not kept. There is no
 `answer_history` table, no event log, and no way to see what the user said before they
 changed it.
 
-**Why.** Keeping every version of every answer is an append-only medical record, and
-this product is not built as one at V1. The current-value model is a deliberate choice,
-not an oversight.
+**Why.** Keeping every version of every answer is an append-only medical record, and this
+product is not built as one at V1.
 
-**What a clinician loses.** They cannot see that a symptom was reported and later
-withdrawn. What they get instead is that the current value is marked as corrected, so
-the correction itself is visible.
+**What a clinician loses.** They cannot see that a symptom was reported and later withdrawn.
+What they get instead is that the current value is marked as corrected, so the correction
+itself is visible.
 
-**When this must change.** Before this holds real patient records over time. The
-migration is additive: a `episode_answer_versions` table plus a write on every answer
-mutation. Nothing in the current read path would need to change, because every reader
-already goes through `answersFor`.
+**When this must change.** Before this holds real patient records over time. The migration is
+additive — an `episode_answer_versions` table plus a write on every answer mutation — and
+nothing in the current read path would change, because every reader goes through
+`answersFor`.
 
 ---
 
@@ -106,3 +118,39 @@ a mesh lands on.
 This is not hypothetical caution: BodyParts3D's `M` suffix convention holds for 1109
 meshes and is violated by 655. In the neck, sternocleidomastoid is `FJ1573` = LEFT with
 no suffix, and `FJ1595` = RIGHT.
+
+---
+
+## 8. Anatomy coverage differs per laterality, and that is deliberate
+
+Real anatomy is not symmetric. The neck suboccipital set is six source concepts on the left
+and four on the right, so the right is reported **unavailable with its reason** rather than
+mirrored or averaged. BodyParts3D's own `M` suffix looks like a laterality convention and is
+not: it holds for 1109 meshes and is violated by 655. Laterality is read from the source
+concept and carried through the manifest, the renderer entry and the pick.
+
+Two regions have no midline geometry at all, because the dataset models them per side. The
+product says "the source models this per side" — a fact about the data — rather than "not
+built yet", which is a claim about the repository and implies a promise.
+
+## 9. `bilateral` shows one side at a time
+
+A bilateral complaint mounts the real left scene or the real right scene, one at a time, with
+the side named on screen and a control to switch. Neither is ever mirrored from the other,
+and the side is never left unnamed — a 3D viewer with no side named is the one place a user
+could look at left anatomy and believe it was right.
+
+## 10. A free-text or multi-select answer cannot be "withdrawn"
+
+Some questions have no negative answer. "Which arm movements set it off?" records whatever
+the user typed, and correcting it means answering again — an empty answer is *not asked*, not
+a withdrawal. Four questions are like this and are listed, with reasons, in
+`CANNOT_WITHDRAW` in `packages/shared/test/answer-withdrawal.test.ts`. That test fails if a
+question starts recording on an affirmative without appearing in one list or the other, which
+is how six questions escaped in the first place.
+
+## 11. Grounding can refuse, and refusal is a feature
+
+A complaint that does not localise to shoulder, neck, lower back or knee is refused with a
+reason, and no episode is created. There is no default region. A chest complaint exits and
+points at a clinician rather than entering a musculoskeletal interview.

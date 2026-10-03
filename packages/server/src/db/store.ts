@@ -29,18 +29,21 @@ import {
   signalsFromAnswers,
   SymptomRecordSchema,
   writablePaths,
+  answerDerivedMutations,
+  canonicalIdentityForWrite,
 } from '@asi/shared';
 import type {
   AnswerMap,
   Attributed,
+  BodyRegion,
   ClaimClass,
   Episode,
   PreVisitSummary,
   Provenance,
   QuestionAnswer,
   ReleaseProfile,
-  SafetyEvaluation,
   SymptomRecord,
+  SafetyEvaluation,
 } from '@asi/shared';
 import type { FieldMutation as SharedFieldMutation } from '@asi/shared';
 import { all, get, run, tx } from './client.ts';
@@ -220,6 +223,29 @@ export interface ApplyOutcome {
   safety: SafetyEvaluation;
 }
 
+/** Read a dotted path out of a record. */
+function readPath(record: SymptomRecord, fieldPath: string): unknown {
+  return fieldPath
+    .split('.')
+    .reduce<unknown>(
+      (node, key) => (node as Record<string, unknown> | undefined)?.[key],
+      record as unknown as Record<string, unknown>,
+    );
+}
+
+/**
+ * Structural equality for the values the recompute compares.
+ *
+ * JSON round-trip rather than `===`, because these are arrays built fresh by `add()` and
+ * `without()` on every pass: a new array with the same contents is the same value, and
+ * comparing by identity would rewrite every field on every answer.
+ */
+function deepEqual(a: unknown, b: unknown): boolean {
+  if (a === b) return true;
+  if (a === undefined || b === undefined) return false;
+  return JSON.stringify(a) === JSON.stringify(b);
+}
+
 /**
  * THE single write path. Validates, merges, writes, rebuilds, re-evaluates
  * safety, all in one transaction. Any rejection rolls the whole thing back.
@@ -232,6 +258,17 @@ export function applyMutations(episodeId: string, input: ApplyInput, profile: Re
 
   return tx(() => {
     const record = readRecord(episodeId, ep.region);
+    // Filled with the RECOMPUTED answer-derived values first (step 1b), then iterated
+    // ahead of the client's own mutations (step 2).
+    //
+    // The order is load-bearing and it was wrong the first time. The recompute is derived
+    // from the persisted answer set, which is the truth; the client's mutation for the same
+    // field is derived from whatever the client believed, which may be stale. So the
+    // recompute must merge FIRST and win the incumbent position, leaving the client's value
+    // preserved as a parallel assertion rather than overriding the truth. Iterating the
+    // other way round would let a stale client echo win, which is the bug class this whole
+    // change exists to remove.
+    const fieldMutations: FieldMutation[] = [];
     const applied: ApplyOutcome['applied'] = [];
     const rejected: ApplyOutcome['rejected'] = [];
     const answerResults: ApplyOutcome['answers'] = [];
@@ -308,6 +345,73 @@ export function applyMutations(episodeId: string, input: ApplyInput, profile: Re
       });
     }
 
+    // 1b. RECOMPUTE the answer-derived fields from the WHOLE answer set.
+    //
+    //     Six interview questions were written as "an explicit yes adds these values;
+    //     anything else writes nothing", on the reasoning that an unasked or uncertain
+    //     answer must never change the record. Right for UNCERTAINTY, wrong for a definite
+    //     NO.
+    //
+    //     So correcting "yes, I have numbness in my leg" to "no" left
+    //     `quality: ["numbness", "tingling"]` in the record, marked `user_edited`, while
+    //     the summary kept printing "numbness, tingling" under a heading whose safety flag
+    //     had already been withdrawn. The correction was accepted, labelled, and inert --
+    //     which makes the whole correction feature cosmetic for those questions.
+    //
+    //     A per-question withdrawal would have to guess ownership: `instability` is added
+    //     by three questions, `numbness` by three, `swelling` by two. Recomputing from the
+    //     answer set never guesses, because the answer set is the only source, and the
+    //     result no longer depends on which answer arrived last.
+    //
+    //     It runs inside the same transaction, immediately after the answers and before the
+    //     client's field mutations, so:
+    //       - it is atomic with the answer it belongs to;
+    //       - safety re-evaluation below sees the corrected record;
+    //       - a client mutation for the same field still merges by claim class, because
+    //         these go through the SAME loop and the SAME field policy as any other write.
+    //         This is not a second write path.
+    //
+    //     Skipped when the batch contains no answers, so an unrelated field write does not
+    //     silently rewrite fields the client owns.
+    if (input.answerMutations?.length) {
+      const region = ep.region as BodyRegion;
+      const currentAnswers = answersFor(episodeId);
+      for (const derived of answerDerivedMutations(region, currentAnswers, now())) {
+        // ONLY WHERE THE VALUE CHANGES.
+        //
+        // The first version wrote all nine answer-derived fields on every answer write. That
+        // is a fabrication of exactly the kind this repository forbids: answering
+        // `lower_back.bladder` -- a safety-only question whose `applyTo` writes nothing --
+        // created a `quality` provenance row saying the user confirmed `quality: []`. It
+        // also flipped COVERAGE for a field nobody answered, which is what the summary uses
+        // to decide between "not asked" and a recorded answer.
+        //
+        // `scripts/smoke.mjs` caught it: "a safety-only answer wrote a record field". The
+        // guard was right and the recompute was wrong.
+        //
+        // Comparing against the stored record is what makes this a RECOMPUTE rather than a
+        // blanket rewrite: a value that is already correct is not rewritten, so its
+        // provenance stays exactly as the user left it -- including its original timestamp
+        // and editor.
+        if (deepEqual(readPath(record, derived.fieldPath), derived.value)) continue;
+        fieldMutations.push({
+          fieldPath: derived.fieldPath,
+          value: derived.value,
+          provenance: {
+            sourceType: 'user_statement',
+            verificationStatus: 'user_confirmed',
+            createdBy: 'user',
+            capturedAt: now(),
+            rawText: null,
+            // These values are DERIVED from what the user answered rather than stated as a
+            // field of its own, so they carry the evidence status of an answer, not of a
+            // direct statement. Claiming 'user_report' here would overstate them.
+            evidenceStatus: 'user_report',
+          },
+        });
+      }
+    }
+
     // 2. Field mutations.
     //    A field that fails POLICY VALIDATION is fatal to the whole batch: the
     //    client asked to write something forbidden, and silently committing the
@@ -315,7 +419,8 @@ export function applyMutations(episodeId: string, input: ApplyInput, profile: Re
     //    failures throw and roll the transaction back.
     //    A field that merely LOSES A MERGE is not fatal: the incoming value is
     //    preserved as a parallel assertion and the incumbent stands.
-    for (const m of input.fieldMutations ?? []) {
+    // Recomputed first, then the client's. See the declaration above.
+    for (const m of [...fieldMutations, ...(input.fieldMutations ?? [])]) {
       const policy = getFieldPolicy(m.fieldPath);
       if (!policy) {
         throw new FieldPolicyError(
@@ -325,13 +430,39 @@ export function applyMutations(episodeId: string, input: ApplyInput, profile: Re
         );
       }
 
+      /*
+       * THE ORDER IS THE POINT. Read the chain below as one sequence:
+       *
+       *   canonicalise identities -> validate THAT value -> validate provenance
+       *                            -> merge -> store
+       *
+       * A retired id is accepted and stored canonical, and an id the ontology has never
+       * heard of is refused. Both happen here, not in a client, because HTTP and MCP
+       * already meet at this loop -- putting either half in a client is how the two came to
+       * disagree in the first place.
+       *
+       * It happens BEFORE validation, and the validated result is what gets STORED, so the
+       * value that is checked is the value that is written. This loop used to canonicalise
+       * into `canonicalValue`, hand `assertFieldWrite` the caller's original `m.value`, and
+       * then store `canonicalValue` -- the comment claimed "before validation" while the
+       * code did not do that. It checked a value that was never going to be written, so
+       * there was no order at all: a retired id was validated in its retired spelling and
+       * stored canonically, and any constraint the schema gained about the canonical form
+       * would have been enforced against the wrong side of the mapping.
+       *
+       * `assertFieldWrite` returns the parsed value, so storing `value` stores the canonical,
+       * validated one. Non-identity fields pass through `canonicalIdentityForWrite`
+       * untouched and behave exactly as before.
+       */
+      const canonicalValue = canonicalIdentityForWrite(m.fieldPath, m.value);
+
       const provenance: Provenance = {
         ...m.provenance,
         capturedAt: m.provenance.capturedAt ?? now(),
         evidenceStatus: m.provenance.evidenceStatus ?? evidenceStatusFor(m.provenance.sourceType),
       };
 
-      const value = assertFieldWrite(m.fieldPath, m.value, provenance);
+      const value = assertFieldWrite(m.fieldPath, canonicalValue, provenance);
       assertProvenance(m.fieldPath, provenance);
 
       const existing = get<FieldRow>(
@@ -341,6 +472,9 @@ export function applyMutations(episodeId: string, input: ApplyInput, profile: Re
         episodeId, m.fieldPath,
       );
       const incumbent = existing ? rowToAttributed(existing) : null;
+      // `value` is the canonical, schema-validated value: `assertFieldWrite` returned the
+      // parsed result. Storing `canonicalValue` instead would store the pre-validation
+      // canonicalisation and quietly drop whatever the schema did to it.
       const outcome = mergeField(incumbent, { value, provenance }, policy.claimClass);
 
       if (outcome.applied && outcome.winner) {

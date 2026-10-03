@@ -276,6 +276,12 @@ run realgeom    node apps/web/test/real-geometry-browser.mjs
   run realall     node apps/web/test/real-geometry-all-browser.mjs
   run laterality node apps/web/test/laterality-browser.mjs
   run userflow   node apps/web/test/user-flow-browser.mjs
+# The paths where the product must REFUSE, ASK or DEGRADE. Separate from the happy-path
+# flow because each of these is a place where the cheapest implementation is to lie: a
+# midline scene that is really a left shoulder, an unavailable structure quietly replaced
+# by a neighbour, a side the user never gave defaulted to left. None may be skipped when
+# the feature is absent.
+  run degraded   node apps/web/test/v1-degraded-browser.mjs
 # The gate the old runner omitted from its own report.
 run evidence    node apps/web/test/evidence.mjs
 

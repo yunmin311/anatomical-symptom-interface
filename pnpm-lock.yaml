@@ -222,6 +222,9 @@ importers:
         specifier: ^3.24.1
         version: 3.25.76
     devDependencies:
+      '@hono/node-server':
+        specifier: ^1.14.0
+        version: 1.19.17(hono@4.13.10)
       '@types/node':
         specifier: ^22.13.1
         version: 22.20.4

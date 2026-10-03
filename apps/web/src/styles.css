@@ -1634,6 +1634,32 @@ details > p {
 /* Which shoulder is on screen. Placed with the disclaimer rather than the mode
    indicator because this is a fact about the geometry, and it has to be readable
    without opening anything. */
+/*
+ * The bilateral side switch.
+ *
+ * Deliberately a pair of pressed buttons rather than a dropdown: the whole point is that the
+ * side is never ambiguous, and a menu that is closed by default hides the answer to the
+ * question the control exists to answer.
+ */
+.viewer3d__side-toggle {
+  display: flex;
+  gap: var(--space-1, 4px);
+}
+.viewer3d__side-button {
+  border: 1px solid var(--line, #ccc);
+  background: var(--surface, #fff);
+  color: inherit;
+  min-height: 44px;
+  padding: 0 var(--space-3, 12px);
+  cursor: pointer;
+}
+.viewer3d__side-button.is-active {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--on-accent, #fff);
+  font-weight: 600;
+}
+
 .viewer3d__side {
   margin: 0;
   font-size: 12px;

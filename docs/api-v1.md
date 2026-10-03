@@ -34,9 +34,21 @@ cannot enter a region interview, and the refusal is explicit.
 **5. A visual selection is not a finding.**
 Wording matters: "pointed at", "indicated", "visual selection". Never "confirmed".
 
-**6. Retired ids come back canonical.**
-`asi:neck.upper-trapezius` is accepted on the way in and stored as
-`asi:shoulder.trapezius-upper`. Region membership comes from the ontology, not the id prefix.
+**6. Retired ids are ACCEPTED and STORED CANONICAL.**
+`asi:neck.upper-trapezius` is accepted and stored as `asi:shoulder.trapezius-upper`.
+Region membership comes from the ontology, not the id prefix.
+
+This is one rule, enforced in the store, so HTTP and MCP cannot disagree about it — and it
+applies to `location.userSelectedStructureIds` and to `consideredStructures[].structureId`.
+An id that is neither current nor retired is still refused, with `unknown_structure`.
+
+Because a retired id is accepted rather than refused, there is no `retired_structure` error
+code. A client must not branch on one.
+
+The field store holds current values, not an append-only log, so keeping the id the caller
+sent would preserve no evidence — it would only leave a row holding an id that resolves to no
+structure. The projection still canonicalises on read as well, which is what makes this
+idempotent for records written before a retirement.
 
 ---
 
@@ -54,16 +66,23 @@ where it exists, the detail needed to act.
 | `validation_failed` | 400 | body/query did not match the schema; `detail` carries the issues |
 | `episode_not_found` | 404 | no episode with that id |
 | `episode_not_localised` | 409 | grounding did not succeed; the interview is refused |
-| `field_policy_violation` | 422 | the registry refused this write; `field` says which |
+| `field_policy_violation` | 422 | the registry or the provenance rules refused this write; `field` says which |
 | `mutation_rejected` | 404 | the store refused the batch |
 | `unknown_region` | 404 | no such region in this build; `region` echoes the input |
 | `unknown_question` | 422 | the region's interview has no such question |
 | `unknown_structure` | 422 | no such canonical id |
-| `retired_structure` | 422 | the id was retired; `canonicalId` is the replacement |
 | `not_found` | 404 | something else is absent |
 | `internal_error` | 500 | unclassified. Never used to hide a known failure |
 
 Branch on `error`. `message` is for a person and will change.
+
+Every refusal above is `4xx` and arrives in this envelope, including a broken provenance
+rule. A provenance violation — `ai_inference` without a confidence, a `user_statement`
+marked `clinician_confirmed` — is the client sending something the product will not
+accept, so it is `field_policy_violation` and not a server fault. It used to reach Hono's
+default handler and answer `500` with the body `Internal Server Error`, which told clients
+the server had broken and gave them a body they could not parse. MCP returns the same
+codes for the same refusals, so one error handler covers both surfaces.
 
 ---
 

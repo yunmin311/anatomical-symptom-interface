@@ -70,7 +70,17 @@ These are architecture, not style. Do not weaken them to make a task easier.
    `unreviewedSafetyRules` count must stay honest. Do not flip either to make
    something look finished.
 
-11. **No disease vocabulary in the core product.** If you want to add a condition name
+11. **A correction must WITHDRAW what the original recorded.**
+    The answer-derived fields are RECOMPUTED from the whole answer set on
+    every answer write, and only CHANGED fields are written. This is not
+    optional tidiness: six questions once accepted a correction, marked it
+    `user_edited`, and changed nothing a clinician reads. Two failure modes
+    to keep apart — writing every derived field fabricates provenance for
+    fields the user never mentioned and flips `coverage`, so the summary can
+    no longer tell "not asked" from "reported"; and per-question withdrawal
+    has to guess ownership, because several questions write the same value.
+
+12. **No disease vocabulary in the core product.** If you want to add a condition name
     to a type, that is the signal to stop — it belongs in the future Medical Layer.
 
 ## Model and provider boundary
@@ -146,10 +156,16 @@ packages/server/src/
   orchestrator/     Orchestrator interface + deterministic and model impls
   db/               node:sqlite client, store (only writer), seed
   app.ts            HTTP routes — validate, delegate, serialise
+  anatomy-manifests.ts  the built manifests, read from assets/ (never from apps/web)
   env.ts            release gate; refuses to start in release while unreviewed
+
+packages/mcp/src/
+  tools.ts          the tool SEMANTICS, as plain functions over ASI Core
+  server.ts         JSON-RPC 2.0 stdio shell over tools.ts — transport only
 
 apps/web/src/
   anatomy/types.ts  AnatomyAdapter contract  ← the 3D seam
+  anatomy/active-scene.ts  the production registry: region × laterality → scene
   anatomy/svg2d.ts  schematic 2D implementation
   state/logic.ts    PURE session logic — all of it tested
   state/session.ts  thin shell: fetch, store, viewer commands
@@ -255,6 +271,8 @@ pnpm seed                     # reset to demo history (DESTRUCTIVE, rebuilds the
 node scripts/smoke.mjs        # 38 API checks, needs a running server
 node scripts/check-safety-metadata.mjs <health.json>
 pnpm --filter @asi/web build
+pnpm --filter @asi/mcp start      # MCP server on stdio; no API key, no model call
+pnpm --filter @asi/mcp test      # incl. the cross-surface persistence proof
 ```
 
 `allowBuilds: esbuild: true` is declared in `pnpm-workspace.yaml`, so install never
@@ -268,7 +286,11 @@ so a clean checkout and CI behave the same way.
 - [ ] `pnpm test` passes
 - [ ] New logic has a test, especially anything touching provenance, safety, answers
       or the field registry
-- [ ] `scripts/smoke.mjs` still 38/38 if you touched the server
+- [ ] `scripts/smoke.mjs` still passes if you touched the server
+- [ ] Any new answer question either withdraws on correction or is listed in
+      `CANNOT_WITHDRAW` in `packages/shared/test/answer-withdrawal.test.ts`
+      with a reason. That test fails if a question records on an affirmative
+      and is neither
 - [ ] `scripts/check-safety-metadata.mjs` passes against a running server
 - [ ] The unreviewed-rules count is still reported honestly — if it went to zero
       without clinical review, something bypassed the review metadata, which is a bug

@@ -65,8 +65,6 @@ export const ApiErrorCodeSchema = z.enum([
   'unknown_question',
   /** A canonical structure id the domain does not have. */
   'unknown_structure',
-  /** A structural id that exists but has been retired; `canonicalId` is the replacement. */
-  'retired_structure',
   /** The request was well-formed but names something that does not exist in the ontology. */
   'not_found',
   /** Anything unclassified. Never used to hide a known failure. */
@@ -85,10 +83,15 @@ export const ApiErrorSchema = z.object({
   detail: z.unknown().optional(),
   /** For `field_policy_violation`. */
   field: z.string().optional(),
-  /** For `retired_structure`: the id the caller should use instead. */
-  canonicalId: z.string().optional(),
   /** For `unknown_region`. */
   region: z.string().optional(),
+  /**
+   * For `unknown_structure`: the offending id, exactly as the caller sent it.
+   *
+   * Echoed rather than only described, because a retired id that was also unknown and an
+   * invented one are different mistakes and a client can only tell them apart from the value.
+   */
+  structureId: z.string().optional(),
 });
 export type ApiError = z.infer<typeof ApiErrorSchema>;
 
@@ -122,19 +125,74 @@ export type ProvenanceInput = z.infer<typeof ProvenanceInputSchema>;
 /* ------------------------------------------------------------------ */
 
 /**
- * `value: z.unknown()` is OPTIONAL after parsing, because `unknown` includes
- * `undefined`. Spreading a parsed mutation would then let a write arrive with no value at
- * all, which the field store must never accept. The surfaces check for the key's presence
- * explicitly; this comment is why that check exists.
+ * Does this object OWN `key`?
+ *
+ * `'value' in obj` is not enough: it is true for an inherited property, and `z.unknown()`
+ * happily produces `undefined` for a key that was never sent.
  */
-export const FieldMutationInputSchema = z.object({
+function ownsKey(obj: unknown, key: string): boolean {
+  return (
+    typeof obj === 'object' &&
+    obj !== null &&
+    Object.prototype.hasOwnProperty.call(obj, key)
+  );
+}
+
+/**
+ * Require the key to be PRESENT, whatever its value.
+ *
+ * `value: z.unknown()` does NOT do this. Zod types `unknown` as OPTIONAL, because `unknown`
+ * includes `undefined`, so a mutation sent with no `value` at all parsed successfully and
+ * arrived at the store as "write undefined". Both surfaces then noticed afterwards, by hand,
+ * and disagreed about what to say about it: HTTP threw a generic `Error`, which surfaced as
+ * `internal_error`, and MCP built a `FieldPolicyError` with its arguments REVERSED --
+ * `(path, message)` into a `(message, path)` constructor -- so the path and the sentence
+ * were swapped. A client could not branch on either.
+ *
+ * The check belongs HERE, at the shared boundary, because that is the only place both
+ * surfaces are guaranteed to pass through. Now a missing `value` or `raw` is
+ * `validation_failed` on HTTP and on MCP, before the store is reached and before any write
+ * is attempted.
+ *
+ * `null` is a legitimate value and is NOT rejected: "the user said the side is unknown" is
+ * different from "no value supplied", and only the second is a malformed request.
+ */
+export const FieldMutationInputBaseSchema = z.object({
   fieldPath: z.string().min(1).max(120),
   value: z.unknown(),
   provenance: ProvenanceInputSchema,
 });
+
+/**
+ * The presence rule, exported on its own so it can be re-applied to a COMPOSITION.
+ *
+ * This exists because MCP has to declare its own tool inputs -- a tool is keyed by name and
+ * carries an extra `episodeId` -- and the first version of that declared `value: z.unknown()`
+ * inline. `z.unknown()` is OPTIONAL, so the tool accepted a mutation with no value that the
+ * HTTP surface refused, and `answer_symptom_question` likewise accepted an answer with no
+ * `raw`. Two surfaces, two contracts, for the same rule.
+ *
+ * Exposing the base shape plus the rule lets a surface that must compose re-use BOTH, so
+ * there is one declaration of what "a value must be present" means.
+ */
+export function requireMutationValue(
+  mutation: { value?: unknown },
+  ctx: z.RefinementCtx,
+): void {
+  if (!ownsKey(mutation as Record<string, unknown>, 'value'))
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['value'],
+      message: 'a field mutation must carry a value; null is a value, absence is not',
+    });
+}
+
+export const FieldMutationInputSchema = FieldMutationInputBaseSchema.superRefine(
+  requireMutationValue,
+);
 export type FieldMutationInput = z.infer<typeof FieldMutationInputSchema>;
 
-export const AnswerInputSchema = z.object({
+export const AnswerInputBaseSchema = z.object({
   questionId: z.string().min(1).max(120),
   raw: z.unknown(),
   /** The fields this answer is allowed to write. Advisory; the engine owns the mapping. */
@@ -142,6 +200,18 @@ export const AnswerInputSchema = z.object({
   createdBy: z.string().min(1).max(120),
   rawText: z.string().max(4000).nullish(),
 });
+
+/** Exported for the same reason as `requireMutationValue`: one rule, re-usable in a composition. */
+export function requireAnswerRaw(answer: { raw?: unknown }, ctx: z.RefinementCtx): void {
+  if (!ownsKey(answer as Record<string, unknown>, 'raw'))
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['raw'],
+      message: 'an answer must carry its raw value; "I am not sure" is a value, absence is not',
+    });
+}
+
+export const AnswerInputSchema = AnswerInputBaseSchema.superRefine(requireAnswerRaw);
 export type AnswerInput = z.infer<typeof AnswerInputSchema>;
 
 /**

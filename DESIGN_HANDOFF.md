@@ -53,8 +53,9 @@ No private write endpoint, new field, medical question or altered rule was added
 ## Deliberate scope limits
 
 - **No real anatomy asset yet.** The viewer renders procedurally generated
-  placeholder volumes, clearly labelled as not anatomy. This is the single
-  largest remaining visual weakness and it is Phase 1B item 1.
+  real sourced geometry for every region, with the 2D map as the floor for
+  every failure path. This was the single largest visual weakness and it is
+  closed: see the status table below.
 - The 2D schematic was reproportioned (head, shoulders, waist, arm roots) but is
   still a silhouette, not an atlas.
 - Front and back share one silhouette and it does not mirror. The UI states this
@@ -101,10 +102,10 @@ No private write endpoint, new field, medical question or altered rule was added
 
 | UI need | Where it lives now | What the owner has to do | Blocking? |
 |---|---|---|---|
-| Real anatomy meshes | `packages/shared/src/anatomy-manifest.ts` is the **only** asset authority. `apps/web/src/anatomy/scene-manifest.ts` is a renderer contract, converted by `asset-scene-adapter.ts` | Put the real manifest through `parseManifest` and `toRendererScene`. Do **not** hand-build a scene, and do not write `externalAssetNotice` by hand — it is derived and `assertSceneAttribution` rejects one that disagrees | Phase 1B items 1–4. The renderer, picking, layers, camera and fallback are done and tested. |
+| Real anatomy meshes | `packages/shared/src/anatomy-manifest.ts` is the **only** asset authority. `apps/web/src/anatomy/scene-manifest.ts` is a renderer contract, converted by `asset-scene-adapter.ts` | Put the real manifest through `parseManifest` and `toRendererScene`. Do **not** hand-build a scene, and do not write `externalAssetNotice` by hand — it is derived and `assertSceneAttribution` rejects one that disagrees | **Done for all four regions.** BodyParts3D 4.0 (CC BY 4.0), audited mesh by mesh against the archive before mapping. 82 production GLBs, including real MIDLINE builds for the neck and the lower back. The renderer, picking, layers, camera and fallback were already done and tested. |
 | One mesh per GLB | The adapter deliberately does not set `nodeName`, because the Core pipeline emits one mesh per file and requiring a name would refuse every real asset | None. A future multi-part file sets `nodeName` on the scene entry explicitly | Not blocking. Both shapes are tested. |
 | Sub-region ambiguity | A structure reachable from several sub-regions carries the whole canonical `subRegionIds`; `soleSubRegionId` exists only when there is exactly one. `resolveSubRegionForStructure` keeps / adopts / asks | None. **Do not** collapse the list to its first element — that is the bug this shape exists to prevent | Resolved, and enforced by a test that fails if a singular field appears for a multi-sub-region structure. |
-| Patient-side mirroring | `CAMERA_PRESETS` in `three3d.ts` places the camera on the figure's left flank | Decide the figure-to-patient mapping and say so in the manifest or a domain constant; the adapter deliberately does not guess | Phase 1B item 3. Presets are four distinct, tested stations. The 2D map already expresses side by mirroring the drawing. |
+| Patient-side mirroring | `CAMERA_PRESETS` in `three3d.ts` places the camera on the figure's left flank | Decide the figure-to-patient mapping and say so in the manifest or a domain constant; the adapter deliberately does not guess | **Done.** Presets are four distinct, tested stations, and laterality now comes from the source concept rather than from camera position. The 2D map expresses side by mirroring the drawing. |
 | Spatial history | `apps/web/src/ui/spatial-history.ts` is a **presentation mapper** over `SpatialHistoryNode` from `/api/healthmap/:personId/spatial`. The contract is in `@asi/shared` | Nothing. It may sort, label and group by region; it may not merge, dedupe or recount | Resolved. |
 | Asset attribution | `apps/web/src/ui/AnatomyAttribution.tsx`, derived through `sceneLicenceEvidence` | Nothing. A production scene must carry derived attribution or the panel says so as a packaging error | Resolved. A synthetic asset cannot print a licence, by construction. |
 | Rejected suggestions | `ViewerCommand.reject` / `clearReject`, presentation-only; the candidate is kept | Nothing. Deliberately **not** persisted: a dismissal is a view decision, and deleting the candidate would be lossy in the same way deleting a deselected candidate is | Not blocking. |

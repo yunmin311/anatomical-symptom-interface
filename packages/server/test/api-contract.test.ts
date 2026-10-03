@@ -25,7 +25,33 @@ const entry = join(serverDir, 'src/index.ts');
 
 const dir = mkdtempSync(join(tmpdir(), 'asi-api-'));
 const dbPath = join(dir, 'api.sqlite');
-const PORT = 8794;
+import { createServer } from 'node:net';
+
+/**
+ * A free port for this test run.
+ *
+ * Asked of the OS rather than hardcoded: a fixed port is not safe, only familiar. This
+ * machine had unrelated `python3 -m http.server` processes on 8788-8791, and the server
+ * under test could not bind -- so the test polled a health check that could never pass and
+ * reported a 501 from somebody else's server as if it were an API failure.
+ */
+const PORT = Number(process.env.ASI_TEST_PORT ?? 0) || (await freePort());
+
+function freePort(): Promise<number> {
+  return new Promise((resolve, reject) => {
+    const probe = createServer();
+    probe.once('error', reject);
+    probe.listen(0, '127.0.0.1', () => {
+      const address = probe.address();
+      if (address === null || typeof address === 'string') {
+        probe.close(() => reject(new Error('could not determine a free port')));
+        return;
+      }
+      const { port } = address;
+      probe.close(() => resolve(port));
+    });
+  });
+}
 const BASE = `http://127.0.0.1:${PORT}`;
 
 let child: ChildProcess | undefined;
@@ -82,9 +108,15 @@ test('every refusal carries a stable, machine-readable code', async () => {
       true,
       `${label} returned an error body that does not match the contract: ${JSON.stringify(body)}`,
     );
-    // The code is the contract. The message is for a person, so it must exist and must
-    // not BE the code.
-    if (!body.success) return;
+    // The code is the contract. The message is for a person, so it must exist and must not
+    // BE the code.
+    //
+    // `if (!body.success) return;` was here, and it was the shape of a gate that quietly
+    // stops covering: if the FIRST envelope stopped matching, the remaining five cases were
+    // never exercised and the test was green. It only stayed unreachable because the
+    // assertion three lines up threw first -- i.e. the loop's safety depended on a line a
+    // future edit could weaken. `if (!body.success) continue;` keeps every case running.
+    if (!body.success) continue;
     assert.ok(body.data.message.length > 0, `${label} has no human message`);
     assert.notEqual(body.data.message, body.data.error, `${label} put the code in the message`);
   }
@@ -185,14 +217,28 @@ test('capability says the 2D map is a placeholder, and never claims it is medica
   );
   // Any structure with real 3D in one region reports membership in every region it
   // belongs to -- the ontology, not the id prefix.
+  // NOT conditional. This was `if (trapezius) { ... }`, so if the trapezius ever
+  // disappeared from the capability report the whole block was skipped and the test passed.
+  // It is the assertion guarding the `regionsForStructure` fix -- the cross-region
+  // membership this project already got wrong once -- and it was guarding it with a
+  // conditional.
   const trapezius = structures.find((s) => s.asiId === 'asi:shoulder.trapezius-upper');
-  if (trapezius) {
-    assert.ok(trapezius.regions.includes('shoulder'));
-    assert.ok(
-      trapezius.regions.includes('neck'),
-      'the upper trapezius no longer reports the neck as a region it belongs to',
-    );
-  }
+  assert.ok(
+    trapezius,
+    'the upper trapezius is missing from the capability report, so cross-region membership ' +
+      'cannot be checked at all',
+  );
+  assert.ok(trapezius.regions.includes('shoulder'));
+  assert.ok(
+    trapezius.regions.includes('neck'),
+    'the upper trapezius no longer reports the neck as a region it belongs to',
+  );
+  // And the retired id must NOT appear as a structure of its own.
+  assert.equal(
+    structures.some((s) => s.asiId === 'asi:neck.upper-trapezius'),
+    false,
+    'the retired upper-trapezius id is back as a second canonical structure',
+  );
 });
 
 test('a retired structure id comes back canonical', async () => {

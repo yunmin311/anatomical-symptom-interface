@@ -268,16 +268,33 @@ export function canonicalStructureId(asiId: string): string {
 /**
  * Canonicalise a list of user-selected structure ids: retired ids resolved, order kept.
  *
- * ## WHY IT LIVES HERE AND NOT IN THE FIELD VALIDATOR
+ * ## THE POLICY: ACCEPTED AND STORED CANONICAL
  *
- * The obvious place is the `location.userSelectedStructureIds` schema, and it was there
- * first. That was wrong. The raw field store behind that field is a faithful log of
- * what arrived, and rewriting the value on the way in destroys the evidence that a
- * retired id was ever written -- which for a record about a body is worth keeping.
+ * This runs in TWO places, and the second one used to be missing.
  *
- * So the store stays verbatim and this runs in the projection, on every read. That also
- * makes it idempotent, so a record written before a retirement keeps resolving without
- * a migration, and a retired id can never persist as a second truth about one structure.
+ * The field store holds CURRENT values, not an append-only log -- there is no history table
+ * and no audit trail. So "keep whatever the caller sent" preserves nothing a reader could
+ * use. What it does leave behind is a row holding an id that resolves to no structure, which
+ * breaks any consumer that reads field rows rather than the projected record. On top of
+ * that the two surfaces disagreed: MCP's `select_structure` canonicalised before writing
+ * and a generic HTTP field mutation did not, so one request stored two different values
+ * depending on which door it came through.
+ *
+ * So the store canonicalises on write -- see `canonicalIdentityForWrite` in
+ * `anatomy.ts`, which is also where an id that is neither current nor retired is refused
+ * -- and this still
+ * runs in the projection on every read. The read pass is not redundant: it is what makes the
+ * behaviour idempotent, so a record written before a retirement keeps resolving with no
+ * migration, and it stops a retired id becoming a second truth about one structure.
+ *
+ * ## AN EARLIER DECISION, AND WHY IT WAS REVERSED
+ *
+ * This comment previously argued the opposite: that the store must stay verbatim, because
+ * "rewriting the value on the way in destroys the evidence that a retired id was ever
+ * written". That argument does not survive contact with how the store actually works. There
+ * is no history, so there is no evidence to destroy -- only a value that no longer resolves.
+ * And `docs/api-v1.md` already promised the canonical behaviour, so the store was the thing
+ * that was out of step, not the documentation.
  *
  * Deduplicated AND order-preserving as a side effect. The order is the order the user
  * pointed, rendered to a clinician as "areas you pointed to", so it is never sorted.

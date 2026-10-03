@@ -8,6 +8,7 @@
  * source before use. See docs/adr/0002-anatomy-model-source.md.
  */
 import { z } from 'zod';
+import { canonicalStructureId, canonicalStructureIdList } from './anatomy-mapping-neck.ts';
 
 export const BodyRegionSchema = z.enum(['shoulder', 'neck', 'lower_back', 'knee']);
 export type BodyRegion = z.infer<typeof BodyRegionSchema>;
@@ -490,6 +491,130 @@ export function normalisePhrase(input: string): string {
 
 export function getStructure(id: string): Structure | undefined {
   return STRUCTURE_INDEX.get(id);
+}
+
+/*
+ * The identity boundary for WRITES.
+ *
+ * `canonicalStructureId` in `anatomy-mapping-neck.ts` is a pure alias lookup: it knows a
+ * retired id maps to a replacement, and it returns anything it does not recognise
+ * UNCHANGED. That is correct for what it is, and it was the whole of the check -- so
+ * `canonicalStructureId('asi:shoulder.this-does-not-exist')` returned the same unknown
+ * string, and the field schemas (`array<string>`, `string`) accepted it. A generic HTTP
+ * mutation could therefore store an id that resolves to no structure at all.
+ *
+ * MCP's `select_structure` did call `getStructure` and refuse, which is exactly why the two
+ * surfaces could disagree: the rule lived in one of them.
+ *
+ * So the rule lives here, beside the ontology that defines what exists, and it is the ONLY
+ * rule:
+ *
+ *   current canonical id  -> accept
+ *   retired id            -> canonicalise, then accept
+ *   neither               -> refuse
+ *
+ * This module is the right home for it because `anatomy-mapping-neck.ts` cannot import it:
+ * `anatomy.ts` owns `getStructure`, and the dependency has to point this way. (The neck
+ * module's only import is type-only, so this introduces no runtime cycle.)
+ */
+
+
+/**
+ * An id that is neither a current structure nor a registered retired alias.
+ *
+ * Typed rather than a bare `Error` so both surfaces can map it to `unknown_structure`
+ * instead of guessing, and so it is never reported as a server fault.
+ */
+export class UnknownStructureError extends Error {
+  readonly structureId: string;
+  readonly canonical: string;
+  constructor(structureId: string, canonical: string) {
+    super(
+      `[anatomy] "${structureId}" is not a structure. ` +
+        `It is neither a current canonical id nor a registered retired alias.`,
+    );
+    this.name = 'UnknownStructureError';
+    this.structureId = structureId;
+    this.canonical = canonical;
+  }
+}
+
+/**
+ * Does the ontology know this id, directly or as a retired alias?
+ *
+ * The single definition of "known". `resolveStructureIdForWrite` decides with it, and MCP
+ * asks it only so it can name every bad id in one refusal instead of the first.
+ */
+export function isKnownStructureId(id: string): boolean {
+  // Resolving first means a retired alias whose canonical target is ALSO missing reads as
+  // unknown, which is what it is: the alias is registered but points at nothing.
+  return getStructure(canonicalStructureId(id)) !== undefined;
+}
+
+/**
+ * Resolve one anatomical identity for storage: retired ids become canonical, and anything
+ * the ontology has never heard of is refused.
+ *
+ * Throws `UnknownStructureError`. This is the only place an anatomical id is admitted.
+ */
+export function resolveStructureIdForWrite(id: string): string {
+  const canonical = canonicalStructureId(id);
+  if (!getStructure(canonical)) throw new UnknownStructureError(id, canonical);
+  return canonical;
+}
+
+/**
+ * Fields whose VALUES are anatomical identities, rather than measurements or prose.
+ *
+ * Everything else in the record is data; these two carry ids, and an id is either one the
+ * ontology knows or it is not.
+ */
+const IDENTITY_FIELD_PATHS: ReadonlySet<string> = new Set([
+  'location.userSelectedStructureIds',
+  'consideredStructures',
+]);
+
+/**
+ * Canonicalise AND verify an identity value on the way in, for every surface.
+ *
+ * ## WHY BOTH HALVES LIVE HERE
+ *
+ * Canonicalisation alone was not a check. It resolved retired ids and passed unknown ones
+ * through, so "canonicalise on write" was satisfied by a value that meant nothing. Refusing
+ * unknown ids in MCP instead left HTTP able to store them. Both halves therefore belong at
+ * the one boundary the write path already passes through, and neither belongs in a client.
+ *
+ * Called BEFORE field-schema validation, so the canonical value is what gets validated and
+ * what gets stored -- validating the caller's spelling would check a value that is never
+ * written.
+ *
+ * @throws UnknownStructureError if an id is neither current nor a registered retired alias.
+ */
+export function canonicalIdentityForWrite(fieldPath: string, value: unknown): unknown {
+  if (!IDENTITY_FIELD_PATHS.has(fieldPath)) return value;
+
+  if (fieldPath === 'location.userSelectedStructureIds') {
+    if (!Array.isArray(value)) return value;
+    /*
+     * Ordered-unique, first occurrence wins, applied AFTER resolution so that a retired
+     * alias and its canonical form collapse to one entry. Resolving first matters: deduping
+     * the raw spellings would leave both `asi:neck.upper-trapezius` and
+     * `asi:shoulder.trapezius-upper` in the list as two points the user made, when they
+     * named one structure twice.
+     */
+    return canonicalStructureIdList(value as string[]).map((id) => resolveStructureIdForWrite(id));
+  }
+
+  // consideredStructures: an array of candidates, each carrying a `structureId`.
+  if (!Array.isArray(value)) return value;
+  return (value as unknown[]).map((candidate) => {
+    if (typeof candidate !== 'object' || candidate === null) return candidate;
+    const entry = candidate as { structureId?: unknown };
+    // A non-string id is left alone for the field schema to reject as a shape error: the
+    // identity rule is about ids, and a value that is not an id is a different complaint.
+    if (typeof entry.structureId !== 'string') return candidate;
+    return { ...entry, structureId: resolveStructureIdForWrite(entry.structureId) };
+  });
 }
 
 export function resolveStructureByPhrase(phrase: string): Structure | undefined {

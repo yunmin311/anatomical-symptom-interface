@@ -244,34 +244,68 @@ export type InvariantViolation = { field: string; reason: string };
  * confirmed fact, or a candidate masquerade as a finding. Called on every
  * write path that persists a value.
  */
+/**
+ * A provenance rule was broken by a WRITE, which makes it a client error, not a crash.
+ *
+ * ## WHY THIS IS A CLASS AND NOT A BARE `Error`
+ *
+ * Every one of these throws was a bare `Error`, and the app only knew how to translate
+ * `FieldPolicyError`. So a client that sent `ai_inference` without a confidence -- which is
+ * a rule the product exists to enforce, refused on purpose -- got back Hono's default
+ * response: HTTP 500 and the body `Internal Server Error`, not even JSON.
+ *
+ * That is the worst possible answer to a rule violation:
+ *
+ *  - **500** says "the server is broken", so a client retries a request that will never
+ *    succeed, and pages someone about a server fault that was actually a bad payload
+ *  - **not JSON** breaks the envelope every other refusal honours, so the one error a
+ *    client most needs to read is the one it cannot parse
+ *  - it hid the rule. The message existed, but no client's error handling could reach it.
+ *
+ * The rule engine was doing its job; the refusal just had no route out.
+ *
+ * Parameter properties (`constructor(readonly x: T)`) are not supported under this
+ * project's strip-only TypeScript mode, so the field is declared explicitly.
+ */
+export class ProvenanceError extends Error {
+  readonly field: string;
+  constructor(message: string, field: string) {
+    super(message);
+    this.name = 'ProvenanceError';
+    this.field = field;
+  }
+}
+
 export function assertProvenance(field: string, p: Provenance): void {
   const allowed = VERIFICATION_ALLOWED[p.sourceType];
   if (!allowed) {
-    throw new Error(`[provenance] ${field}: unknown sourceType "${p.sourceType}"`);
+    throw new ProvenanceError(`[provenance] ${field}: unknown sourceType "${p.sourceType}"`, field);
   }
   if (!allowed.includes(p.verificationStatus)) {
-    throw new Error(
+    throw new ProvenanceError(
       `[provenance] ${field}: sourceType "${p.sourceType}" cannot carry ` +
         `verificationStatus "${p.verificationStatus}". Allowed: ${allowed.join('|')}`,
+      field,
     );
   }
   if (p.sourceType === 'ai_inference' && p.confidence == null) {
-    throw new Error(`[provenance] ${field}: ai_inference requires an explicit confidence`);
+    throw new ProvenanceError(`[provenance] ${field}: ai_inference requires an explicit confidence`, field);
   }
   const evidence = p.evidenceStatus ?? evidenceStatusFor(p.sourceType);
   const evidenceAllowed = EVIDENCE_FOR_SOURCE[p.sourceType];
   if (!evidenceAllowed.includes(evidence)) {
-    throw new Error(
+    throw new ProvenanceError(
       `[provenance] ${field}: sourceType "${p.sourceType}" cannot carry ` +
         `evidenceStatus "${evidence}". Allowed: ${evidenceAllowed.join('|')}`,
+      field,
     );
   }
   // Belt and braces: the two axes must never be allowed to imply each other.
   if (evidence === 'clinician_finding' && p.sourceType !== 'clinician_confirmed' && p.sourceType !== 'external_record') {
-    throw new Error(`[provenance] ${field}: only a clinician or an external record may be a clinician_finding`);
+    throw new ProvenanceError(`[provenance] ${field}: only a clinician or an external record may be a clinician_finding`, field);
   }
   if (evidence === 'ai_candidate' && p.sourceType !== 'ai_inference') {
-    throw new Error(`[provenance] ${field}: only a model may produce an ai_candidate`);
+    throw new ProvenanceError(`[provenance] ${field}: only a model may produce an ai_candidate`, field);
   }
 }
 

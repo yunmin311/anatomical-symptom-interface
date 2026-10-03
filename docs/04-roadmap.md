@@ -22,8 +22,11 @@ located, structured, saveable record?
 - Deterministic pre-visit summary with coverage-aware missingness
 - Personal health map keyed by body region
 - Rule-based red flags, all honestly marked unreviewed, with a release gate
-- 500 unit tests, 38 API smoke checks, and 21 reproducible gates via
-  `scripts/final-gates.sh` — including a strict safety-metadata gate
+- A reproducible gate runner via
+  `scripts/final-gates.sh`, including a strict safety-metadata gate. It reports
+  per-gate PASS / FAIL / SKIP and exits non-zero if anything failed **or** was skipped,
+  so a filtered or tool-less run cannot be mistaken for a clean one. Read the counts from
+  the run; they are deliberately not written down here.
 
 **The milestone test from the plan (§12):** partially demonstrated. A user can go from
 free text to a located record to a doctor-readable summary. **Not yet demonstrated:**
@@ -48,6 +51,22 @@ need real humans.
 ## Phase 1 — Musculoskeletal V1
 
 **Goal:** four regions working properly, with 3D.
+
+**Reached.** Every region has audited, real, licensed 3D geometry on both sides, plus real
+MIDLINE builds for the neck (seven cervical vertebrae) and the lower back (five lumbar
+vertebrae plus the sacrum). The shoulder and knee have no midline geometry in the source and
+the product says so rather than showing a side. The product flow, the spatial health map,
+reopen, answer correction, the HTTP API and the MCP surface are implemented and gated at
+three viewport widths.
+
+**What is NOT reached, and is not an engineering task:**
+
+1. **Clinical review of the safety rules.** `releaseReady` is false and the release profile
+   refuses to start. This blocks a real release and nothing else.
+2. **Usability testing.** Every claim above is an engineering claim, not a product claim.
+3. **Professional 2D medical artwork.** The 2D map is hand-made schematic geometry, marked
+   `placeholder = true` everywhere. Honest to render, wrong to ship as medical content. See
+   `docs/known-limitations.md`.
 
 ### Phase 1A — Core foundation + anatomy workspace · **built, integrated**
 
@@ -106,7 +125,7 @@ reconciled, and in each case the two sides had agreed on different answers:
       create → answer → save → `SIGKILL` → history → reopen → viewer restored →
       next question correct → continue → save → **the same episode id**.
 - [x] **Reopenable gate runner.** `scripts/final-gates.sh` resolves its own repo
-      root, starts and seeds its own servers, runs 21 named gates including
+      root, starts and seeds its own servers, runs every named gate including
       `evidence`, and reports PASS / FAIL / SKIP per gate — exiting non-zero on a
       skip, so a gate that did not run never looks like one that passed.
 - [x] **Renderer, fallbacks, picking and accessibility** at browser level, against
@@ -130,29 +149,47 @@ Phase 1A is infrastructure. Nothing it built is anatomy yet — the viewer still
 shows placeholder volumes, because the asset it needs has not been supplied. This
 phase is that asset, and the semantics around it.
 
-- [ ] **1. The real BodyParts3D shoulder asset.** Obtain
-      `isa_BP3D_4.0_obj_99.zip` and run the existing pipeline. *This is the
-      critical-path item; everything below depends on it.*
-- [ ] **2. Verify the shoulder source mappings against the actual archive.** The
-      mapping table is written against a *description* of BodyParts3D, not the file.
-      Every `meshName` must be checked against the archive before it is trusted.
-- [ ] **3. `left` / `right` / laterality handling.** `laterality` is a canonical
-      field today and means nothing in the renderer. A mesh that is one side must
-      be mirrored, labelled and stored as one side.
-- [ ] **4. Real shoulder anatomy in the viewer**, via the adapter that already
-      exists — no new asset path.
-- [ ] **5. `neck` mapping.**
-- [ ] **6. `lower_back` mapping.**
-- [ ] **7. `knee` mapping.**
-- [ ] **8. Four regions with real anatomy**, which is when Phase 1 is done.
-- [ ] **9. A real spatial health map.** The read model and the presentation mapper
-      exist and are wired; the map still has to become a picture rather than a list
-      of counts.
-- [ ] **10. Episode reopen usability.** The flow works end to end and is tested;
-      whether people can find and use it is unmeasured.
-- [ ] **11. Answer editing semantics.** What happens to derived fields and safety
-      when an earlier answer is changed is undefined. This is a correctness
-      question, not a feature.
+- [x] **1. The real BodyParts3D asset.** `isa_BP3D_4.0_obj_99.zip` obtained, verified by
+      SHA-256, and run through the existing pipeline for all four regions. 82 production GLBs,
+      committed as generated output; the multi-gigabyte archive stays out of the repo.
+- [x] **2. Verify the source mappings against the actual archive.** Every `meshName` was
+      checked against the archive before it was trusted, with `scripts/audit-region.mjs`
+      making that reproducible. The audit changed the plan's central assumption: the `M`
+      suffix is **not** a laterality convention — it holds for 1109 meshes and is violated by
+      655, and in the neck `FJ1573` is LEFT with no suffix while `FJ1595` is RIGHT. Laterality
+      is therefore read from the source concept, never from a filename. The audit also
+      established that the archive contains **no knee ligaments and no bursae at all** —
+      every one of BodyParts3D's 38 "ligament" concepts is an extraocular muscle — so those
+      concepts are reported unavailable rather than substituted.
+- [x] **3. Laterality.** Carried from the source concept through the manifest, the renderer
+      entry and the pick, per side and per structure. Never inferred from a filename, an `M`
+      suffix, an x coordinate or which half of the screen a mesh lands on — BodyParts3D's `M`
+      suffix holds for 1109 meshes and is violated by 655. Asymmetry is reported per side:
+      the neck suboccipital set is six concepts on the left and four on the right, and the
+      right is reported absent rather than mirrored.
+- [x] **4. Real shoulder anatomy in the viewer**, through the adapter that already existed.
+- [x] **5. `neck` mapping.** 5 left / 4 right structures from 18 / 16 source meshes, plus a
+      real MIDLINE build: the seven cervical vertebrae.
+- [x] **6. `lower_back` mapping.** Lumbar spine (five vertebrae, composite) and sacrum
+      midline; iliopsoas and gluteus maximus per side. Plus a real midline build.
+- [x] **7. `knee` mapping.** Patella, popliteus, iliotibial tract, medial gastrocnemius
+      head, popliteal artery. No midline geometry exists in the source, and the product says
+      so rather than showing a side.
+- [x] **8. Four regions with real anatomy.** Built from BodyParts3D 4.0 (CC BY 4.0), audited
+      mesh by mesh against the archive before mapping. 95 production GLBs: 82 bilateral plus
+13 dedicated midline.
+- [x] **9. A real spatial health map.** The health map draws the body, marks every place
+      from the server's read model, and opens a place by the server's `regionRowId` — the
+      client never recomputes place identity, count or episode membership.
+- [ ] **10. Episode reopen usability.** The flow works end to end, is exercised in a
+      browser at three widths, and resumes the SAME episode rather than creating a second
+      record. What is still unmeasured is whether people find it.
+- [x] **11. Answer editing semantics.** Answering an already-answered question REPLACES it,
+      marked `user_edited` by the store from the row rather than from anything the client
+      claims. The answer-derived fields are RECOMPUTED from the whole answer set on every
+      answer write, so a correction actually withdraws what the original recorded — and
+      safety flags that no longer fire are withdrawn with a transcript entry. **What remains:
+      answer HISTORY.** Only the current value is kept; see `docs/known-limitations.md`.
 - [ ] **12. Usability testing.** Does visual localisation beat typing? Measure it.
 
 Carried forward from Phase 1A and still genuinely open:
@@ -261,6 +298,11 @@ These are known and not yet scheduled:
   reader. Not yet verified.
 - **Local-model path.** A genuinely offline orchestrator is a real differentiator for a
   privacy-first health product, not just a fallback.
-- **MCP server.** Expose the record store to a desktop assistant.
+- ~~**MCP server.** Expose the record store to a desktop assistant.~~ **Done.** Ten tools
+  over ASI Core, in `packages/mcp`. It is a CLIENT of the domain, not a second path into it:
+  every write goes through the same `applyMutations` the HTTP route calls, in one
+  transaction. No model is called and no vendor is named, so CI needs no external service.
+  A crossing test proves an episode recorded over MCP is read identically over HTTP, and back.
+  See `docs/mcp.md`.
 - **Import from the vault.** Read past notes and extract episodes. Powerful and
   privacy-sensitive; needs its own consent flow.
