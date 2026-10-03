@@ -31,3 +31,6 @@ assets/anatomy/source/
 Thumbs.db
 .vscode/
 .idea/
+
+# preview runtime state (synthetic demo database)
+preview/.preview-data/

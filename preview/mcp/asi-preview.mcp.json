@@ -1,0 +1,34 @@
+{
+  "$comment": [
+    "MCP client configuration for the ASI preview.",
+    "",
+    "Copy the `mcpServers.asi` entry into your assistant client's MCP config, or run",
+    "`pnpm --filter @asi/mcp start` by hand with the same environment.",
+    "",
+    "WHY THERE IS NO URL HERE. The MCP server is NOT an HTTP client of the preview API. It",
+    "imports ASI Core in-process and opens the same SQLite file, so it is a second surface",
+    "over the same store rather than a remote caller. That is deliberate -- one write path,",
+    "one transaction, no second implementation of the rules -- and it is also why ASI_DB_PATH",
+    "is the only thing that decides which data it sees.",
+    "",
+    "Point it at the preview database while `preview/preview.sh start` is running and it",
+    "reads exactly what the browser is looking at. Point it anywhere else and it silently",
+    "works against a different, empty database, so check /api/health before trusting a result.",
+    "",
+    "SYNTHETIC DATA ONLY. Do not point this at real patient records."
+  ],
+  "mcpServers": {
+    "asi": {
+      "command": "pnpm",
+      "args": ["--filter", "@asi/mcp", "start"],
+      "cwd": "..",
+      "env": {
+        "ASI_DB_PATH": "./preview/.preview-data/preview.sqlite",
+        "ASI_DEPLOY_KIND": "preview",
+        "ASI_RELEASE_PROFILE": "development",
+        "ASI_BUILD_COMMIT": "set-me-to-the-baseline-commit",
+        "ANTHROPIC_API_KEY": ""
+      }
+    }
+  }
+}

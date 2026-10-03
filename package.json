@@ -16,7 +16,11 @@
     "build": "pnpm -r --filter \"./packages/**\" build && pnpm --filter @asi/web build",
     "typecheck": "pnpm -r typecheck",
     "test": "pnpm -r test",
-    "seed": "pnpm --filter @asi/server seed"
+    "seed": "pnpm --filter @asi/server seed",
+    "preview": "bash preview/preview.sh restart",
+    "preview:stop": "bash preview/preview.sh stop",
+    "preview:status": "bash preview/preview.sh status",
+    "preview:verify": "node preview/verify-preview.mjs"
   },
   "devDependencies": {
     "typescript": "^5.9.3"
