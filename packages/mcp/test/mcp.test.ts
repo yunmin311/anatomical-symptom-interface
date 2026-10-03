@@ -412,9 +412,12 @@ describe('capability and history over MCP', () => {
     );
     assert.equal(one.region, 'shoulder');
 
+    // An unknown region is now refused by SCHEMA validation, because `region` is declared
+    // as `BodyRegionSchema`. That is the point of declaring it: the published contract and
+    // the handler now agree, so a client cannot be told "no arguments" and then send one.
     const missing = await callTool('get_anatomy_region', { region: 'pancreas' });
     assert.equal(missing.ok, false);
-    if (!missing.ok) assert.equal(missing.error.code, 'unknown_region');
+    if (!missing.ok) assert.equal(missing.error.code, 'validation_failed');
   });
 
   test('get_region_history is a location history and never a risk map', async () => {

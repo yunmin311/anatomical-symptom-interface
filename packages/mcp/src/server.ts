@@ -23,61 +23,29 @@
  * HTTP route calls, inside the server package, in one transaction. This process is a
  * CLIENT of ASI Core. It is not a second path into the store, and it cannot become one:
  * it has no SQL and no store handle beyond the shared functions.
+ *
+ * ## `tools/list` is a contract, not a summary
+ *
+ * `tools/list` went out through `json-schema.ts`, which is recursive and wrapper-
+ * transparent. It used to read `node._def.typeName` once per field, which published
+ * `string` for `z.object(...).nullish()` and for `z.number().optional()`, and marked
+ * defaulted arguments required. A real client validates against this schema, so each of
+ * those was a way for a correct call to be rejected before it reached the handler.
  */
 import { createInterface } from 'node:readline';
-import { TOOLS, type ToolName, type ToolResult } from './tools.ts';
+import { ZodError } from 'zod';
+import { TOOLS, fromThrown, type ToolName, type ToolResult } from './tools.ts';
+import { inputSchemaFor as inputSchema } from './json-schema.ts';
 
 const PROTOCOL_VERSION = '2025-06-18';
 const SERVER_INFO = { name: 'asi-symptom-interface', version: '1.0.0' };
 
-/** Wire input schema for a tool, derived from its Zod schema. */
+/** Wire input schema for a tool, derived from its Zod schema by a real converter. */
 function inputSchemaFor(tool: (typeof TOOLS)[ToolName]): Record<string, unknown> {
-  const shape =
-    'shape' in tool.inputSchema
-      ? (tool.inputSchema as unknown as { shape: Record<string, unknown> }).shape
-      : {};
-  const properties: Record<string, Record<string, unknown>> = {};
-  const required: string[] = [];
-  for (const [key, raw] of Object.entries(shape)) {
-    // `shape` values are heterogeneous Zod nodes; the only two facts needed here are the
-    // type name and the description, so narrow once rather than casting four times.
-    const def = raw as { description?: string; _def?: { typeName?: string }; defaultValue?: unknown };
-    properties[key] = { type: jsonTypeFor(def._def?.typeName) };
-    if (typeof def.description === 'string') properties[key].description = def.description;
-    // A Zod default means the caller may omit it. Reporting it as required would make a
-    // conforming client fail validation for no reason.
-    if (def.defaultValue === undefined && def._def?.typeName !== 'ZodOptional')
-      required.push(key);
-  }
-  return { type: 'object', properties, ...(required.length ? { required } : {}) };
+  return inputSchema(tool.inputSchema);
 }
 
-/**
- * Zod's internal type name to JSON Schema's type.
- *
- * Reading `_def.typeName` is reaching into an internal. It is done in ONE place, with a
- * fallback, rather than scattered -- and anything unrecognised becomes `string`, which is
- * the conservative choice: a client sending a string for something else is rejected by our
- * Zod validation anyway, so a wrong hint costs a round trip and a wrong "no constraints"
- * hint costs correctness.
- */
-function jsonTypeFor(typeName: string | undefined): string {
-  switch (typeName) {
-    case 'ZodString':
-      return 'string';
-    case 'ZodNumber':
-      return 'number';
-    case 'ZodBoolean':
-      return 'boolean';
-    case 'ZodArray':
-      return 'array';
-    case 'ZodObject':
-      return 'object';
-    default:
-      return 'string';
-  }
-}
-
+/** Every tool, described for `tools/list`. Exported so tests can read the published contract. */
 export function describeTools(): {
   tools: {
     name: string;
@@ -109,12 +77,24 @@ export async function callTool(name: string, args: unknown): Promise<ToolResult>
     const call = tool.handler as (args: unknown) => ToolResult | Promise<ToolResult>;
     return await call(args);
   } catch (e) {
-    // A tool that throws is a bug, not a refusal. Say so, rather than letting the process
-    // die and taking every other tool with it.
-    return {
-      ok: false,
-      error: { code: 'internal_error', message: e instanceof Error ? e.message : String(e) },
-    };
+    /*
+     * A ZodError escaping a handler means the handler parsed with a DIFFERENT schema than
+     * the one it advertises. That is a real bug, but it is a bug about the SHAPE of a
+     * request, so it is reported as a malformed request rather than as a server fault.
+     */
+    if (e instanceof ZodError)
+      return {
+        ok: false,
+        error: {
+          code: 'validation_failed',
+          message: 'The tool input did not match the tool schema.',
+          detail: e.issues.map((i) => ({ path: i.path.join('.'), message: i.message })),
+        },
+      };
+    // Everything else is classified in ONE place, shared with the inner write-path net, so
+    // a refusal cannot be `field_policy_violation` on one path and `internal_error` on the
+    // other depending on how deep it was raised.
+    return fromThrown(e);
   }
 }
 
