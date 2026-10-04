@@ -113,7 +113,13 @@ cleanup() {
   # The scratch DATABASE is always deleted: it is health-shaped data and it is in
   # a temp dir. The evidence logs are kept when something failed, because "the
   # a11y gate failed" with no output is a report nobody can act on.
-  if [ "$code" -ne 0 ] || [ "$fails" -gt 0 ] || [ "${#SKIPPED[@]}" -gt 0 ]; then
+  #
+  # ASI_GATE_KEEP=1 keeps them on a CLEAN run too. Without it there is no way to
+  # read a passing gate's own output, which is what `scripts/gate-debug.sh` is
+  # for — it copies the logs out afterwards, and on a clean run this line had
+  # already removed the directory it was copying from, so the tool silently did
+  # nothing exactly when everything was fine.
+  if [ "$code" -ne 0 ] || [ "$fails" -gt 0 ] || [ "${#SKIPPED[@]}" -gt 0 ] || [ "${ASI_GATE_KEEP:-0}" = "1" ]; then
     echo
     echo "gate output kept in: $EVIDENCE"
   else
