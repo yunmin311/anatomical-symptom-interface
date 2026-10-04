@@ -207,7 +207,6 @@ try {
       if (await page.getByRole('button', { name: 'Show me the body map' }).isVisible())
         await page.getByRole('button', { name: 'Show me the body map' }).click();
       await page.locator('.location-workbench').waitFor();
-      await page.getByRole('button', { name: 'Side & depth', exact: true }).click();
       const both = page.getByLabel('Both sides', { exact: true });
       await both.waitFor({ timeout: 10_000 });
       await both.check();
@@ -366,7 +365,6 @@ try {
         if (await pageRef.getByRole('button', { name: 'Show me the body map' }).isVisible())
           await pageRef.getByRole('button', { name: 'Show me the body map' }).click();
         await pageRef.locator('.location-workbench').waitFor();
-        await pageRef.getByRole('button', { name: 'Side & depth', exact: true }).click();
         await pageRef.getByLabel('Left', { exact: true }).check();
         await pageRef.getByRole('button', { name: 'Area & pin', exact: true }).click();
         // The area buttons are the region's OWN sub-regions, so the class is the selector

@@ -1,5 +1,5 @@
 import { INTERVIEW } from "@asi/shared";
-import type { PreVisitSummary } from "@asi/shared";
+import type { Depth, PreVisitSummary, Side } from "@asi/shared";
 
 /**
  * Render a stored record value without collapsing uncertainty into missing
@@ -15,6 +15,59 @@ export function readable(value: string | null | undefined): string {
   if (value === "unknown") return "Not established — user is not sure";
   if (!value) return "Not asked";
   return value.replaceAll("_", " ");
+}
+
+/**
+ * A side as a person would say it.
+ *
+ * `readable` deliberately returns the raw token with its underscores replaced,
+ * because it is also the renderer for arbitrary stored values and its contract is
+ * tested. That is right for a value in a table and wrong for a side in a sentence:
+ * "right · deep" is domain vocabulary leaking into user-facing type, and it was
+ * doing so on the interview sidebar and in the pre-save location table.
+ *
+ * `unknown` becomes "not established" rather than "not sure", because this is a
+ * report of the record's state; "Not sure" is the answer the user gives, and the
+ * two must not blur.
+ */
+export function sidePhrase(side: Side | string): string {
+  if (side === "unknown") return "Side not established";
+  if (side === "midline") return "Centre line";
+  if (side === "bilateral") return "Both sides";
+  if (side === "left") return "Left";
+  if (side === "right") return "Right";
+  return readable(side);
+}
+
+/**
+ * A depth as a person would say it.
+ *
+ * Depth is how a feeling reads, never a tissue, so none of these name one. "Deep"
+ * becoming "Deep inside" is the label the control itself uses; keeping the two in
+ * step is what stops the orientation bar and the button from disagreeing.
+ */
+export function depthPhrase(depth: Depth | string): string {
+  if (depth === "unknown") return "Depth not established";
+  if (depth === "superficial") return "Near the surface";
+  if (depth === "intermediate") return "In between";
+  if (depth === "deep") return "Deep inside";
+  return readable(depth);
+}
+
+/**
+ * An episode status in words.
+ *
+ * `open` and `resolved` are storage values. Rendering them raw puts a database
+ * enum in the same visual weight as the date and the side, which is how a user
+ * ends up reading "resolved" as a clinical conclusion rather than as the state of
+ * their own record.
+ */
+export function statusPhrase(status: string): string {
+  if (status === "open") return "Still open";
+  if (status === "ongoing") return "Ongoing";
+  if (status === "resolved") return "Marked resolved";
+  if (status === "archived") return "Archived";
+  return readable(status);
 }
 
 export function formatDate(value: string): string {
@@ -95,7 +148,7 @@ export function answerSections(
   record: import("@asi/shared").SymptomRecord,
   answers: import("@asi/shared").AnswerMap,
 ) {
-  const groups = new Map<string, { label: string; value: string }[]>();
+  const groups = new Map<string, { label: string; value: string; asked: boolean }[]>();
   for (const question of INTERVIEW[record.location.region]) {
       const title = sectionTitleFor(question.field, question.safetyRuleId);
     const answer = answers[question.id];
@@ -119,7 +172,12 @@ export function answerSections(
             .join(", ");
     groups.set(title, [
       ...(groups.get(title) || []),
-      { label: question.prompt, value },
+      // `asked` travels with the row so the review can show what the user
+      // actually answered FIRST and keep the never-asked ones together under a
+      // disclosure. Eight consecutive "Not asked" rows is accurate and
+      // unscannable; an accurate and scannable list is the goal, and the value
+      // itself is unchanged either way.
+      { label: question.prompt, value, asked: answer !== undefined },
     ]);
   }
   return [...groups].map(([title, rows]) => ({ title, rows }));

@@ -9,6 +9,7 @@ import { HistoryPanel } from "./ui/HistoryPanel.tsx";
 import { PageHeading, EmptyState } from "./ui/primitives.tsx";
 import { useSession } from "./state/session.ts";
 import type { Stage } from "./state/session.ts";
+import { depthPhrase, sidePhrase } from "./ui/presentation.ts";
 
 const TITLES: Record<Stage, string> = {
   describe: "What are you feeling?",
@@ -234,14 +235,40 @@ export function App() {
         {stage === "locate" && <BodyMap />}
         {stage === "interview" && (
           <div className="experience-layout">
-            <aside className="experience-context">
+            {/*
+              What you already told us, in words. It used to read
+              `Shoulder · right · deep` — raw enum values from the record, in the
+              same weight as the user's own words. `right` and `deep` are storage
+              vocabulary; on a phone this collapsed to three unlabelled lines
+              where nothing said which fact was the location.
+            */}
+            <aside className="experience-context" aria-label="What you have told us so far">
+              <span className="eyebrow">What you have told us so far</span>
               <BodyIndex active={record.location.region} />
               <blockquote>{record.location.userPhrase}</blockquote>
-              <p className="small">
-                {REGIONS[record.location.region].label} · {record.location.side}{" "}
-                · {record.location.depth}
-              </p>
-              <button className="link" onClick={() => setStage("locate")}>
+              <dl className="location-receipt">
+                <div>
+                  <dt>Area</dt>
+                  <dd>{REGIONS[record.location.region].label}</dd>
+                </div>
+                <div>
+                  <dt>Side</dt>
+                  <dd>{sidePhrase(record.location.side)}</dd>
+                </div>
+                <div>
+                  <dt>Depth</dt>
+                  <dd>{depthPhrase(record.location.depth)}</dd>
+                </div>
+              </dl>
+              {/*
+                A button, not a bare link. Returning to the map is a normal step
+                in describing something, not an escape hatch, and it was styled
+                identically to every other link in the app.
+              */}
+              <button
+                className="btn btn--quiet"
+                onClick={() => setStage("locate")}
+              >
                 Adjust location
               </button>
             </aside>

@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 import { getStructure, REGIONS, TISSUE_LAYER_ORDER } from '@asi/shared';
-import type { TissueLayer } from '@asi/shared';
+import type { Depth, Side, TissueLayer } from '@asi/shared';
 import { anatomy, useSession } from '../state/session.ts';
 import { intentFromPick, reducePickToDraft } from './pick-intent.ts';
 import type { MapPoint, PickResult } from './types.ts';
@@ -16,11 +16,12 @@ import {
   zonesForRegionView,
 } from './svg-geometry.ts';
 import { REGION_DEFAULT_VIEW, VIEW_LABEL } from './svg2d.ts';
+import { sidePhrase } from '../ui/presentation.ts';
 import { Body3d } from './Body3d.tsx';
 import type { ViewName } from './types.ts';
 import { ChoiceGroup } from '../ui/primitives.tsx';
 
-type Inspector = 'area' | 'feeling' | 'structures';
+type Inspector = 'area' | 'structures';
 type Surface = '3d' | '2d';
 
 const VIEW_OPTIONS: { value: ViewName; label: string }[] = [
@@ -29,6 +30,48 @@ const VIEW_OPTIONS: { value: ViewName; label: string }[] = [
   { value: 'lateral_left', label: 'Left side' },
   { value: 'lateral_right', label: 'Right side' },
 ];
+
+/**
+ * The felt words the roadmap asks the depth interaction to support.
+ *
+ * "Near the surface", "in between", "deep inside" and "not sure" are chosen
+ * because they are things a person says, not because they name tissue. The
+ * domain enum has exactly these four values and this UI must not invent a fifth:
+ * a `depthQualifier` would let it say "not the skin", and that is a domain
+ * change, requested in docs/design/v1-product-audit.md rather than invented here.
+ */
+const DEPTH_OPTIONS: { value: Depth; label: string; hint: string }[] = [
+  { value: 'superficial', label: 'Near the surface', hint: 'Close to the skin.' },
+  { value: 'intermediate', label: 'In between', hint: 'Neither near the skin nor deep inside.' },
+  { value: 'deep', label: 'Deep inside', hint: 'Well below the surface.' },
+  { value: 'unknown', label: 'Not sure', hint: 'You could say either way.' },
+];
+
+const SIDE_OPTIONS: { value: Side; label: string }[] = [
+  { value: 'left', label: 'Left' },
+  { value: 'right', label: 'Right' },
+  { value: 'midline', label: 'Centre' },
+  { value: 'bilateral', label: 'Both sides' },
+  { value: 'unknown', label: 'Not sure' },
+];
+
+/**
+ * What each depth actually shows, in words a person would use.
+ *
+ * The old UI listed raw tissue names — "muscle, tendon, ligament, joint, bone" —
+ * which reads as an anatomical claim the product has not made and cannot make
+ * from a feeling. These are descriptions of the SLICE, not of what is involved.
+ *
+ * Keyed by `Depth` rather than by `string` on purpose: a `Record<string, string>`
+ * compiles just as happily with a key the enum does not have, and the missing
+ * entry would render as `undefined` in front of a user.
+ */
+const DEPTH_EFFECT: Record<Depth, string> = {
+  superficial: 'the outermost layers are shown',
+  intermediate: 'the middle layers are shown',
+  deep: 'the deeper layers are shown',
+  unknown: 'every layer is shown, because no depth has been established',
+};
 
 /**
  * 3D is offered on wide viewports only. A phone gets the 2D map by default: it
@@ -59,7 +102,19 @@ export function BodyMap() {
   const location = record.location;
   const region = REGIONS[location.region];
   const [view, setView] = useState<ViewName>(REGION_DEFAULT_VIEW[location.region]);
-  const [pendingSub, setPendingSub] = useState<string | null>(null);
+  /*
+    Seeded from the RECORD, not from null.
+    
+    The pending area used to start empty on every mount, so returning to Locate
+    after choosing an area showed the recorded area on the map while leaving
+    every sub-region button unpressed, the receipt reading "No area chosen yet",
+    and the primary action disabled. The user had to re-choose an area they had
+    already chosen just to get back to where they were. The record is the
+    authority on where they were; the draft starts from it.
+  */
+  const [pendingSub, setPendingSub] = useState<string | null>(
+    location.subRegionId ?? null,
+  );
   const [pendingPoint, setPendingPoint] = useState<MapPoint | null>(location.point ?? null);
   const [inspector, setInspector] = useState<Inspector>('area');
   const [layer, setLayer] = useState('all');
@@ -90,6 +145,8 @@ export function BodyMap() {
     ),
   ];
   const chosen = region.subRegions.find((s) => s.id === pendingSub);
+  /** The area already committed to the record, which is not the same as a draft. */
+  const recorded = region.subRegions.find((s) => s.id === location.subRegionId);
 
   /** Sub-region ids that have a tool suggestion, for the candidate highlight. */
   const subRegionsWithCandidate = new Set(
@@ -157,11 +214,9 @@ export function BodyMap() {
    * "location indication, not a clinical finding".
    */
   function handlePick(hit: PickResult) {
-    // The RECORD's sub-region, not the draft: the "keep" rule is about what the user
-    // has already told us, and a draft they have not committed is not that.
     // The RECORD's sub-region and side, so a pick that contradicts a side the user
-  // already confirmed is refused rather than applied. See pickSideAgreement.
-  const intent = intentFromPick(hit, location.subRegionId ?? null, location.side);
+    // already confirmed is refused rather than applied. See pickSideAgreement.
+    const intent = intentFromPick(hit, location.subRegionId ?? null, location.side);
     const effect = reducePickToDraft(
       intent,
       { subRegionId: pendingSub, point: pendingPoint },
@@ -191,13 +246,31 @@ export function BodyMap() {
 
   return (
     <section className="location-workbench" aria-label="Anatomical workspace">
-      <div className="location-context">
-        <div>
-          <span className="eyebrow">Suggested starting area</span>
-          <h2>{region.label}</h2>
+      {/*
+        ORIENTATION. The region is the answer to "what part of the body am I
+        looking at", so it is the largest text on this screen — which it was not,
+        while the page heading outranked it by a wide margin.
+      */}
+      <div className="orientation">
+        <div className="orientation__where">
+          <span className="eyebrow">
+            {recorded ? 'Your recorded location' : 'Suggested starting area'}
+          </span>
+          <h2 className="orientation__region">{region.label}</h2>
+          <p className="orientation__state">
+            <span>{sidePhrase(location.side)}</span>
+            <span aria-hidden="true"> · </span>
+            <span>
+              {location.depth === 'unknown'
+                ? 'Depth not established'
+                : DEPTH_OPTIONS.find((d) => d.value === location.depth)?.label}
+            </span>
+            <span aria-hidden="true"> · </span>
+            <span>{VIEW_LABEL[view]}</span>
+          </p>
         </div>
-        <blockquote>{location.userPhrase}</blockquote>
-        <div className="location-source">
+        <blockquote className="orientation__words">{location.userPhrase}</blockquote>
+        <div className="orientation__source">
           <span className="small">
             {orchestratorKind === 'model'
               ? 'Model suggestion'
@@ -209,6 +282,19 @@ export function BodyMap() {
           </button>
         </div>
       </div>
+
+      {/*
+        The bench grid opens HERE rather than after the controls, so side and
+        depth become a rail column instead of a full-width band above the map.
+
+        That band was 266px tall on a desktop and 446px on a phone, which put
+        every zone except the shoulder below the fold: at 1440x1000 the knee sat
+        at y=1136 and at 375x812 nothing was reachable at all. The map is the
+        instrument this screen exists for, and it was the only thing you could
+        not see. In the rail it is always on screen, never scrolled to, and it
+        still reads left-to-right as "what you are looking at" then "what you
+        can change about it".
+      */}
       <div className="location-workbench__grid">
         <div className={`viewer-panel${showThreeD ? ' viewer-panel--3d' : ''}`}>
           <div className="viewer-toolbar">
@@ -236,23 +322,31 @@ export function BodyMap() {
                 }}
               />
             </div>
-            <span className="small viewer-toolbar__label">
-              {showThreeD ? '3D · fixture volumes' : 'Schematic / 2D'}
-            </span>
+            {/*
+              The mode label is the second most important fact on this screen, so
+              it is a real element with real weight — not a caption that happened
+              to be there.
+
+              It used to read "3D · fixture volumes" above real CC-BY BodyParts3D
+              geometry. That was not a stale label, it was a false statement: it
+              told the user the anatomy they were looking at was placeholder,
+              which is the one thing the product's strongest asset is not.
+            */}
+            <p className="viewer-toolbar__label" data-testid="surface-label">
+              {showThreeD ? 'Real 3D anatomy' : 'Schematic 2D map'}
+            </p>
           </div>
           <div className="viewer-canvas">
-            {/* On the 3D surface the caption would sit on top of the canvas and
-                repeat what the toolbar and inspector already say. */}
             <div className="viewer-caption" hidden={showThreeD}>
-              <span className="eyebrow">Location study</span>
+              <span className="eyebrow">Schematic</span>
               <strong>{region.label}</strong>
               <span>{VIEW_LABEL[view]}</span>
             </div>
-<Body3d
-            active={surface === '3d'}
-            side={location.side}
-            region={location.region}
-            onPick={handlePick}
+            <Body3d
+              active={surface === '3d'}
+              side={location.side}
+              region={location.region}
+              onPick={handlePick}
               onStatus={(next) => {
                 setThreeDReady(next.mode === '3d');
                 // Only a real failure moves the toolbar. The workspace emits a
@@ -304,13 +398,9 @@ export function BodyMap() {
                         d={d}
                         data-testid={`zone-${zone.subRegionId}`}
                         className={`bodymap__zone-shape${
-                          isPending
-                            ? ' is-active'
-                            : isRecorded
-                              ? ' is-recorded'
-                              : hasCandidate
-                                ? ' has-candidate'
-                                : ''
+                          isPending ? ' is-active' : ''
+                        }${isRecorded ? ' is-recorded' : ''}${
+                          !isPending && !isRecorded && hasCandidate ? ' has-candidate' : ''
                         }`}
                       />
                     </g>
@@ -327,47 +417,124 @@ export function BodyMap() {
                 </g>
               )}
             </svg>
+            {/*
+              Surface-specific, and VISIBLE. This was hidden exactly when 3D was
+              up — the one surface where a tap on real geometry is how a structure
+              is chosen, and where there is no zone to tap near.
+            */}
             <span className="canvas-instruction">
-              Tap near an area, or use the buttons.
-              <br />
-              A pin marks an approximate point.
+              {showThreeD
+                ? 'Tap a structure to indicate where you mean. The area buttons below always work.'
+                : 'Tap near an area, or use the buttons. A pin marks an approximate point.'}
             </span>
           </div>
           <p className="sr-only" role="status">
             {announced}
           </p>
           <div className="viewer-foot">
-            <ul className="map-legend" aria-label="Map legend">
-              <li>
-                <span className="legend-mark legend-mark--candidate" />
-                Suggested
-              </li>
-              <li>
-                <span className="legend-mark legend-mark--selected" />
-                Your area
-              </li>
-              <li>
-                <span className="legend-mark legend-mark--recorded" />
-                Saved
-              </li>
-              <li>
-                <span aria-hidden="true">＋</span>Pin
-              </li>
-            </ul>
-            <p className="small">
-              {location.side === 'unknown'
-                ? 'Side not set — the drawing shows one side and mirrors when you choose.'
-                : `Showing your ${location.side} side.`}{' '}
-              Schematic only: it does not show tissue.
+            {/*
+              The legend describes the 2D map's marks. Above a 3D viewer it was
+              describing marks that are not on screen, so it is 2D-only now.
+            */}
+            {!showThreeD && (
+              <ul className="map-legend" aria-label="Map legend">
+                <li>
+                  <span className="legend-mark legend-mark--candidate" />
+                  Suggested
+                </li>
+                <li>
+                  <span className="legend-mark legend-mark--selected" />
+                  Your area
+                </li>
+                <li>
+                  <span className="legend-mark legend-mark--recorded" />
+                  Saved
+                </li>
+                <li>
+                  <span aria-hidden="true">＋</span>Pin
+                </li>
+              </ul>
+            )}
+            {/*
+              Surface-specific truth, and it no longer repeats the side — the
+              orientation bar above already states it, and three copies of one
+              fact at three sizes is how the fact stops being an answer.
+
+              The old line said "Schematic only: it does not show tissue" on BOTH
+              surfaces, including above a real 3D viewer that was showing tissue.
+              That contradicted the attribution panel three inches to its right
+              and told the user the product's real anatomy was a placeholder.
+            */}
+            <p className="small viewer-foot__truth" data-testid="surface-truth">
+              {showThreeD ? (
+                <>
+                  Real anatomy geometry, shown for orientation. Indicating a
+                  structure says where you mean — never what is involved.
+                </>
+              ) : (
+                <>
+                  A schematic. It locates an area; it does not show tissue.
+                </>
+              )}
             </p>
           </div>
         </div>
-        <aside className="location-inspector" aria-label="Location controls">
+        {/*
+          SIDE AND DEPTH, always visible, and after the map in the DOM so the
+          reading order matches the visual one: what you are looking at, then
+          what you can change about it.
+
+          They used to live behind a "Side & depth" inspector tab, which is a
+          third-level control for two of the four facts a screen like this has to
+          be able to answer at a glance. They are on an anatomical scale — one
+          dimension, not two unrelated settings — so they read as one scale here.
+
+          Depth's consequence is stated in words rather than as a list of tissue
+          names. "muscle, tendon, ligament, bone" reads as an anatomical claim; the
+          user reported a feeling and the viewer is showing a slice.
+        */}
+        <div className="location-controls">
+          <ChoiceGroup
+            label="Which side"
+            value={location.side}
+            options={SIDE_OPTIONS}
+            onChange={(next) => {
+              setSide(next);
+              setAnnounced(`Side set to ${sidePhrase(next).toLowerCase()}`);
+            }}
+          />
+          <ChoiceGroup
+            label="How deep does it feel"
+            value={location.depth}
+            options={DEPTH_OPTIONS.map(({ value, label }) => ({ value, label }))}
+            onChange={(next) => {
+              setDepth(next);
+              setAnnounced(
+                next === 'unknown'
+                  ? 'Depth not established, so every layer is shown'
+                  : `Depth set: ${DEPTH_OPTIONS.find((d) => d.value === next)?.hint}`,
+              );
+            }}
+          />
+          <p className="location-controls__effect" data-testid="depth-effect">
+            <span className="eyebrow">What that shows you</span>
+            {DEPTH_EFFECT[location.depth]}. Depth is how the feeling reads, not a
+            tissue — it changes what you can see, never what the record claims is
+            involved.
+          </p>
+          <ul className="location-controls__layers" aria-label="Layers currently shown">
+            {TISSUE_LAYER_ORDER.filter((l) => visibleLayers.includes(l)).map((l) => (
+              <li key={l} data-testid={`visible-layer-${l}`}>
+                {l}
+              </li>
+            ))}
+          </ul>
+        </div>
+        <aside className="location-inspector" aria-label="Location tools">
           <div className="inspector-switch" role="group" aria-label="Location tools">
             {(
               [
                 ['area', 'Area & pin'],
-                ['feeling', 'Side & depth'],
                 ['structures', 'Structures'],
               ] as const
             ).map(([id, label]) => (
@@ -379,24 +546,35 @@ export function BodyMap() {
           <div className="inspector-body">
             {inspector === 'area' && (
               <section>
-                <span className="eyebrow">Your approximate location</span>
-                <h3>Where do you mean?</h3>
-                <p className="small">Choose on the schematic or use a location below.</p>
+                <span className="eyebrow">Where do you mean?</span>
+                <h3>Choose an area</h3>
+                {recorded && (
+                  <p className="recorded-note" data-testid="recorded-area">
+                    Recorded on this episode: <strong>{recorded.label}</strong>
+                  </p>
+                )}
                 <div className="subregion-options">
                   {region.subRegions.map((sub) => {
                     const drawable = zonesForRegionView(location.region, view).some(
                       (z) => z.subRegionId === sub.id,
                     );
+                    const isRecorded = location.subRegionId === sub.id;
                     return (
                       <button
                         key={sub.id}
-                        className="subregion-option"
+                        className={`subregion-option${isRecorded ? ' is-recorded' : ''}`}
                         aria-pressed={pendingSub === sub.id}
                         onClick={() => chooseSub(sub.id)}
                       >
                         <span>{sub.label}</span>
                         <span className="subregion-option__hint">
-                          {pendingSub === sub.id ? '✓' : drawable ? 'on this view' : '↗'}
+                          {isRecorded
+                            ? '✓ recorded'
+                            : pendingSub === sub.id
+                              ? '✓ chosen'
+                              : drawable
+                                ? 'on this view'
+                                : '↗'}
                         </span>
                       </button>
                     );
@@ -439,65 +617,12 @@ export function BodyMap() {
                 </details>
               </section>
             )}
-            {inspector === 'feeling' && (
-              <section>
-                <span className="eyebrow">Your spatial description</span>
-                <h3>Side and depth</h3>
-                <p className="small">
-                  These describe what you feel; they do not identify tissue.
-                </p>
-                <ChoiceGroup
-                  label="Your side"
-                  value={location.side}
-                  options={[
-                    { value: 'left', label: 'Left' },
-                    { value: 'right', label: 'Right' },
-                    { value: 'midline', label: 'Centre' },
-                    { value: 'bilateral', label: 'Both sides' },
-                    { value: 'unknown', label: 'Not sure' },
-                  ]}
-                  onChange={setSide}
-                />
-                <ChoiceGroup
-                  label="Where does it feel?"
-                  value={location.depth}
-                  options={[
-                    { value: 'superficial', label: 'Near the surface' },
-                    { value: 'intermediate', label: 'In between' },
-                    { value: 'deep', label: 'Deep inside' },
-                    { value: 'unknown', label: 'Not sure' },
-                  ]}
-                  onChange={setDepth}
-                />
-                {/*
-                  Depth is wired to the viewer: it decides which layers the map
-                  and the 3D viewer are showing. It is a report of how deep
-                  something FEELS, so it only ever changes visibility and never
-                  names a tissue.
-                */}
-                <div className="depth-layers">
-                  <span className="eyebrow">Shown in the viewer</span>
-                  <ul>
-                    {TISSUE_LAYER_ORDER.filter((l) => visibleLayers.includes(l)).map((l) => (
-                      <li key={l} data-testid={`visible-layer-${l}`}>
-                        {l}
-                      </li>
-                    ))}
-                  </ul>
-                  <p className="small">
-                    {location.depth === 'unknown'
-                      ? 'Depth not established, so every layer is shown.'
-                      : 'Visibility only. Nothing here says which tissue is involved.'}
-                  </p>
-                </div>
-              </section>
-            )}
             {inspector === 'structures' && (
               <section>
                 <span className="eyebrow">Optional detail</span>
                 <h3>Structure suggestions</h3>
                 <p className="small">
-                  Selecting a structure indicates where you mean. It is not a finding.
+                  Indicating a structure says where you mean. It is not a finding.
                 </p>
                 {candidateLayers.length > 0 && (
                   <label className="layer-filter">
@@ -533,42 +658,61 @@ export function BodyMap() {
                             isSelected ? ' candidate-item--selected' : ''
                           }${isRejected ? ' candidate-item--rejected' : ''}`}
                         >
-                          <span className="small">
+                          {/*
+                            The origin label is the whole point of this list, so it
+                            comes FIRST and is a real state, not a prefix buried
+                            above the title.
+                          */}
+                          <span
+                            className={`candidate-item__origin${
+                              isSelected ? ' is-selected' : isRejected ? ' is-rejected' : ''
+                            }`}
+                          >
                             {isSelected
-                              ? '✓ Your visual selection'
+                              ? '✓ You indicated this'
                               : isRejected
                                 ? '✕ Not this one'
-                                : '◇ Tool suggestion · not selected'}
+                                : '◇ Tool suggestion · not indicated yet'}
                           </span>
                           <h4>{structure.layTerm || structure.label}</h4>
                           {structure.layTerm && <p className="small">{structure.label}</p>}
                           {isRejected ? (
                             <button
                               className="link"
-                              onClick={() => anatomy.apply({ type: 'clearReject', structureIds: [c.structureId] })}
+                              onClick={() =>
+                                anatomy.apply({ type: 'clearReject', structureIds: [c.structureId] })
+                              }
                             >
                               Bring this suggestion back
                             </button>
                           ) : (
-                            <button
-                              className="link"
-                              aria-pressed={isSelected}
-                              onClick={() =>
-                                isSelected ? deselect(c.structureId) : select(c.structureId)
-                              }
-                            >
-                              {isSelected
-                                ? 'Remove visual selection'
-                                : 'Indicate this structure'}
-                            </button>
-                          )}
-                          {!isSelected && !isRejected && (
-                            <button
-                              className="link link--quiet"
-                              onClick={() => reject(c.structureId)}
-                            >
-                              Not this one
-                            </button>
+                            /*
+                              These two were adjacent links with nothing between
+                              them and read as one string — "Indicate this
+                              structureNot this one" — in the screenshot at every
+                              width. They are now a real action row.
+                            */
+                            <div className="candidate-item__actions">
+                              <button
+                                className="btn btn--small"
+                                aria-pressed={isSelected}
+                                onClick={() =>
+                                  isSelected ? deselect(c.structureId) : select(c.structureId)
+                                }
+                              >
+                                {isSelected
+                                  ? 'Remove visual selection'
+                                  : 'Indicate this structure'}
+                              </button>
+                              {!isSelected && (
+                                <button
+                                  className="link link--quiet"
+                                  onClick={() => reject(c.structureId)}
+                                >
+                                  Not this one
+                                </button>
+                              )}
+                            </div>
                           )}
                         </li>
                       );
@@ -577,27 +721,14 @@ export function BodyMap() {
               </section>
             )}
           </div>
-          <div className="inspector-receipt">
-            <span className="eyebrow">Current description</span>
-            <p>
-              {location.side === 'unknown' ? 'Side not established' : location.side} ·{' '}
-              {location.depth === 'unknown' ? 'depth not established' : location.depth}
-            </p>
-            <p className="small" data-testid="selection-receipt">
-              {pendingSub
-                ? `${region.subRegions.find((s) => s.id === pendingSub)?.label ?? pendingSub}`
-                : 'No area chosen yet'}{' '}
-              · {selected.length} visual structure selection
-              {selected.length === 1 ? '' : 's'} · {pendingPoint ? 'pin placed' : 'no pin'}
-            </p>
-          </div>
         </aside>
       </div>
+      {/*
+        The primary action and the reason it is unavailable, TOGETHER. They were
+        900px apart: the status bottom-left, the button bottom-right, and a third
+        statement of the same fact in muted grey inside the inspector.
+      */}
       <div className="location-footer">
-        <div role="status">
-          <strong>{chosen ? `✓ ${chosen.label}` : 'Choose an approximate location'}</strong>
-          <span className="small">Location indication, not a clinical finding.</span>
-        </div>
         <button
           className="btn btn--primary"
           disabled={!pendingSub}
@@ -609,7 +740,35 @@ export function BodyMap() {
         >
           Use this location &amp; continue <span aria-hidden="true">→</span>
         </button>
+        <div role="status" className="location-footer__why">
+          {chosen ? (
+            <p>
+              <strong>✓ {chosen.label}</strong>
+              <span className="small">
+                {selected.length > 0
+                  ? ` · ${selected.length} structure${selected.length === 1 ? '' : 's'} indicated`
+                  : ' · no structure indicated yet'}
+                {pendingPoint ? ' · pin placed' : ''}
+              </span>
+            </p>
+          ) : (
+            <p>
+              <strong>Choose an approximate area to continue</strong>
+              <span className="small">
+                {selected.length > 0
+                  ? `${selected.length} structure${selected.length === 1 ? '' : 's'} indicated, waiting on an area.`
+                  : 'Use the buttons, or tap near an area.'}
+              </span>
+            </p>
+          )}
+          <span className="small">A location indication, not a clinical finding.</span>
+        </div>
       </div>
+      <p className="sr-only" data-testid="selection-receipt">
+        {pendingSub
+          ? `${region.subRegions.find((s) => s.id === pendingSub)?.label ?? pendingSub} · ${selected.length} visual structure selection${selected.length === 1 ? '' : 's'} · ${pendingPoint ? 'pin placed' : 'no pin'}`
+          : `No area chosen yet · ${selected.length} visual structure selection${selected.length === 1 ? '' : 's'} · ${pendingPoint ? 'pin placed' : 'no pin'}`}
+      </p>
     </section>
   );
 }

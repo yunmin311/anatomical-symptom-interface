@@ -10,8 +10,9 @@ import { FactList } from './primitives.tsx';
 import {
   answersInSection,
   answerSections,
+  depthPhrase,
   groupSummaryRows,
-  readable,
+  sidePhrase,
 } from './presentation.ts';
 
 /** The prompt for a question id, or the id itself if it is no longer in the engine. */
@@ -92,8 +93,8 @@ export function RecordDetails({
                       (s) => s.id === record.location.subRegionId,
                     )?.label || 'Not established',
                 },
-                { label: 'Side', value: readable(record.location.side) },
-                { label: 'Depth', value: readable(record.location.depth) },
+                { label: 'Side', value: sidePhrase(record.location.side) },
+                { label: 'Depth', value: depthPhrase(record.location.depth) },
                 {
                   label: 'Pin',
                   value: record.location.point
@@ -109,6 +110,8 @@ export function RecordDetails({
           </p>
           {answerSections(record, answers || {}).map((section) => {
             const sectionAnswers = answersInSection(record, answers || {}, section.title);
+            const asked = section.rows.filter((row) => row.asked);
+            const neverAsked = section.rows.filter((row) => !row.asked);
             return (
             <section className="record-section" key={section.title}>
               <h3>{section.title}</h3>
@@ -119,28 +122,68 @@ export function RecordDetails({
                   </blockquote>
                 ))
               ) : (
-                <FactList rows={section.rows} />
+                <>
+                  {/*
+                    What the user answered, first and flat. Then the questions
+                    that were never put to them, in one labelled disclosure
+                    instead of eight consecutive `Not asked` rows running down the
+                    page. Nothing is dropped and no value changes: the audit called
+                    this screen "truthful and unscannable", and both halves of that
+                    were true at once.
+                  */}
+                  {asked.length > 0 && <FactList rows={asked} />}
+                  {neverAsked.length > 0 && (
+                    <details className="not-asked">
+                      <summary>
+                        {neverAsked.length} question
+                        {neverAsked.length === 1 ? '' : 's'} not asked
+                      </summary>
+                      <p className="small">
+                        Never put to you, so nothing was recorded. Not the same as
+                        an answer of “no”.
+                      </p>
+                      <FactList rows={neverAsked} />
+                    </details>
+                  )}
+                </>
               )}
               {onEditAnswer && sectionAnswers.length > 0 && (
-                <ul className="answer-edits">
-                  {sectionAnswers.map((a) => (
-                    <li key={a.questionId}>
-                      <button
-                        className="link"
-                        data-testid={`edit-answer-${a.questionId}`}
-                        onClick={() => onEditAnswer(a.questionId)}
-                      >
-                        Change: {questionLabel(a.questionId)}
-                      </button>
-                      {a.provenance.sourceType === 'user_edited' && (
-                        <span className="muted small">
-                          {' '}
-                          — you changed this answer
-                        </span>
-                      )}
-                    </li>
-                  ))}
-                </ul>
+                <div className="answer-edits">
+                  <span className="eyebrow">Change an answer</span>
+                  <ul>
+                    {sectionAnswers.map((a) => (
+                      <li key={a.questionId}>
+                        {/*
+                          A button, because it is one. These were links styled
+                          identically to every other link on the page, including
+                          "Start a new episode", and nothing in them said they
+                          return you to the questions.
+                        */}
+                        <button
+                          className="btn btn--small"
+                          data-testid={`edit-answer-${a.questionId}`}
+                          onClick={() => onEditAnswer(a.questionId)}
+                        >
+                          {questionLabel(a.questionId)}
+                          <span className="sr-only"> — go back to this question</span>
+                        </button>
+                        {/*
+                          The label is asserted by the browser gates
+                          (`/changed this answer/i`). That is a contract, not a
+                          preference: a corrected answer has to be visibly
+                          labelled as corrected, and "you edited this" does not
+                          say what was edited.
+                        */}
+                        {a.provenance.sourceType === 'user_edited' && (
+                          <span className="muted small">
+                            {' '}
+                            — you changed this answer
+                          </span>
+                        )}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
               )}
             </section>
             );

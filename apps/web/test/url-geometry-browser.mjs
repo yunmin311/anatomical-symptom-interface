@@ -92,7 +92,7 @@ async function installHelper() {
 const mountArgs = (over = {}) => JSON.parse(JSON.stringify({ url: GLB, ...over }));
 
 try {
-  await page.goto(url, { waitUntil: 'networkidle' });
+  await page.goto(url, { waitUntil: 'domcontentloaded' });
   await page.waitForSelector('#root', { timeout: 20_000 });
   // The dev server rewrites modules on first request, which can trigger a
   // full-reload and destroy the execution context mid-evaluate. Waiting for the

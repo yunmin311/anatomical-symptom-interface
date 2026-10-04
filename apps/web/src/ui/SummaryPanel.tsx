@@ -3,7 +3,7 @@ import { questionProgress, renderPlainText } from '@asi/shared';
 import { useSession } from '../state/session.ts';
 import { RecordDetails } from './RecordDetails.tsx';
 import { FactList, StatusTag } from './primitives.tsx';
-import { formatDate, groupSummaryRows } from './presentation.ts';
+import { formatDate, groupSummaryRows, statusPhrase } from './presentation.ts';
 
 export function SummaryPanel() {
   const { summary, record, answers, startEditAnswer } = useSession();
@@ -16,10 +16,16 @@ export function SummaryPanel() {
       <section className="summary">
         <div className="section-heading">
           <h2>Review before saving</h2>
-          <StatusTag>Not saved yet</StatusTag>
         </div>
+        {/*
+          "Not saved yet" was a status tag beside the heading, which read as a
+          state the RECORD is in rather than a fact about saving. It is a fact
+          about saving, so it is now a sentence in the sentence that talks about
+          saving, and the heading is left to be the heading.
+        */}
         <p className="muted">
-          {progress.answered} of {progress.total} questions answered.{' '}
+          Nothing is saved yet. {progress.answered} of {progress.total} questions
+          answered.{' '}
           {progress.outstanding.length > 0
             ? `${progress.outstanding.length} questions are unanswered or uncertain. This record is incomplete.`
             : 'Review what is recorded below.'}{' '}
@@ -43,6 +49,19 @@ export function SummaryPanel() {
   // rendered by the domain so the copied text can never drift from the canonical
   // summary. The frontend must not re-implement this.
   const text = renderPlainText(summary);
+  const sections = groupSummaryRows(summary.history);
+  /*
+    The patient's own words lead, and the generated complaint line follows it.
+
+    `chiefComplaint` is domain-generated and stays exactly as it is — it is a
+    correct, deterministic summary of the record. But it is a run of semicolons
+    ("Shoulder — character not established; not established; duration not asked;
+    frequency not asked; trend not asked.") and it was the first thing on the
+    document, above the one thing in it that a clinician and the patient both
+    came for. Reordering two existing elements fixes that without touching a
+    single word the domain produces.
+  */
+  const ownWords = sections.find((section) => section.title === 'Your own words');
   return (
     <article className="summary" aria-labelledby="summary-title">
       <header className="summary-heading">
@@ -53,8 +72,30 @@ export function SummaryPanel() {
           information.
         </p>
       </header>
-      <p className="summary__cc">{summary.chiefComplaint}</p>
-      {groupSummaryRows(summary.history).map((section) => (
+      {ownWords && ownWords.rows.length > 0 ? (
+        <section className="summary__lead" aria-label="In your own words">
+          <span className="eyebrow">In your own words</span>
+          {ownWords.rows.map((row) => (
+            <blockquote className="own-words" key={row.label}>
+              {row.value}
+            </blockquote>
+          ))}
+        </section>
+      ) : (
+        <section className="summary__lead" aria-label="Chief complaint">
+          <span className="eyebrow">Chief complaint</span>
+          <p className="summary__cc">{summary.chiefComplaint}</p>
+        </section>
+      )}
+      {ownWords && ownWords.rows.length > 0 && (
+        <details className="summary__cc-detail">
+          <summary>One-line summary</summary>
+          <p className="summary__cc">{summary.chiefComplaint}</p>
+        </details>
+      )}
+      {sections
+        .filter((section) => section.title !== 'Your own words')
+        .map((section) => (
         <section className="record-section" key={section.title}>
           <h3>{section.title}</h3>
           {section.title === 'Anatomical location' && (
@@ -117,10 +158,21 @@ export function SummaryPanel() {
           <ul>
             {summary.priorEpisodes.map((episode) => (
               <li key={episode.id}>
+                {/*
+                  Date and state, and deliberately not the title.
+
+                  Every episode title is `"<region> — <date>"`, so it restated
+                  the section this list is already scoped to and the date printed
+                  next to it: `Oct 4, 2026 — shoulder — 2026-10-04 (open)`. The
+                  raw `(open)` is worse — a storage enum at the same weight as a
+                  date. A title derived from what the user said is a Main Agent
+                  capability request in docs/design/v1-product-audit.md, not
+                  something this view should fabricate.
+                */}
                 <time dateTime={episode.startedAt}>
                   {formatDate(episode.startedAt)}
                 </time>{' '}
-                — {episode.title} ({episode.status})
+                — {statusPhrase(episode.status)}
               </li>
             ))}
           </ul>
@@ -183,21 +235,16 @@ export function SummaryPanel() {
         </section>
       )}
       <footer className="summary__foot">
-        <h3>Sources in this record</h3>
-        <ul className="source-list">
-          {summary.dataSources.map((source) => (
-            <li key={source.sourceType}>
-              {source.sourceType.replaceAll('_', ' ')}{' '}
-              <span>
-                {source.count} field{source.count === 1 ? '' : 's'}
-              </span>
-            </li>
-          ))}
-        </ul>
-        <p className="summary__disclaimer">
-          This summary was produced by a patient self-report tool. It is not a
-          diagnosis.
-        </p>
+        {/*
+          Take it with you, then show where it came from.
+
+          Provenance and export used to share one block with the copy button on
+          top of it, so the two things a reader wants from a clinical summary —
+          hand it over, and trust it — were stacked on each other. The action
+          comes first because it is what the person holding the phone is about to
+          do; the source list is reference material and reads fine underneath.
+        */}
+        <h3>Take it with you</h3>
         <div className="actions">
           <button
             className="btn btn--primary"
@@ -238,6 +285,21 @@ export function SummaryPanel() {
             onFocus={(event) => event.currentTarget.select()}
           />
         </details>
+        <h3>Sources in this record</h3>
+        <ul className="source-list">
+          {summary.dataSources.map((source) => (
+            <li key={source.sourceType}>
+              {source.sourceType.replaceAll('_', ' ')}{' '}
+              <span>
+                {source.count} field{source.count === 1 ? '' : 's'}
+              </span>
+            </li>
+          ))}
+        </ul>
+        <p className="summary__disclaimer">
+          This summary was produced by a patient self-report tool. It is not a
+          diagnosis.
+        </p>
       </footer>
     </article>
   );

@@ -5,7 +5,7 @@ import { useSession } from "../state/session.ts";
 import { EmptyState, StatusTag } from "./primitives.tsx";
 import { BodyIndex } from "../anatomy/BodyIndex.tsx";
 import { RecordDetails } from "./RecordDetails.tsx";
-import { formatDate } from "./presentation.ts";
+import { formatDate, sidePhrase, statusPhrase } from "./presentation.ts";
 import { presentSpatialHistory } from "./spatial-history.ts";
 
 export function HistoryPanel() {
@@ -178,8 +178,20 @@ export function HistoryPanel() {
                         }
                       >
                         <span className="location-mark__label">{mark.label}</span>
+                        {/*
+                          A count with no "last time" cannot answer "which of
+                          these three was recent", which is the only reason to
+                          look at a place. `lastEpisodeAt` is already on the place
+                          the server sent; it was simply not shown.
+                        */}
+                        <span className="location-mark__when">
+                          {mark.lastEpisodeAt
+                            ? formatDate(mark.lastEpisodeAt)
+                            : 'No date recorded'}
+                        </span>
                         <span className="location-mark__count">
-                          {mark.episodeCount}
+                          {mark.episodeCount} episode
+                          {mark.episodeCount === 1 ? '' : 's'}
                         </span>
                       </button>
                     </li>
@@ -274,14 +286,29 @@ export function HistoryPanel() {
                       <details className="episode">
                         <summary>
                           <span className="episode__heading">
-                            <strong>{episode.title}</strong>
+                            {/*
+                              The user's own words are the heading, not the title.
+
+                              Every episode title is `"<region> — <date>"`, so
+                              three episodes in one region were indistinguishable
+                              except by the date already printed underneath — and
+                              "most recent occurrence" and "is this the open one"
+                              are not answerable from a list like that. This is
+                              the alternative the audit asked for: show the
+                              distinguishing facts instead of relying on the
+                              title. A title derived from what the user said is a
+                              Main Agent capability request, recorded in
+                              docs/design/v1-product-audit.md, not invented here.
+                            */}
+                            <strong className="episode__words">
+                              {episode.record.location.userPhrase ||
+                                episode.title}
+                            </strong>
                             <span className="small">
-                              {episode.side === "unknown"
-                                ? "Side not recorded"
-                                : episode.side.replaceAll("_", " ")}
+                              {sidePhrase(episode.side)}
                             </span>
                           </span>
-                          <StatusTag>{episode.status}</StatusTag>
+                          <StatusTag>{statusPhrase(episode.status)}</StatusTag>
                         </summary>
                         <div className="episode__detail">
                           {(() => {

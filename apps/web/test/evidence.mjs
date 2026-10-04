@@ -66,8 +66,10 @@ for (const width of [1440, 768, 375]) {
   // Checked BEFORE touching the control: localisation can carry a depth out of
   // the user's own words ("hurts deep inside"), and the viewer must already
   // agree with the record rather than waiting for the control to be used.
-  await page.getByRole('button', { name: 'Side & depth' }).click();
-  const group = page.getByRole('group', { name: 'Where does it feel?' });
+  // Side and depth are a rail column on the Locate screen, so the control is
+  // already mounted and there is no tab to open first. The legend was renamed
+  // with it: "Where does it feel?" asked where over options that answer how deep.
+  const group = page.getByRole('group', { name: 'How deep does it feel' });
   const layersNow = () =>
     page
       .locator('[data-testid^="visible-layer-"]')

@@ -78,12 +78,49 @@ for (const width of [1440, 375]) {
           failures.push(`[${width}] ${c.say}/${view}: ${zone} is not drawn`);
           continue;
         }
+        // boundingBox() is viewport-relative, so a zone that has not been scrolled
+        // into view reports a y the pointer never reaches. The click then lands on
+        // empty page and the failure reads as "the zone is dead", which is a
+        // different defect from "the zone is further down the page" — and the gate
+        // exists to test the first, not the second. The scroll has to clear the
+        // sticky footer too, or the zone ends up underneath the button bar.
+        const placed = await shape.evaluate((el) => {
+          const r = el.getBoundingClientRect();
+          const foot = document.querySelector('.location-footer');
+          const sticky =
+            foot && getComputedStyle(foot).position === 'sticky'
+              ? Math.max(0, foot.getBoundingClientRect().height)
+              : 0;
+          const clearBottom = window.innerHeight - sticky;
+          const cy = r.y + r.height / 2;
+          if (cy >= 0 && cy <= clearBottom) return true;
+          window.scrollBy(0, cy - (clearBottom - r.height / 2 - 8));
+          return false;
+        });
         const box = await shape.boundingBox();
         if (!box || box.width === 0) {
           failures.push(`[${width}] ${c.say}/${view}: ${zone} has no clickable box`);
           continue;
         }
-        await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2);
+        const cx = box.x + box.width / 2;
+        const cy = box.y + box.height / 2;
+        // Was anything placed at all? Scroll or not, a zone the pointer cannot
+        // reach has to be reported as such rather than as a mis-targeted one.
+        const reachable = await shape.evaluate(
+          (el, [x, y]) => {
+            const hit = document.elementFromPoint(x, y);
+            return hit === el || el.contains(hit) || hit?.contains(el) === true;
+          },
+          [cx, cy],
+        );
+        if (!reachable) {
+          failures.push(
+            `[${width}] ${c.say}/${view}: ${zone} centre is covered after scrolling` +
+              `${placed ? '' : ' (zone began below the fold)'}`,
+          );
+          continue;
+        }
+        await page.mouse.click(cx, cy);
         await page.waitForTimeout(120);
         const pressed = await page.locator('.subregion-option[aria-pressed="true"]').count();
         if (pressed === 1) {

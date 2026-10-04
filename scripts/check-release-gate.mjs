@@ -16,6 +16,7 @@
  * dependency, a syntax error — would read as a passing release gate.
  */
 import { spawn } from 'node:child_process';
+import { createServer } from 'node:net';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
@@ -25,6 +26,27 @@ const HERE = dirname(fileURLToPath(import.meta.url));
 const REPO = resolve(HERE, '..');
 const SERVER_DIR = join(REPO, 'packages/server');
 const ENTRY = join(SERVER_DIR, 'src/index.ts');
+
+/**
+ * A port nobody is using.
+ *
+ * This gate used to boot on hardcoded 8801/8802. Anything already on those ports
+ * — on this machine an unrelated python3 process held 8802 — made the CONTROL
+ * fail, and the failure reads as "the development profile will not boot", which
+ * is a completely different claim from "the port was busy". A gate that can fail
+ * for a reason unrelated to what it proves is worse than no gate, because it is
+ * believed either way. Same fix as the HTTP-level server tests.
+ */
+function ephemeralPort() {
+  return new Promise((res, rej) => {
+    const s = createServer();
+    s.on('error', rej);
+    s.listen(0, '127.0.0.1', () => {
+      const { port } = s.address();
+      s.close(() => res(port));
+    });
+  });
+}
 
 /** Boot the server and resolve with how it exited. */
 function boot(profile, port, dbPath) {
@@ -83,7 +105,7 @@ const dir = mkdtempSync(join(tmpdir(), 'asi-release-gate-'));
 const problems = [];
 
 try {
-  const release = await boot('release', 8801, join(dir, 'release.sqlite'));
+  const release = await boot('release', await ephemeralPort(), join(dir, 'release.sqlite'));
   if (release.booted) {
     problems.push('the server STARTED with ASI_RELEASE_PROFILE=release; unreviewed rules must block it');
   } else if (release.code === 0) {
@@ -97,7 +119,7 @@ try {
   }
 
   // The control: development must still boot, or gate (1) proves nothing.
-  const development = await boot('development', 8802, join(dir, 'dev.sqlite'));
+  const development = await boot('development', await ephemeralPort(), join(dir, 'dev.sqlite'));
   if (!development.booted) {
     problems.push(
       `the DEVELOPMENT profile failed to boot, so the release refusal proves nothing:\n${development.output.slice(0, 400)}`,

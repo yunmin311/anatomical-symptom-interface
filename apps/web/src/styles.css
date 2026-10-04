@@ -212,13 +212,42 @@ ol {
  * clicks "Change" and answers differently has no way to know they replaced something.
  */
 .answer-edits {
-  list-style: none;
-  margin: var(--space-2, 8px) 0 0;
-  padding: 0;
+  margin: var(--space-3, 12px) 0 0;
+  padding-top: var(--space-2, 8px);
   border-top: 1px solid var(--line, #ddd);
 }
+.answer-edits .eyebrow {
+  margin: 0 0 6px;
+}
+.answer-edits ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
 .answer-edits li {
-  padding-block: 2px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+/* Never-asked questions, gathered. Eight consecutive `Not asked` rows is
+   accurate and unscannable; this keeps every one of them on the page, labelled,
+   and out of the way of what the user actually answered. */
+.not-asked {
+  margin-top: 12px;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: 3px;
+}
+.not-asked > summary {
+  cursor: pointer;
+  font-size: 13px;
+  color: var(--muted);
+}
+.not-asked p {
+  margin: 8px 0 0;
 }
 .interview-edit-banner {
   display: flex;
@@ -386,25 +415,99 @@ details > p {
   stroke-width: 0.45;
   stroke-linejoin: round;
 }
-.location-context {
+/* ------------------------------------------------------------------ *
+ * ORIENTATION
+ *
+ * The four facts a user has to be able to answer on this screen — which body
+ * part, which side, how deep, which view — are gathered here, above the canvas,
+ * so none of them is only reachable by finding a small label. The region is the
+ * largest text because it is the answer; the page heading above it is a task.
+ * ------------------------------------------------------------------ */
+.orientation {
   display: grid;
-  grid-template-columns: 200px 1fr auto;
+  grid-template-columns: minmax(220px, 300px) minmax(0, 1fr) auto;
   gap: 32px;
-  align-items: center;
-  margin-bottom: 20px;
+  align-items: start;
+  max-width: 1120px;
+  margin: 0 auto 20px;
+  padding-bottom: 16px;
+  border-bottom: 1px solid var(--line);
 }
-.location-context h2 {
-  font-size: 24px;
+.orientation__where {
+  display: grid;
+  gap: 2px;
 }
-.location-context blockquote {
-  font-size: 16px;
-  max-width: 550px;
+.orientation__where .eyebrow {
+  margin: 0;
 }
-.location-source {
+.orientation__region {
+  font-size: 30px;
+  line-height: 1.1;
+  margin: 0;
+}
+.orientation__state {
+  margin: 2px 0 0;
+  font-size: 14px;
+  color: var(--muted);
+}
+.orientation__words {
+  margin: 0;
+  font-size: 17px;
+  line-height: 1.45;
+  max-width: 46ch;
+}
+.orientation__source {
   display: flex;
-  flex-direction: column;
-  align-items: flex-end;
-  gap: 0;
+  flex-direction: row;
+  align-items: baseline;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+  text-align: right;
+}
+
+/* Side and depth, always visible. They were a third-level inspector tab, and
+   depth is one of the facts the product must be able to state at a glance. They
+   are in the rail now, above the inspector's own tabs, so nothing reopens a panel
+   to change them and the map keeps the whole vertical budget. */
+.location-controls {
+  grid-area: controls;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 14px;
+  align-content: start;
+  padding: 0 0 20px 28px;
+  border-bottom: 1px solid var(--line);
+}
+.location-controls .choice-group {
+  margin: 0;
+  min-width: 0;
+}
+.location-controls__effect {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--muted);
+}
+.location-controls__effect .eyebrow {
+  display: block;
+  margin-bottom: 2px;
+}
+.location-controls__layers {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.location-controls__layers li {
+  font-size: 11px;
+  letter-spacing: 0.02em;
+  padding: 1px 6px;
+  border: 1px solid var(--line);
+  border-radius: 2px;
+  color: var(--muted);
 }
 .location-workbench__grid {
   display: grid;
@@ -412,11 +515,23 @@ details > p {
      whole bench is bounded rather than stretched to the page width. A stretched
      bench turned the body into a small figure marooned in empty grey. */
   grid-template-columns: minmax(0, 1fr) minmax(340px, 420px);
+  /* Side and depth live in the rail column, above the inspector, rather than in
+     a full-width band above this grid. That band measured 266px at 1440 and 446px
+     at 375, and it was the reason only the shoulder was reachable without
+     scrolling: the map is the instrument this screen exists for, and it was the
+     one thing pushed off the bottom. In the rail it costs the map no vertical
+     space at all, and the reading order still runs "what you are looking at"
+     then "what you can change about it". */
+  grid-template-areas:
+    'viewer controls'
+    'viewer inspector';
+  grid-template-rows: auto 1fr;
   max-width: 1120px;
   margin-inline: auto;
-  min-height: 680px;
+  min-height: 560px;
 }
 .viewer-panel {
+  grid-area: viewer;
   background: var(--workspace);
   position: relative;
   padding: 20px 24px 16px;
@@ -428,6 +543,18 @@ details > p {
   align-items: center;
   justify-content: space-between;
   gap: 12px;
+}
+/* The surface is the second most important fact on this screen after the
+   region, so it is a stated element rather than a caption. It used to read
+   "3D · fixture volumes" above real CC-BY geometry, which was not a stale
+   label but a false statement about the product's strongest asset. */
+.viewer-toolbar__label {
+  margin: 0;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: var(--muted);
+  white-space: nowrap;
 }
 .viewer-toolbar .choice-group {
   margin: 0;
@@ -442,7 +569,10 @@ details > p {
 .viewer-canvas {
   flex: 1;
   position: relative;
-  min-height: 560px;
+  /* Viewport-relative rather than a fixed 560px. The stage is what sets how far
+     apart the zones land, so a fixed height on a short window stretched the
+     figure until the lower limbs fell off the bottom of the screen. */
+  min-height: clamp(360px, 46vh, 560px);
   display: flex;
   justify-content: center;
   align-items: center;
@@ -541,6 +671,7 @@ details > p {
   border: 1px solid var(--accent);
 }
 .location-inspector {
+  grid-area: inspector;
   padding: 0 0 0 28px;
   display: flex;
   flex-direction: column;
@@ -649,22 +780,71 @@ details > p {
   width: 14px;
   height: 14px;
 }
-.inspector-receipt {
-  padding: 16px 0;
-  color: var(--muted);
-  font-size: 14px;
-  border-top: 1px solid var(--line);
-}
-.inspector-receipt .eyebrow {
-  margin-bottom: 4px;
-}
+/* The primary action and the reason it is unavailable, together. They were
+   900px apart, with a third statement of the same fact in the inspector. */
 .location-footer {
   display: flex;
+  align-items: center;
   justify-content: space-between;
+  gap: 24px;
+  max-width: 1120px;
+  margin: 0 auto;
+  padding: 20px 0 0;
+  border-top: 1px solid var(--line);
+}
+.location-footer__why {
+  text-align: right;
+}
+.location-footer__why p {
+  margin: 0;
+}
+.location-footer__why strong {
+  font-size: 15px;
+}
+.location-footer__why .small {
+  display: block;
+  font-size: 12px;
+  margin-top: 2px;
+}
+/* What is already committed to the record, so a returning user is not asked to
+   re-choose what they already chose. */
+.recorded-note {
+  margin: 8px 0 12px;
+  padding: 8px 10px;
+  background: var(--accent-soft);
+  border-left: 2px solid var(--accent);
+  font-size: 13px;
+}
+.subregion-option.is-recorded {
+  border-left: 2px solid var(--accent);
+  padding-left: 10px;
+}
+/* The candidate origin label is the point of the list, so it is a state, not a
+   prefix buried above the title. */
+.candidate-item__origin {
+  display: block;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--muted);
+}
+.candidate-item__origin.is-selected {
+  color: var(--accent);
+}
+.candidate-item__origin.is-rejected {
+  color: var(--muted);
+}
+/* Two adjacent links with nothing between them read as one string —
+   "Indicate this structureNot this one" — at every width. */
+.candidate-item__actions {
+  display: flex;
   align-items: center;
   gap: 16px;
-  background: var(--bg);
-  padding: 20px 0;
+  margin-top: 8px;
+}
+.btn--small {
+  min-height: 34px;
+  padding: 0 12px;
+  font-size: 13px;
 }
 .location-footer strong {
   font-size: 14px;
@@ -717,16 +897,79 @@ details > p {
 .experience-context > .small {
   margin-top: 12px;
 }
+/* The sidebar receipt, labelled. It read `Shoulder · right · deep` — raw enum
+   values from the record in the same weight as the user's own words, and on a
+   phone three unlabelled lines where nothing said which fact was the location. */
+.location-receipt {
+  display: grid;
+  gap: 2px;
+  margin: 12px 0 16px;
+  font-size: 13px;
+}
+.location-receipt > div {
+  display: flex;
+  gap: 10px;
+  align-items: baseline;
+}
+.location-receipt dt {
+  min-width: 44px;
+  color: var(--muted);
+}
+.location-receipt dd {
+  margin: 0;
+}
 .interview-panel {
   padding: 0;
 }
+/* Progress, as four facts rather than one number.
+   `0 of 8 answered` said nothing about which question you were on, nothing about
+   how many were left, and left "answered" ambiguous at exactly the moment it
+   matters — whether "I am not sure" counted. Each part answers one of those. */
 .interview-progress {
-  display: flex;
-  justify-content: space-between;
-  gap: 16px;
-  font-size: 12px;
-  color: var(--muted);
+  display: grid;
+  gap: 6px;
   margin-bottom: 24px;
+  padding-bottom: 16px;
+  border-bottom: 1px solid var(--line);
+  font-size: 13px;
+  color: var(--muted);
+}
+.interview-progress p {
+  margin: 0;
+}
+.interview-progress__where {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 10px;
+}
+.interview-progress__where strong {
+  font-size: 17px;
+  color: var(--ink);
+}
+.interview-progress__where .eyebrow {
+  margin: 0;
+  width: 100%;
+}
+.interview-progress__counts strong {
+  font-size: 15px;
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
+}
+.interview-progress__track {
+  height: 6px;
+  margin-top: 4px;
+  background: var(--line);
+  border-radius: 3px;
+  overflow: hidden;
+}
+.interview-progress__track > span {
+  display: block;
+  height: 100%;
+  background: var(--accent);
+}
+.interview-progress__note {
+  line-height: 1.45;
 }
 .interview-panel > progress {
   display: none;
@@ -813,6 +1056,30 @@ details > p {
   font-size: 18px;
   line-height: 1.6;
   margin: 24px 0;
+}
+/* The patient's own words lead the document. `chiefComplaint` is a correct
+   domain-generated line and stays word-for-word, but it is a run of semicolons
+   and it was the first thing above the one thing both readers came for. */
+.summary__lead {
+  margin: 20px 0 4px;
+}
+.summary__lead .eyebrow {
+  margin: 0 0 4px;
+}
+.summary__lead .own-words {
+  margin: 0;
+}
+.summary__cc-detail {
+  margin: 8px 0 0;
+}
+.summary__cc-detail > summary {
+  cursor: pointer;
+  font-size: 13px;
+  color: var(--muted);
+}
+.summary__cc-detail .summary__cc {
+  font-size: 15px;
+  margin: 8px 0 0;
 }
 .record-section {
   padding: 24px 0;
@@ -997,6 +1264,12 @@ details > p {
   font-size: 18px;
   font-weight: 500;
 }
+/* The user's own words as the episode heading. Every episode title is
+   `"<region> — <date>"`, so three episodes in one region were indistinguishable
+   except by the date printed underneath. */
+.episode__words {
+  overflow-wrap: anywhere;
+}
 .episode__heading .small {
   display: block;
   margin-top: 8px;
@@ -1115,17 +1388,33 @@ details > p {
   .entry-layout {
     gap: 36px;
   }
-  .location-context {
-    grid-template-columns: 160px 1fr;
-    gap: 16px;
+  /* Two columns rather than three. The desktop arrangement is
+     `minmax(220px,300px) minmax(0,1fr) auto`; at 768 that squeezed a 220px column,
+     a flexible one and an auto one into 768px and wrapped the bar to 337px —
+     taller than the canvas it introduces, and it sits above everything. The region
+     is the answer this screen exists to give, so it cannot be the thing that eats
+     the fold. */
+  .orientation {
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 6px 20px;
+    align-items: center;
   }
-  .location-source {
-    grid-column: 1/-1;
-    flex-direction: row;
-    justify-content: space-between;
+  .orientation__source {
+    grid-column: 2;
+    grid-row: 1 / span 2;
+    flex-direction: column;
+    align-items: flex-end;
+    justify-content: center;
+    text-align: right;
+  }
+  .orientation__words {
+    font-size: 15px;
   }
   .location-workbench__grid {
     grid-template-columns: minmax(0, 1.15fr) minmax(310px, 1fr);
+    grid-template-areas:
+      'viewer inspector'
+      'viewer controls';
     max-width: 900px;
   }
   .viewer-panel {
@@ -1141,8 +1430,31 @@ details > p {
     max-height: 440px;
     min-height: 260px;
   }
+  /* The instruction used to be `display: none` here, and hiding it was right for
+     exactly one reason: it was hidden because the 3D surface was up, and a
+     caption about tapping a 2D map is noise above a canvas. Below 1000px it then
+     hid on BOTH surfaces, so on a phone — no hover, no cursor, and a tap is most
+     likely to land on the wrong thing — the only statement of how to select
+     anything was invisible. Shown again, and STILL absolutely positioned.
+
+     That last part is not incidental. `.viewer-canvas` is a centring flex row, so
+     an in-flow instruction becomes a flex sibling of the canvas and takes its
+     width: measured, the 3D canvas fell from 335px to 139px at a 375 viewport,
+     which is how a caption became the most expensive thing on the screen. The
+     band it occupies is reserved with padding on the canvas instead. */
   .canvas-instruction {
-    display: none;
+    display: block;
+    left: 8px;
+    right: 8px;
+    bottom: 6px;
+    padding: 3px 6px;
+    background: var(--bg);
+    font-size: 11px;
+    line-height: 1.4;
+    text-align: center;
+  }
+  .viewer-canvas {
+    padding-bottom: 30px;
   }
   .location-inspector {
     padding-left: 20px;
@@ -1246,41 +1558,87 @@ details > p {
   .entry .small {
     font-size: 12px;
   }
-  .location-context {
+  /* Orientation stacks, and the region stays the largest thing on the screen:
+     it is the answer, and on a phone it competes with a canvas for attention. */
+  .orientation {
     grid-template-columns: 1fr;
+    gap: 10px;
     margin-bottom: 12px;
+    padding-bottom: 12px;
+  }
+  .orientation__region {
+    font-size: 26px;
+  }
+  .orientation__words {
+    font-size: 15px;
+    max-width: none;
+  }
+  /* Back to one column. The tablet rule above places this in column 2 spanning two
+     rows, which is right while the bar itself is two columns — but on a phone the
+     bar is a SINGLE column, and an explicit `grid-column: 2` there creates an
+     implicit second one. The region name was then squeezed into half the width,
+     wrapped to three lines, and the bar grew by ~160px, which pushed every body
+     zone down under the sticky action bar. An explicit placement has to be undone
+     wherever the grid it was placed into no longer exists. */
+  .orientation__source {
+    grid-column: auto;
+    grid-row: auto;
+    text-align: left;
+    flex-direction: row;
+    justify-content: flex-start;
+    align-items: baseline;
+    flex-wrap: nowrap;
+    font-size: 11px;
     gap: 8px;
   }
-  .location-context > div:first-child {
-    display: flex;
-    align-items: baseline;
-    gap: 16px;
-  }
-  .location-context h2 {
-    font-size: 20px;
-  }
-  .location-context .eyebrow {
-    margin: 0;
+  .orientation__source .small {
     font-size: 11px;
+    min-width: 0;
   }
-  .location-context blockquote {
-    font-size: 14px;
+  /* Side and depth come AFTER the area list on a phone: not above the map, and not
+     above the areas. Above the canvas they were 446px of controls that left every
+     body zone past y=1043 in an 812px window. Between the map and the areas they
+     were still 439px, which put the first area control at y=1387 — the primary
+     decision of the screen, most of a scroll away, with the map above it.
+     Nothing is hidden by this: side and depth are stated in the orientation bar,
+     and this is a linear scroll rather than the old third-level tab. */
+  .location-controls {
+    gap: 10px;
+    padding: 16px 0;
+    border-bottom: 0;
+    border-top: 1px solid var(--line);
   }
-  .location-source .small {
-    font-size: 11px;
+  .location-controls__effect {
+    max-width: none;
   }
-  .location-source {
-    grid-column: auto;
+  /* The primary action is sticky on a phone, so the workbench needs room to
+     scroll clear of it. Without this the depth explanation sits permanently
+     behind the button bar, on a phone, with no way to reveal it. */
+  .location-workbench {
+    padding-bottom: 96px;
   }
-  .location-source .link {
+  .orientation__source .link {
     font-size: 12px;
     min-height: 36px;
     padding: 4px 0;
   }
+  /* Still a grid, and still viewer-first — `display: block` here would fall back
+     to DOM order and put the side/depth controls back on top of the canvas.
+     The inspector now precedes the controls, matching what the tablet breakpoint
+     above already does, so the area list is the first thing under the map at every
+     width below 1000px. */
   .location-workbench__grid {
-    display: block;
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-areas:
+      'viewer'
+      'inspector'
+      'controls';
     min-height: 0;
     max-width: none;
+  }
+  .location-inspector {
+    padding: 16px 0 0;
+    border-top: 1px solid var(--line);
   }
   .viewer-panel {
     margin: 0 -20px;
@@ -1289,10 +1647,18 @@ details > p {
   .viewer-toolbar .small {
     font-size: 11px;
   }
-  .viewer-toolbar .choice {
-    min-height: 44px;
-    padding: 8px;
-  }
+.viewer-toolbar .choice {
+  min-height: 44px;
+  padding: 8px 4px;
+  gap: 4px;
+}
+/* With the padding above, "Body view" is 315px of max-content against a 335px
+   column, so the four view radios stay on ONE line instead of wrapping to two and
+   costing 44px the knee zone needs: at 812px the sticky action bar starts at 677
+   and the knee zone ends at 668. Nine pixels is not a margin. */
+.viewer-toolbar .choice-group__options {
+  gap: 2px;
+}
   .viewer-canvas {
     min-height: 250px;
   }
@@ -1362,31 +1728,28 @@ details > p {
   .pin-controls {
     margin-top: 12px;
   }
-  .inspector-receipt {
-    padding: 12px 0;
-  }
-  .inspector-receipt .eyebrow {
-    display: none;
-  }
-  .inspector-receipt p {
-    font-size: 12px;
-  }
   .location-footer {
     position: sticky;
     bottom: 0;
     z-index: 3;
     margin: 0 -20px;
     padding: 12px 20px;
-    flex-direction: column;
+    flex-direction: column-reverse;
     align-items: stretch;
-    gap: 8px;
+    gap: 6px;
+    background: var(--bg);
     border-top: 1px solid var(--line);
   }
+  /* The reason the button is unavailable travels WITH the button. It used to be
+     the one thing hidden on mobile. */
+  .location-footer__why {
+    text-align: left;
+  }
   .location-footer .small {
-    display: none;
+    font-size: 11px;
   }
   .location-footer strong {
-    font-size: 12px;
+    font-size: 13px;
   }
   .location-footer .btn {
     width: 100%;
@@ -1683,6 +2046,21 @@ details > p {
   flex-wrap: wrap;
   min-width: 0;
 }
+/* Prefer to move a whole group onto its own row over shrinking it: a shrunk
+   fieldset wraps its own options instead, so the four view radios stacked into two
+   rows and the toolbar cost height the knee zone needs at 812px.
+
+   `max-width` is not optional, though. `flex: 0 0 auto` resolves the group's
+   MAX-CONTENT width, and "Body view" is 363px of that inside a 335px column, so
+   the row cannot fit it on any line and the whole document scrolls sideways by
+   8px — measured at 375 on all four regions. Clamping to the container means the
+   row wraps only when it genuinely has to, and overflow becomes impossible rather
+   than merely unlikely. */
+.viewer-toolbar__views > .choice-group {
+  flex: 0 0 auto;
+  max-width: 100%;
+  min-width: 0;
+}
 
 /* Back-view and profile marks: present, but never loud enough to be mistaken
    for tissue boundaries. */
@@ -1709,29 +2087,6 @@ details > p {
   font-size: 12px;
   color: var(--muted);
   font-weight: 400;
-}
-
-/* Depth is wired to the viewer, so the layers it controls have to be visible. */
-.depth-layers {
-  margin-top: 24px;
-  padding-top: 16px;
-  border-top: 1px solid var(--line);
-}
-.depth-layers ul {
-  list-style: none;
-  padding: 0;
-  margin: 0 0 12px;
-  display: flex;
-  flex-wrap: wrap;
-  gap: 4px 6px;
-}
-.depth-layers li {
-  font-size: 12px;
-  line-height: 1.4;
-  padding: 4px 8px;
-  background: #eeede7;
-  border-radius: 3px;
-  color: var(--ink);
 }
 
 .candidate-item--rejected {
@@ -1799,6 +2154,15 @@ details > p {
   font-variant-numeric: tabular-nums;
   color: var(--muted);
   font-size: 13px;
+}
+/* A count with no "last time" cannot answer "which of these three was recent",
+   which is the only reason to open a place. `lastEpisodeAt` was already on the
+   place the server sent and simply was not shown. */
+.location-mark__when {
+  margin-left: auto;
+  color: var(--muted);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
 }
 
 /* An idle 3D host must not occupy the flex row: at 375px it was taking the full
