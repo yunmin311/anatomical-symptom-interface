@@ -86,7 +86,6 @@ try {
       await page.locator('.location-workbench').waitFor();
       // The grounding is a SUGGESTION the user lands on, never a silent default, so it
       // is asserted as a visible proposal before anything is confirmed.
-      await page.getByRole('button', { name: 'Side & depth', exact: true }).click();
       const right = page.getByLabel('Right', { exact: true });
       await right.waitFor({ timeout: 10_000 });
       assert(
@@ -97,10 +96,11 @@ try {
     });
 
     await check(`choose area, depth and a structure${at}`, async () => {
-      // The area buttons live in the "Area & pin" panel, and the previous step left the
-      // inspector on "Side & depth" -- so the panel has to be opened again before they
-      // exist at all. Guessing that they are always mounted is how a flow gate ends up
-      // clicking something the user cannot see.
+      // The area buttons live in the "Area & pin" panel, so the gate opens it
+      // rather than assuming they are mounted — "the step did not happen" and
+      // "the step passed" have to stay distinguishable. Side and depth no longer
+      // share the inspector, so opening this panel no longer has to undo whatever
+      // tab the previous step left behind.
       await page.getByRole('button', { name: 'Area & pin', exact: true }).click();
       // "Use this location" is DISABLED until an area exists -- that is the whole point
       // of the draft-area rule, and asserting it before choosing one is how a flow gate
@@ -108,7 +108,6 @@ try {
       const use = page.getByRole('button', { name: /Use this location/ });
       assert(await use.isDisabled(), 'the location could be used with no area chosen');
       await page.getByRole('button', { name: 'Front of shoulder' }).click();
-      await page.getByRole('button', { name: 'Side & depth', exact: true }).click();
       await page.getByLabel('Deep inside', { exact: true }).check();
       await page.getByRole('button', { name: 'Structures', exact: true }).click();
       // NOT conditional. This used to be `if (visible) click`, which made "the structure

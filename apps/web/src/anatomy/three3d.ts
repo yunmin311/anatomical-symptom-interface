@@ -1151,7 +1151,10 @@ export class Three3dAnatomyAdapter implements RenderedViewer {
    */
   private retargetCamera(immediate = false): void {
     const entries = entriesFor(this.manifest, this.state.region, this.view);
+    const station = CAMERA_PRESETS[this.view];
+    const stationVector = new THREE.Vector3(...station.position);
     let radius = this.manifest.bounds.radius;
+    let frameBox: THREE.Box3 | null = null;
     if (entries.length) {
       // World matrices have to be current or nested transforms read as identity.
       this.scene?.updateMatrixWorld(true);
@@ -1170,36 +1173,41 @@ export class Three3dAnatomyAdapter implements RenderedViewer {
         box.expandByPoint(v);
         measured = true;
       }
-if (measured && !box.isEmpty()) {
-      box.getCenter(this.focus);
-      const sphere = box.getBoundingSphere(new THREE.Sphere());
-      radius = Math.max(0.08, sphere.radius);
-      // FRUSTUM FROM THE ACTUAL SCENE, NOT FROM A CONSTANT.
-      //
-      // The depth planes were a hardcoded 0.05..50, sized for the fixture, which is
-      // about 1.8 units tall and sits on the origin. Real anatomy is in
-      // MILLIMETRES: the BodyParts3D shoulder meshes span roughly 80-280 units and
-      // sit about 1300 units from the origin, so every ray left the frustum before
-      // it reached the geometry. Nothing crashed and nothing rendered as "no hit" in
-      // a way anyone would read as a picking bug -- the viewer simply showed real
-      // anatomy that could not be clicked.
-      //
-      // Derived from the measured sphere so it holds for any asset in any units: far
-      // clears the camera and the far side of the body with room to spare, near is a
-      // small fraction of the radius so precision survives at any scale.
-      const depthScale = Math.max(radius, 0.08);
-      if (this.camera) {
-        this.camera.near = Math.max(0.001, depthScale * 0.01);
-        this.camera.far = depthScale * 40 + distanceFor(radius, this.camera) * 4;
-        this.camera.updateProjectionMatrix();
+      if (measured && !box.isEmpty()) {
+        box.getCenter(this.focus);
+        const sphere = box.getBoundingSphere(new THREE.Sphere());
+        radius = Math.max(0.08, sphere.radius);
+        frameBox = box;
+        // FRUSTUM FROM THE ACTUAL SCENE, NOT FROM A CONSTANT.
+        //
+        // The depth planes were a hardcoded 0.05..50, sized for the fixture, which is
+        // about 1.8 units tall and sits on the origin. Real anatomy is in
+        // MILLIMETRES: the BodyParts3D shoulder meshes span roughly 80-280 units and
+        // sit about 1300 units from the origin, so every ray left the frustum before
+        // it reached the geometry. Nothing crashed and nothing rendered as "no hit" in
+        // a way anyone would read as a picking bug -- the viewer simply showed real
+        // anatomy that could not be clicked.
+        //
+        // Derived from the measured sphere so it holds for any asset in any units: far
+        // clears the camera and the far side of the body with room to spare, near is a
+        // small fraction of the radius so precision survives at any scale.
+        const depthScale = Math.max(radius, 0.08);
+        if (this.camera) {
+          this.camera.near = Math.max(0.001, depthScale * 0.01);
+          this.camera.far = depthScale * 40 + distanceFor(radius, this.camera) * 4;
+          this.camera.updateProjectionMatrix();
+        }
       }
     }
-    }
-    const station = CAMERA_PRESETS[this.view];
     const target = this.focus.clone();
-    // Fit the sphere in the tighter of the two field axes, with headroom.
-    const distance = this.camera ? distanceFor(radius, this.camera) : radius * 4;
-    const direction = new THREE.Vector3(...station.position).normalize();
+    // Fit the loaded BOUNDS rather than their bounding sphere, so real anatomy
+    // fills the canvas instead of sitting inside it.
+    const distance = this.camera
+      ? frameBox
+        ? distanceForBox(frameBox, target, stationVector, this.camera)
+        : distanceFor(radius, this.camera)
+      : radius * 4;
+    const direction = stationVector.normalize();
     const position = direction.multiplyScalar(distance).add(target);
     if (immediate || !this.camera) {
       this.camera?.position.copy(position);
@@ -1235,6 +1243,66 @@ function distanceFor(radius: number, camera: THREE.PerspectiveCamera): number {
   const vFov = camera.fov * (Math.PI / 180);
   const hFov = 2 * Math.atan(Math.tan(vFov / 2) * Math.max(1, camera.aspect || 1));
   return (radius / Math.sin(Math.min(vFov, hFov) / 2)) * 1.35;
+}
+
+/**
+ * The distance at which a BOX fills the frame from a given station.
+ *
+ * The sphere fit this replaces is right for a ball and badly wrong for anatomy.
+ * A shoulder is a shallow curved shell: its bounding sphere is roughly twice the
+ * height of the mesh itself, because the sphere has to contain the depth too.
+ * Fitting the sphere therefore leaves the real geometry occupying a third of
+ * the canvas with empty backdrop around it — the anatomy was the smallest,
+ * least legible thing on the screen while the controls around it were larger.
+ *
+ * Fitting the eight corners instead asks the question that matters: does every
+ * corner land inside the frustum. A near-flat object gets a near distance, and
+ * the mesh fills the field; a long one, such as the lumbar spine, still fits
+ * because its corners are actually tested.
+ *
+ * The margin is small on purpose. The corner test is already conservative —
+ * it includes the depth of each corner, so nothing is cropped — and a large
+ * headroom here is what made the previous framing look empty.
+ */
+function distanceForBox(
+  box: THREE.Box3,
+  target: THREE.Vector3,
+  station: THREE.Vector3,
+  camera: THREE.PerspectiveCamera,
+  margin = 1.12,
+): number {
+  const vFov = camera.fov * (Math.PI / 180);
+  const tanV = Math.tan(vFov / 2);
+  const tanH = tanV * Math.max(1, camera.aspect || 1);
+
+  // The orientation a camera at `target` looking back along `station` would have.
+  const look = new THREE.Vector3().copy(target).sub(station).normalize();
+  const quaternion = new THREE.Quaternion().setFromUnitVectors(
+    new THREE.Vector3(0, 0, -1),
+    look,
+  );
+  const inverse = quaternion.clone().invert();
+
+  let needed = 0;
+  const corner = new THREE.Vector3();
+  const local = new THREE.Vector3();
+  for (let i = 0; i < 8; i += 1) {
+    corner.set(
+      i & 1 ? box.max.x : box.min.x,
+      i & 2 ? box.max.y : box.min.y,
+      i & 4 ? box.max.z : box.min.z,
+    );
+    local.copy(corner).sub(target).applyQuaternion(inverse);
+    // The camera sits `distance` back along `look`, so a corner's depth in front
+    // of the lens is `depth + distance`, and it must clear both field angles.
+    const depth = -local.z;
+    needed = Math.max(
+      needed,
+      depth + Math.abs(local.x) / tanH,
+      depth + Math.abs(local.y) / tanV,
+    );
+  }
+  return Math.max(0.08, needed * margin);
 }
 
 function clamp01(value: number): number {

@@ -183,8 +183,15 @@ export function Body3d({
 
           `shownSide` is what the canvas actually holds, so the label and the geometry cannot
           disagree.
+
+          It is shown ONLY when the two differ. For a one-sided record the orientation bar
+          above the workspace already states the side as one of the four facts the screen
+          has to answer, and repeating it in 12px type inside the viewer was duplication
+          rather than reassurance. For bilateral it is not a duplicate: the canvas is
+          showing one of two real scenes as a choice, and that is exactly the moment a user
+          could look at left anatomy and believe it was right.
         */}
-        {shownSide && scene && (
+        {shownSide && scene && shownSide !== side && (
           <p className="viewer3d__side" data-testid="viewer-side">
             Showing your {shownSide} side
             {side === 'bilateral' ? ' (both sides were reported)' : ''}.

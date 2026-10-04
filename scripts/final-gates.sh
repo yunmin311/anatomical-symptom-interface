@@ -213,6 +213,10 @@ run() {
 run typecheck   pnpm typecheck
 run unit        pnpm test
 run build       pnpm --filter @asi/web build
+# A redesign renames panels and moves test ids. This says which hook a gate
+# depends on has gone, instead of leaving the gate to fail on something that has
+# nothing to do with what it was written to prove. Needs no server and no browser.
+run hooks       node scripts/audit-testhooks.mjs
 
 # --- from here the API is needed, so it is started and torn down with the run ---
 # The no-server gates above run first on purpose: a broken typecheck should not

@@ -88,9 +88,10 @@ try {
           true,
         );
         await page.getByRole('button', { name: 'Front of shoulder' }).click();
-        await page
-          .getByRole('button', { name: 'Side & depth', exact: true })
-          .click();
+        // No "Side & depth" tab to open: side and depth are a rail column on the
+        // Locate screen now, so the controls are already mounted. The assertion
+        // below is unchanged — it is about the value reaching the record, not
+        // about which panel housed the control.
         await page.getByLabel('Left', { exact: true }).check();
         await page.getByLabel('Deep inside', { exact: true }).check();
         await page
@@ -105,7 +106,7 @@ try {
           .first()
           .click();
         assert.ok(
-          await page.getByText('◇ Tool suggestion · not selected').count(),
+          await page.getByText('◇ Tool suggestion · not indicated yet').count(),
         );
         await page
           .getByRole('button', { name: 'Indicate this structure' })
