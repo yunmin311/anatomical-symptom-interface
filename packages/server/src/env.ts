@@ -18,6 +18,25 @@ const EnvSchema = z.object({
    * and blocks the record instead of hiding the signal. See ADR 0003.
    */
   ASI_RELEASE_PROFILE: z.enum(['development', 'release']).default('development'),
+  /**
+   * Which build is running, as an honest string.
+   *
+   * A service that cannot say which commit it is cannot be told apart from the build before
+   * it, which is the situation a preview environment exists to create. Supplied by the
+   * environment rather than read from `.git`, because a packaged container has no `.git`, and
+   * inventing a value there would be worse than reporting `unknown`.
+   */
+  ASI_BUILD_COMMIT: z.string().default('unknown'),
+  /**
+   * 'preview' marks a DEMONSTRATION deployment: synthetic data only, no real users, and not
+   * for any clinical purpose. It is a declaration the service makes about itself and shows in
+   * `/api/health`, so a reviewer can tell a preview from a real deployment by asking the
+   * service rather than by trusting whoever deployed it.
+   *
+   * It deliberately does NOT gate anything. A preview must not be able to switch itself into
+   * behaving differently from the build it is demonstrating, or it stops demonstrating it.
+   */
+  ASI_DEPLOY_KIND: z.enum(['local', 'preview']).default('local'),
 });
 
 export const env = EnvSchema.parse({
@@ -27,7 +46,21 @@ export const env = EnvSchema.parse({
   ASI_MODEL: process.env.ASI_MODEL,
   ASI_LOG_LEVEL: process.env.ASI_LOG_LEVEL,
   ASI_RELEASE_PROFILE: process.env.ASI_RELEASE_PROFILE,
+  ASI_BUILD_COMMIT: process.env.ASI_BUILD_COMMIT,
+  ASI_DEPLOY_KIND: process.env.ASI_DEPLOY_KIND,
 });
+
+/**
+ * What a preview deployment is for, stated by the service itself.
+ *
+ * The safety rules are unreviewed, the 2D anatomy is hand-made placeholder art and the FMA
+ * bindings are unverified, so a preview that read like a finished product would be a
+ * misrepresentation regardless of how well it worked.
+ */
+export const PREVIEW_NOTICE =
+  'Preview deployment. Synthetic data only. NOT clinically reviewed, NOT approved for ' +
+  'medical release, and NOT for use with real patients or real health data. 2D anatomy is ' +
+  'placeholder artwork and FMA bindings are unverified.';
 
 export const releaseProfile: ReleaseProfile = env.ASI_RELEASE_PROFILE;
 
