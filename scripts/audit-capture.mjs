@@ -121,7 +121,7 @@ const textOf = (page, sel) =>
   page.evaluate((s) => document.querySelector(s)?.textContent?.trim() ?? null, sel);
 
 async function toLocate(page, key) {
-  await page.goto(BASE, { waitUntil: 'networkidle' });
+  await page.goto(BASE, { waitUntil: 'domcontentloaded' });
   await page.waitForSelector('#root');
   await page
     .getByLabel('What has been bothering you?')

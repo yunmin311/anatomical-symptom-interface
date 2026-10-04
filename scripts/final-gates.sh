@@ -143,11 +143,16 @@ start_servers() {
   done
   sleep 1
 
+  # The repo-local binary, never `npx`. On a Windows-mount checkout `npx` resolves
+  # to the WINDOWS node first on PATH: it cannot resolve pnpm's store layout, so
+  # the seed fails outright, and a Windows child keeps the runner's pipe open so
+  # nothing after it ever sees EOF. `./node_modules/.bin` is what the lockfile pins.
+  #
   # `setsid` makes the child a process-group leader, so cleanup can kill the tree
   # rather than leaving an orphan node holding the port.
   ( cd packages/server && ASI_DB_PATH="$DB" ASI_PORT="$API_PORT" \
       ASI_RELEASE_PROFILE=development ANTHROPIC_API_KEY='' \
-      setsid npx tsx src/index.ts >"$WORK/api.log" 2>&1 & echo $! >"$WORK/api.pgid" )
+      setsid ./node_modules/.bin/tsx src/index.ts >"$WORK/api.log" 2>&1 & echo $! >"$WORK/api.pgid" )
   api_pgid=$(cat "$WORK/api.pgid" 2>/dev/null)
   wait_for "$BASE/api/health" api || return 1
 
@@ -158,7 +163,7 @@ start_servers() {
   # The old runner assumed somebody had already seeded whatever server it found,
   # which is why "38 smoke checks" could be reported against an empty database.
   echo "  seeding the scratch database"
-  ( cd packages/server && ASI_DB_PATH="$DB" npx tsx src/db/seed.ts ) >"$WORK/seed.log" 2>&1 || {
+  ( cd packages/server && ASI_DB_PATH="$DB" ./node_modules/.bin/tsx src/db/seed.ts ) >"$WORK/seed.log" 2>&1 || {
     echo "  !! seed failed:" >&2
     tail -20 "$WORK/seed.log" >&2
     return 1
@@ -168,7 +173,7 @@ start_servers() {
   # reads it, and its own default is the normal 8787, so a gate run that forgot
   # this would talk to whatever happened to be on 8787 -- or to nothing.
   ( cd apps/web && ASI_WEB_PORT="$WEB_PORT" ASI_API_ORIGIN="$BASE" \
-      setsid npx vite --port "$WEB_PORT" --strictPort \
+      setsid ./node_modules/.bin/vite --port "$WEB_PORT" --strictPort \
       >"$WORK/web.log" 2>&1 & echo $! >"$WORK/web.pgid" )
   web_pgid=$(cat "$WORK/web.pgid" 2>/dev/null)
   wait_for "$WEB_URL" web || return 1

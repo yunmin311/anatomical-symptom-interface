@@ -28,7 +28,7 @@ const log = (...args) => console.log(...args);
 {
   const ctx = await browser.newContext({ viewport: { width: 1440, height: 1000 } });
   const page = await ctx.newPage();
-  await page.goto(BASE, { waitUntil: 'networkidle' });
+  await page.goto(BASE, { waitUntil: 'domcontentloaded' });
   await page
     .getByLabel('What has been bothering you?')
     .fill('my right shoulder rotator cuff hurts deep inside when I lift my arm');
@@ -111,7 +111,7 @@ for (const size of [
     hasTouch: true,
   });
   const page = await ctx.newPage();
-  await page.goto(BASE, { waitUntil: 'networkidle' });
+  await page.goto(BASE, { waitUntil: 'domcontentloaded' });
   await page
     .getByLabel('What has been bothering you?')
     .fill('my right shoulder rotator cuff hurts deep inside when I lift my arm');

@@ -44,7 +44,7 @@ for (const key of ['shoulder', 'neck', 'lowerBack', 'knee']) {
     knee: 'my knee hurts on the inside going down stairs',
   }[key];
 
-  await page.goto(BASE, { waitUntil: 'networkidle' });
+  await page.goto(BASE, { waitUntil: 'domcontentloaded' });
   await page.getByLabel('What has been bothering you?').fill(utterance);
   await page.getByRole('button', { name: 'Locate on body map' }).click();
   await page.locator('.location-workbench, .unsupported-layout').first().waitFor();

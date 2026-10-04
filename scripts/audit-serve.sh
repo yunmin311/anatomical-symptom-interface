@@ -36,6 +36,32 @@ mkdir -p "$LOGDIR"
 
 pids_on() { ss -tlnpH "sport = :$1" 2>/dev/null | grep -oP 'pid=\K[0-9]+' | sort -u; }
 
+# Start a long-lived process fully detached: own session, no terminal, and NO
+# inherited descriptor above 2.
+#
+# The descriptors are the whole point. The launcher and its children share the
+# caller's stdout, so a server started in the background keeps the write end of
+# that pipe open long after this script has finished and printed everything.
+# Anything reading the pipe — `audit-serve.sh | tee`, a CI log collector, an agent
+# capturing output — then waits forever for an EOF that only arrives when the
+# server dies. The script looks hung with its work already done, which is the
+# worst failure there is to diagnose, and it is why this function closes fds
+# instead of trusting `>log 2>&1` to be enough.
+spawn_detached() {
+  local dir=$1 log=$2
+  shift 2
+  (
+    cd "$dir" || exit 1
+    for fd in /proc/self/fd/*; do
+      n=${fd##*/}
+      [ "$n" -le 2 ] && continue
+      eval "exec $n>&-" 2>/dev/null || true
+    done
+    exec setsid "$@" < /dev/null > "$log" 2>&1
+  ) &
+  echo $!
+}
+
 free_port() {
   local port=$1 pids
   for p in $(pids_on "$port"); do kill -9 "$p" 2>/dev/null; done
@@ -50,9 +76,15 @@ free_port() {
 free_port "$API_PORT" || exit 1
 free_port "$WEB_PORT" || exit 1
 
+# The repo-local binary, never `npx`. On a Windows-mount checkout `npx` resolves
+# to the WINDOWS node first on PATH, and a Windows child spawned from WSL keeps the
+# launching shell's pipe open: the probe after it never sees EOF, so the run hangs
+# with a healthy server answering. It also cannot resolve pnpm's store layout, so
+# the seed fails outright. `./node_modules/.bin` is the binary the lockfile pins.
 if [ "${1:-}" = "--fresh" ]; then
   rm -f "$DB"
-  ( cd packages/server && ASI_DB_PATH="$DB" npx tsx src/db/seed.ts ) >"$LOGDIR/seed.log" 2>&1 || {
+  ( cd packages/server && ASI_DB_PATH="$DB" ./node_modules/.bin/tsx src/db/seed.ts ) \
+    >"$LOGDIR/seed.log" 2>&1 < /dev/null || {
     echo "!! seed failed:" >&2
     tail -20 "$LOGDIR/seed.log" >&2
     exit 1
@@ -62,12 +94,14 @@ fi
 
 rm -rf apps/web/node_modules/.vite
 
-(
-  cd packages/server && ASI_DB_PATH="$DB" ASI_PORT="$API_PORT" \
-    ASI_RELEASE_PROFILE=development ANTHROPIC_API_KEY='' \
-    setsid npx tsx src/index.ts >"$LOGDIR/api.log" 2>&1 < /dev/null &
-  echo $! >"$LOGDIR/api.pgid"
-)
+spawn_detached packages/server "$LOGDIR/api.log" \
+  env ASI_DB_PATH="$DB" ASI_PORT="$API_PORT" \
+      ASI_RELEASE_PROFILE=development ANTHROPIC_API_KEY='' \
+      ./node_modules/.bin/tsx src/index.ts > "$LOGDIR/api.pgid"
+
+spawn_detached apps/web "$LOGDIR/web.log" \
+  env ASI_WEB_PORT="$WEB_PORT" ASI_API_ORIGIN="http://127.0.0.1:$API_PORT" \
+      ./node_modules/.bin/vite > "$LOGDIR/web.pgid"
 (
   cd apps/web && ASI_WEB_PORT="$WEB_PORT" ASI_API_ORIGIN="http://127.0.0.1:$API_PORT" \
     setsid npx vite >"$LOGDIR/web.log" 2>&1 < /dev/null &
