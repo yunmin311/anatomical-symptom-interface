@@ -1266,11 +1266,33 @@ details > p {
   .entry-layout {
     gap: 36px;
   }
+  /* Two columns rather than three. The desktop arrangement is
+     `minmax(220px,300px) minmax(0,1fr) auto`; at 768 that squeezed a 220px column,
+     a flexible one and an auto one into 768px and wrapped the bar to 337px —
+     taller than the canvas it introduces, and it sits above everything. The region
+     is the answer this screen exists to give, so it cannot be the thing that eats
+     the fold. */
+  .orientation {
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 6px 20px;
+    align-items: center;
+  }
+  .orientation__source {
+    grid-column: 2;
+    grid-row: 1 / span 2;
+    flex-direction: column;
+    align-items: flex-end;
+    justify-content: center;
+    text-align: right;
+  }
+  .orientation__words {
+    font-size: 15px;
+  }
   .location-workbench__grid {
     grid-template-columns: minmax(0, 1.15fr) minmax(310px, 1fr);
     grid-template-areas:
-      'viewer controls'
-      'viewer inspector';
+      'viewer inspector'
+      'viewer controls';
     max-width: 900px;
   }
   .viewer-panel {
@@ -1286,8 +1308,31 @@ details > p {
     max-height: 440px;
     min-height: 260px;
   }
+  /* The instruction used to be `display: none` here, and hiding it was right for
+     exactly one reason: it was hidden because the 3D surface was up, and a
+     caption about tapping a 2D map is noise above a canvas. Below 1000px it then
+     hid on BOTH surfaces, so on a phone — no hover, no cursor, and a tap is most
+     likely to land on the wrong thing — the only statement of how to select
+     anything was invisible. Shown again, and STILL absolutely positioned.
+
+     That last part is not incidental. `.viewer-canvas` is a centring flex row, so
+     an in-flow instruction becomes a flex sibling of the canvas and takes its
+     width: measured, the 3D canvas fell from 335px to 139px at a 375 viewport,
+     which is how a caption became the most expensive thing on the screen. The
+     band it occupies is reserved with padding on the canvas instead. */
   .canvas-instruction {
-    display: none;
+    display: block;
+    left: 8px;
+    right: 8px;
+    bottom: 6px;
+    padding: 3px 6px;
+    background: var(--bg);
+    font-size: 11px;
+    line-height: 1.4;
+    text-align: center;
+  }
+  .viewer-canvas {
+    padding-bottom: 30px;
   }
   .location-inspector {
     padding-left: 20px;
@@ -1406,7 +1451,16 @@ details > p {
     font-size: 15px;
     max-width: none;
   }
+  /* Back to one column. The tablet rule above places this in column 2 spanning two
+     rows, which is right while the bar itself is two columns — but on a phone the
+     bar is a SINGLE column, and an explicit `grid-column: 2` there creates an
+     implicit second one. The region name was then squeezed into half the width,
+     wrapped to three lines, and the bar grew by ~160px, which pushed every body
+     zone down under the sticky action bar. An explicit placement has to be undone
+     wherever the grid it was placed into no longer exists. */
   .orientation__source {
+    grid-column: auto;
+    grid-row: auto;
     text-align: left;
     flex-direction: row;
     justify-content: flex-start;
@@ -1419,14 +1473,15 @@ details > p {
     font-size: 11px;
     min-width: 0;
   }
-  /* Side and depth sit BELOW the canvas on a phone, not above it.
-     Above the canvas they were 446px of controls that left every body zone
-     past y=1043 in an 812px window — the map, the one thing this screen is for,
-     was entirely off screen. The values are still stated in the orientation bar,
-     so nothing is hidden; only the means of changing them requires a scroll, and
-     that is a linear scroll rather than the old third-level tab. */
+  /* Side and depth come AFTER the area list on a phone: not above the map, and not
+     above the areas. Above the canvas they were 446px of controls that left every
+     body zone past y=1043 in an 812px window. Between the map and the areas they
+     were still 439px, which put the first area control at y=1387 — the primary
+     decision of the screen, most of a scroll away, with the map above it.
+     Nothing is hidden by this: side and depth are stated in the orientation bar,
+     and this is a linear scroll rather than the old third-level tab. */
   .location-controls {
-    gap: 12px;
+    gap: 10px;
     padding: 16px 0;
     border-bottom: 0;
     border-top: 1px solid var(--line);
@@ -1445,18 +1500,23 @@ details > p {
     min-height: 36px;
     padding: 4px 0;
   }
-  /* One column, but still a grid: `display: block` here would fall back to DOM
-     order and put the side/depth controls back on top of the canvas, which is
-     the exact arrangement that hid the map. The areas keep the reading order as
-     map, then how to change it, then what has been picked. */
+  /* Still a grid, and still viewer-first — `display: block` here would fall back
+     to DOM order and put the side/depth controls back on top of the canvas.
+     The inspector now precedes the controls, matching what the tablet breakpoint
+     above already does, so the area list is the first thing under the map at every
+     width below 1000px. */
   .location-workbench__grid {
     grid-template-columns: minmax(0, 1fr);
     grid-template-areas:
       'viewer'
-      'controls'
-      'inspector';
+      'inspector'
+      'controls';
     min-height: 0;
     max-width: none;
+  }
+  .location-inspector {
+    padding: 16px 0 0;
+    border-top: 1px solid var(--line);
   }
   .viewer-panel {
     margin: 0 -20px;
@@ -1465,10 +1525,18 @@ details > p {
   .viewer-toolbar .small {
     font-size: 11px;
   }
-  .viewer-toolbar .choice {
-    min-height: 44px;
-    padding: 8px;
-  }
+.viewer-toolbar .choice {
+  min-height: 44px;
+  padding: 8px 4px;
+  gap: 4px;
+}
+/* With the padding above, "Body view" is 315px of max-content against a 335px
+   column, so the four view radios stay on ONE line instead of wrapping to two and
+   costing 44px the knee zone needs: at 812px the sticky action bar starts at 677
+   and the knee zone ends at 668. Nine pixels is not a margin. */
+.viewer-toolbar .choice-group__options {
+  gap: 2px;
+}
   .viewer-canvas {
     min-height: 250px;
   }
@@ -1856,12 +1924,20 @@ details > p {
   flex-wrap: wrap;
   min-width: 0;
 }
-/* Never let a group shrink before the row wraps. A shrunk fieldset wraps its own
-   options instead of moving whole, so the three view radios stacked into two rows
-   and the toolbar cost 148px on a phone — 48px of which was canvas the knee zone
-   could not be seen without scrolling under the sticky button bar. */
+/* Prefer to move a whole group onto its own row over shrinking it: a shrunk
+   fieldset wraps its own options instead, so the four view radios stacked into two
+   rows and the toolbar cost height the knee zone needs at 812px.
+
+   `max-width` is not optional, though. `flex: 0 0 auto` resolves the group's
+   MAX-CONTENT width, and "Body view" is 363px of that inside a 335px column, so
+   the row cannot fit it on any line and the whole document scrolls sideways by
+   8px — measured at 375 on all four regions. Clamping to the container means the
+   row wraps only when it genuinely has to, and overflow becomes impossible rather
+   than merely unlikely. */
 .viewer-toolbar__views > .choice-group {
   flex: 0 0 auto;
+  max-width: 100%;
+  min-width: 0;
 }
 
 /* Back-view and profile marks: present, but never loud enough to be mistaken
