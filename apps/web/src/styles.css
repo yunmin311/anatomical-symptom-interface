@@ -212,13 +212,42 @@ ol {
  * clicks "Change" and answers differently has no way to know they replaced something.
  */
 .answer-edits {
-  list-style: none;
-  margin: var(--space-2, 8px) 0 0;
-  padding: 0;
+  margin: var(--space-3, 12px) 0 0;
+  padding-top: var(--space-2, 8px);
   border-top: 1px solid var(--line, #ddd);
 }
+.answer-edits .eyebrow {
+  margin: 0 0 6px;
+}
+.answer-edits ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
 .answer-edits li {
-  padding-block: 2px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+/* Never-asked questions, gathered. Eight consecutive `Not asked` rows is
+   accurate and unscannable; this keeps every one of them on the page, labelled,
+   and out of the way of what the user actually answered. */
+.not-asked {
+  margin-top: 12px;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: 3px;
+}
+.not-asked > summary {
+  cursor: pointer;
+  font-size: 13px;
+  color: var(--muted);
+}
+.not-asked p {
+  margin: 8px 0 0;
 }
 .interview-edit-banner {
   display: flex;
@@ -868,16 +897,79 @@ details > p {
 .experience-context > .small {
   margin-top: 12px;
 }
+/* The sidebar receipt, labelled. It read `Shoulder · right · deep` — raw enum
+   values from the record in the same weight as the user's own words, and on a
+   phone three unlabelled lines where nothing said which fact was the location. */
+.location-receipt {
+  display: grid;
+  gap: 2px;
+  margin: 12px 0 16px;
+  font-size: 13px;
+}
+.location-receipt > div {
+  display: flex;
+  gap: 10px;
+  align-items: baseline;
+}
+.location-receipt dt {
+  min-width: 44px;
+  color: var(--muted);
+}
+.location-receipt dd {
+  margin: 0;
+}
 .interview-panel {
   padding: 0;
 }
+/* Progress, as four facts rather than one number.
+   `0 of 8 answered` said nothing about which question you were on, nothing about
+   how many were left, and left "answered" ambiguous at exactly the moment it
+   matters — whether "I am not sure" counted. Each part answers one of those. */
 .interview-progress {
-  display: flex;
-  justify-content: space-between;
-  gap: 16px;
-  font-size: 12px;
-  color: var(--muted);
+  display: grid;
+  gap: 6px;
   margin-bottom: 24px;
+  padding-bottom: 16px;
+  border-bottom: 1px solid var(--line);
+  font-size: 13px;
+  color: var(--muted);
+}
+.interview-progress p {
+  margin: 0;
+}
+.interview-progress__where {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 10px;
+}
+.interview-progress__where strong {
+  font-size: 17px;
+  color: var(--ink);
+}
+.interview-progress__where .eyebrow {
+  margin: 0;
+  width: 100%;
+}
+.interview-progress__counts strong {
+  font-size: 15px;
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
+}
+.interview-progress__track {
+  height: 6px;
+  margin-top: 4px;
+  background: var(--line);
+  border-radius: 3px;
+  overflow: hidden;
+}
+.interview-progress__track > span {
+  display: block;
+  height: 100%;
+  background: var(--accent);
+}
+.interview-progress__note {
+  line-height: 1.45;
 }
 .interview-panel > progress {
   display: none;
@@ -964,6 +1056,30 @@ details > p {
   font-size: 18px;
   line-height: 1.6;
   margin: 24px 0;
+}
+/* The patient's own words lead the document. `chiefComplaint` is a correct
+   domain-generated line and stays word-for-word, but it is a run of semicolons
+   and it was the first thing above the one thing both readers came for. */
+.summary__lead {
+  margin: 20px 0 4px;
+}
+.summary__lead .eyebrow {
+  margin: 0 0 4px;
+}
+.summary__lead .own-words {
+  margin: 0;
+}
+.summary__cc-detail {
+  margin: 8px 0 0;
+}
+.summary__cc-detail > summary {
+  cursor: pointer;
+  font-size: 13px;
+  color: var(--muted);
+}
+.summary__cc-detail .summary__cc {
+  font-size: 15px;
+  margin: 8px 0 0;
 }
 .record-section {
   padding: 24px 0;
@@ -1147,6 +1263,12 @@ details > p {
   display: block;
   font-size: 18px;
   font-weight: 500;
+}
+/* The user's own words as the episode heading. Every episode title is
+   `"<region> — <date>"`, so three episodes in one region were indistinguishable
+   except by the date printed underneath. */
+.episode__words {
+  overflow-wrap: anywhere;
 }
 .episode__heading .small {
   display: block;
@@ -2032,6 +2154,15 @@ details > p {
   font-variant-numeric: tabular-nums;
   color: var(--muted);
   font-size: 13px;
+}
+/* A count with no "last time" cannot answer "which of these three was recent",
+   which is the only reason to open a place. `lastEpisodeAt` was already on the
+   place the server sent and simply was not shown. */
+.location-mark__when {
+  margin-left: auto;
+  color: var(--muted);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
 }
 
 /* An idle 3D host must not occupy the flex row: at 375px it was taking the full

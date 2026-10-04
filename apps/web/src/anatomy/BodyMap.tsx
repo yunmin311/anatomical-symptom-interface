@@ -16,6 +16,7 @@ import {
   zonesForRegionView,
 } from './svg-geometry.ts';
 import { REGION_DEFAULT_VIEW, VIEW_LABEL } from './svg2d.ts';
+import { sidePhrase } from '../ui/presentation.ts';
 import { Body3d } from './Body3d.tsx';
 import type { ViewName } from './types.ts';
 import { ChoiceGroup } from '../ui/primitives.tsx';
@@ -71,22 +72,6 @@ const DEPTH_EFFECT: Record<Depth, string> = {
   deep: 'the deeper layers are shown',
   unknown: 'every layer is shown, because no depth has been established',
 };
-
-/**
- * A side in words, for a sentence rather than for a button.
- *
- * `unknown` reads as "not established" rather than "unknown", because the whole
- * product keeps unknown and not-asked apart and a label that collapses them
- * undoes that in the most visible place on the screen. The button itself says
- * "Not sure", which is what the user is answering; the orientation bar reports
- * the state of the record.
- */
-function sidePhrase(side: Side): string {
-  if (side === 'unknown') return 'Side not established';
-  if (side === 'midline') return 'Centre line';
-  if (side === 'bilateral') return 'Both sides';
-  return side === 'left' ? 'Left side' : 'Right side';
-}
 
 /**
  * 3D is offered on wide viewports only. A phone gets the 2D map by default: it

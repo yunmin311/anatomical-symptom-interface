@@ -20,6 +20,26 @@ export function InterviewPanel() {
           (q) => q.id === editingQuestionId,
         ) ?? null;
   const question = editing ?? next;
+  /**
+   * Where this question sits, and how much is left.
+   *
+   * "0 of 8 answered" was the whole of it, and every part of that was a poor
+   * answer to a question a person actually has: it did not say which question
+   * they were on, it did not say how many were left, and a count called
+   * "answered" is ambiguous precisely when it matters — "I am not sure" is a
+   * real answer, and it is not the same as a yes.
+   *
+   * The ordinal is the question's index in the region's own question list, which
+   * is a fact rather than an inference. It is deliberately NOT derived from
+   * `progress.total`: that counts only the questions whose `showIf` currently
+   * applies, so counting against it would report a position that does not exist
+   * whenever a conditional question is out of scope. The two numbers answer
+   * different questions and are labelled as such.
+   */
+  const regionQuestions = INTERVIEW[record.location.region] ?? [];
+  const position = question ? regionQuestions.findIndex((q) => q.id === question.id) + 1 : 0;
+  const openCount = progress.outstanding.length;
+  const done = progress.total > 0 ? (progress.total - openCount) / progress.total : 0;
 
   if (!question)
     return (
@@ -56,10 +76,50 @@ export function InterviewPanel() {
         </div>
       )}
       <div className="interview-progress">
-        <span>{REGIONS[record.location.region].label} details</span>
-        <span>
-          {progress.answered} of {progress.total} answered
-        </span>
+        <p className="interview-progress__where">
+          <span className="eyebrow">
+            {editing ? 'Changing an answer' : 'Now asking'}
+          </span>
+          <strong>
+            Question {position} of {regionQuestions.length}
+          </strong>
+          <span className="small">
+            {REGIONS[record.location.region].label} questions
+          </span>
+        </p>
+        <p className="interview-progress__counts">
+          <span>
+            <strong>{progress.total - openCount}</strong> of {progress.total} answered
+          </span>
+          <span aria-hidden="true"> · </span>
+          <span>
+            <strong>{openCount}</strong> still open
+          </span>
+        </p>
+        {/*
+          A determinate bar, because "5 of 8" and a third of the way along are
+          the same fact and one of them survives being glanced at.
+        */}
+        <div
+          className="interview-progress__track"
+          role="progressbar"
+          aria-valuemin={0}
+          aria-valuemax={progress.total}
+          aria-valuenow={progress.total - openCount}
+          aria-label="Questions answered"
+        >
+          <span style={{ width: `${Math.round(done * 100)}%` }} />
+        </div>
+        {/*
+          What "answered" means, said out loud. This is the one place a user can
+          be told that declining to answer is recorded rather than guessed, and
+          the sentence above the bar is what they will read when they wonder
+          whether "I am not sure" cost them anything.
+        */}
+        <p className="interview-progress__note small">
+          “I am not sure” is recorded as an answer. It stays separate from “no”,
+          and nothing is filled in for you.
+        </p>
       </div>
       <QuestionForm
         key={question.id}
