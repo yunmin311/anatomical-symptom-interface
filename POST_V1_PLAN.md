@@ -276,8 +276,10 @@ two-truths problem the canonical id work removed.
                     └───────────────┬─────────────────────────┘
                                     │
                     ┌───────────────┴─────────────────────────┐
-   C · PHASE 2      │ C.1 answer history ← needs C.1 first ──→ │
-   (not started)    │ C.2 regions  C.3 longitudinal  C.4 external│
+   C · PHASE 2      │ C.1 answer history                      │
+   (not started)    │ C.2 additional anatomy regions          │
+                    │ C.3 longitudinal health ← needs C.1     │
+                    │ C.4 external / EHR / wearable           │
                     └─────────────────────────────────────────┘
 ```
 
