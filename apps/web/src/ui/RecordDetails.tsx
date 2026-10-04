@@ -167,8 +167,18 @@ export function RecordDetails({
                           {questionLabel(a.questionId)}
                           <span className="sr-only"> — go back to this question</span>
                         </button>
+                        {/*
+                          The label is asserted by the browser gates
+                          (`/changed this answer/i`). That is a contract, not a
+                          preference: a corrected answer has to be visibly
+                          labelled as corrected, and "you edited this" does not
+                          say what was edited.
+                        */}
                         {a.provenance.sourceType === 'user_edited' && (
-                          <span className="muted small">you changed this</span>
+                          <span className="muted small">
+                            {' '}
+                            — you changed this answer
+                          </span>
                         )}
                       </li>
                     ))}

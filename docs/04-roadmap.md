@@ -150,8 +150,9 @@ shows placeholder volumes, because the asset it needs has not been supplied. Thi
 phase is that asset, and the semantics around it.
 
 - [x] **1. The real BodyParts3D asset.** `isa_BP3D_4.0_obj_99.zip` obtained, verified by
-      SHA-256, and run through the existing pipeline for all four regions. 82 production GLBs,
-      committed as generated output; the multi-gigabyte archive stays out of the repo.
+      SHA-256, and run through the existing pipeline for all four regions. 95 production
+      GLBs (82 bilateral plus 13 dedicated midline), committed as generated output; the
+      multi-gigabyte archive stays out of the repo.
 - [x] **2. Verify the source mappings against the actual archive.** Every `meshName` was
       checked against the archive before it was trusted, with `scripts/audit-region.mjs`
       making that reproducible. The audit changed the plan's central assumption: the `M`
@@ -194,16 +195,31 @@ phase is that asset, and the semantics around it.
 
 Carried forward from Phase 1A and still genuinely open:
 
-- [ ] **Depth interaction.** The weakest part of the current UX. Users should be
-      able to say "not the skin, not the muscle, deeper" and have the model
-      respond. Plan §12.3, unsolved.
+- [x] **Depth interaction — as far as the domain allows.** Depth is no longer a
+      third-level inspector tab: side and depth are a rail beside the map, stated
+      in words a person uses, with the consequence of the choice spelled out as a
+      slice ("the deeper layers are shown") rather than as a list of tissue names.
+      **What is still missing is a capability, not a design.** `Depth` has exactly
+      four values and cannot express "not the skin" or a relative "deeper than I
+      said"; see capability request 1 in
+      [`docs/design/v1-product-audit.md`](design/v1-product-audit.md). No fifth
+      value was invented.
 - [ ] **Per-field suggested-vs-chosen provenance.** Today a field's provenance
       strategy is fixed by the registry rather than by what actually happened.
-- [ ] **An explicit selection marker on return to Locate.** The user has to be able
-      to see that their previous visual selection survived.
+- [x] **An explicit selection marker on return to Locate.** Closed, and it was
+      worse than "missing": the recorded area was on the map while no control was
+      pressed and the primary action was disabled, so a returning user had to
+      re-choose an area they had already chosen. The draft now starts from the
+      record, the chosen area is marked as recorded, and the origin of a structure
+      suggestion is a state rather than a text prefix. Verified by
+      `scripts/audit-interactions.mjs`.
 - [ ] **Question progress semantics.** "How far through am I" is currently derived
       from which questions were displayed; whether that is the right definition is
-      a product question.
+      a product question. The interface now states the question's position in the
+      region's own list and both counts, and deliberately does **not** count the
+      position against the applicability-filtered total — the counts are labelled
+      as different facts rather than reconciled into one number the domain does not
+      assert.
 - [ ] **Write `layTerm` for every V1 structure.** Kenhub standard. Unglamorous,
       non-negotiable.
 - [ ] **FMA verification.** Every generated FMA binding is `unverified` until a
@@ -211,6 +227,11 @@ Carried forward from Phase 1A and still genuinely open:
 - [ ] **Clinical review of the red-flag rules.** Named reviewer, named source, both
       false-positive and false-negative reasoning written down. Until then the
       release profile correctly refuses to start.
+- [ ] **Episode titles.** Every episode is titled `"<region> — <date>"`, so three
+      episodes in one region cannot be told apart and "most recent" is not
+      answerable from the list. The views now lead with the patient's own words
+      instead of relying on the title; a title derived from what the user said is a
+      Main Agent capability request, not a frontend invention.
 
 ---
 

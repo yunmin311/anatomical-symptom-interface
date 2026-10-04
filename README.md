@@ -82,6 +82,7 @@ node scripts/smoke.mjs   # 38 API checks (server must be running)
 # It starts and seeds its own servers, reports PASS / FAIL / SKIP per gate, and
 # exits non-zero if any gate failed OR any gate was skipped.
 bash scripts/final-gates.sh
+```
 
 ---
 

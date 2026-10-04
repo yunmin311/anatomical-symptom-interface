@@ -1,9 +1,18 @@
 # Design / frontend handoff
 
+> **The V1 product-design refinement pass lives on `design/v1-product-refinement`,
+> not here.** Its audit is
+> [`docs/design/v1-product-audit.md`](docs/design/v1-product-audit.md) — what the
+> product actually did when driven end to end against real BodyParts3D scenes at
+> 375, 768 and 1440, before any of it was redesigned. Read that first: it is the
+> evidence, and several of the findings below are now closed and are marked as
+> such. The harness that produced it is `scripts/audit-*.{mjs,sh}`, and
+> `scripts/final-gates.sh` is still the single entry point.
+
 > **Superseded in the anatomy-viewer sections by Phase 1A, which is now
 > INTEGRATED on `phase1/integration`.** The V2 notes below are kept for history;
-> where they disagree with the current code, the code is right and the note is
-> marked. Phase 1A added:
+> where they disagree with the current code, the code is right and the note
+> is marked. Phase 1A added:
 > [`docs/design/phase1a-anatomy-workspace.md`](docs/design/phase1a-anatomy-workspace.md)
 > — a 3D adapter behind the unchanged `AnatomyAdapter` contract, a real
 > `RendererSceneManifest` fed by an adapter from the canonical asset manifest, a
@@ -15,7 +24,7 @@
 > - The near→ear lexical bug is **resolved** — boundary matching no longer treats
 >   a substring inside a word as a token.
 > - The viewer is no longer "not implemented": it loads real GLB bytes through
->   the real `GLTFLoader`, resolves descendant meshes to canonical `asiId`s and
+>   the real `GLTFLoader`, resolves descendant meshes to canonical `asiIds` and
 >   selects structures.
 > - **Depth projection is resolved** — the record's depth reaches the viewer on
 >   every write.
@@ -26,6 +35,31 @@
 >   `apps/web/src/anatomy/scene-manifest.ts`, and its types are named
 >   `RendererSceneManifest` / `RendererSceneEntry`. Two files called "the
 >   manifest" was a correctness hazard, not a style choice.
+
+## What the design pass changed, and what it deliberately did not
+
+The design pass reorganised presentation only. It introduced no field, no rule,
+no id, no mapping and no second implementation of anything the domain owns.
+
+| Area | Now | Owner boundary respected |
+|---|---|---|
+| Locate / anatomy workspace | The region is the largest text on the screen and the four facts — area, side, depth, view — are stated in one orientation bar rather than scattered across a tab and a 12px footer caption | `location.*` values are read from the record, never derived |
+| Depth | A rail beside the map, in words a person uses, with the consequence stated as a slice rather than as a list of tissue names | The four-value `Depth` enum is unchanged. A `depthQualifier` is a capability request, not an invention |
+| Selection continuity | The draft starts from the record, so returning to Locate shows the area chosen, marked as recorded, with the primary action enabled | `location.userSelectedStructureIds` remains the only source of truth for a visual selection |
+| Interview | Position, both counts, a determinate bar, and one sentence saying "I am not sure" is recorded as an answer | The ordinal is the index in the region's own list and is deliberately **not** counted against `questionProgress.total`, which is applicability-filtered |
+| Review | Answered rows first; never-asked questions in one labelled disclosure per section; edit controls are buttons | Row values are unchanged. `readable()` is unchanged |
+| History | Episodes lead with the patient's own words; side and status in words; the place list shows when it was last used | Place identity, counts and membership still come from the server's `regionRowId`. Nothing is regrouped in the browser |
+| Summary | The patient's own words lead; `chiefComplaint` is unchanged word for word under "One-line summary"; the export action sits above the provenance list | `chiefComplaint` and `renderPlainText` are domain output and were not re-implemented |
+| Mobile | No horizontal scroll at 375; the canvas instruction is visible below 1000px; the area list precedes side/depth | Layout and copy only |
+| Accessibility | The canvas instruction is visible on every surface at every width; every progress figure is in text as well as in the bar; side and depth wording is defined once | No ARIA role, name or landmark was removed |
+
+Two things the audit found that are **still** open, and why:
+
+- **Depth cannot express "not the skin".** A capability, not a design. Request 1
+  in the audit.
+- **Episode titles are `"<region> — <date>"`.** The views now lead with the
+  patient's own words instead of pretending the title distinguishes anything; a
+  derived title is a Main Agent capability request.
 
 ## Resolved since V1
 The old fallback-region presentation workaround is removed. UI uses authoritative
@@ -42,12 +76,15 @@ No private write endpoint, new field, medical question or altered rule was added
 |---|---|---|---|
 | Natural English descriptions should reach supported regions | ~~`detectOutOfScope` matches compact text substrings; `ear` matches `near`.~~ **RESOLVED** — the router now matches on token boundaries, so `near` no longer triggers `ear`. Covered by a regression test in `packages/shared/test/grounding.test.ts`. Unsupported safety routing stays authoritative. | — none outstanding — | Closed. |
 | Truthful per-field “suggested” versus “chosen” labels after navigation | Session location contains proposed side/depth/subregion alongside user edits; no readable origin/interaction status per field in the frontend session. | Expose existing provenance/interaction status as read-only presentation metadata; do not invent another persisted authority. | Blocks precise per-field origin badges, not the workspace. UI says starting suggestion / current description, never medically confirmed. |
-| Restore approximate selection when returning to Locate | No reliable user-selected subregion marker separate from suggested subregion. Local pending choice is intentionally reset on remount. | Read-only marker distinguishing explicit user area choice from proposed subregion. | User must reselect area when returning; avoids silently accepting proposal. |
+| ~~Restore approximate selection when returning to Locate~~ **RESOLVED on `design/v1-product-refinement`.** | No reliable user-selected subregion marker separate from suggested subregion; the pending choice was reset on remount, so a returning user saw the recorded area on the map with every button unpressed and a **disabled** primary action. | **None outstanding.** The draft is seeded from `location.subRegionId` and the chosen area is marked `recorded`, with the suggestion/selection distinction stated as a state on each candidate rather than as a text prefix. Measured before: `continueEnabled: false`, no pressed button. After: `continueEnabled: true`, `Front of shoulder ✓ recorded`. Provenance is unchanged — the record is still the only authority. |
+| Episode titles | Titles are `"<region> — <date>"`, so three episodes in one region are indistinguishable and "most recent" / "open episode" cannot be read off the list. | Either a title derived from what the user said, or a stable way to show the distinguishing facts. | Non-blocking. **The views no longer lean on the title**: the patient's own words lead each episode, and each place shows when it was last used. A derived title is still a Main Agent decision. |
 | Faithful side/view/pin geometry | Point is x/y without a view or side coordinate frame. Existing 2D hit targets have schematic proportions and fixed side placement. | Specify coordinate/view semantics before geometry replacement, side mirroring, or 3D. | Blocks faithful mirrored/view-specific pins. UI explicitly says schematic; side/depth separate. |
 | Consistent question count meaning | `questionProgress.outstanding` uses triState for all question types; some answered non-boolean values normalise to unknown. An answered count can coexist with a high outstanding count. | Domain-provided per-question unresolved/missing status appropriate to each question type. | Non-blocking; UI displays returned counts and exact raw answers without redefining resolution. |
 | Stable summary grouping | `summary.history` has English labels only. | Optional stable field/section identifiers alongside unchanged labels/values. | Non-blocking; unknown labels remain in Other details. |
-| Editing a previously answered question | UI can read answers, but replacing an answer may require domain reconciliation of additive record fields. | Explicit replacement/recompute semantics for an existing answer. | Blocks truthful per-answer edit/back flow; no misleading edit action added. |
+| Editing a previously answered question | ~~UI can read answers, but replacing an answer may require domain reconciliation of additive record fields.~~ **RESOLVED in the domain** — re-answering REPLACES, marked `user_edited` by the store from the row, and the answer-derived fields are recomputed from the whole answer set. | — none outstanding — | Closed. The per-answer edit controls are buttons that return to the question, and the correction banner states that the previous answer is replaced rather than kept. |
 | Clinically reviewed copy and rules | Rationale and rules remain unreviewed. Current service reports 10/10 rules unreviewed. | Clinical review through existing policy, not frontend changes. | Blocks real-user release, not prototype design. Exact supplied safety wording retained. |
+| Depth cannot express "not the skin" | `Depth` is `superficial \| intermediate \| deep \| unknown`. Four values cannot carry "not the skin", "around the muscle", or a relative "deeper than I said". | A separate `depthQualifier` claim beside the enum — the smallest change that lets the interface say what the user said, and it does not overload `Depth`'s meaning. | Non-blocking for V1, blocking for the roadmap's §12.3 interaction. **The UI did not invent a fifth value**; it states the consequence of each of the four as a slice. Request 1 in the audit. |
+| Summary label casing | `summary.history` renders `Depth (patient report)` → `Deep`, while the review table says `Deep inside` for the same field. | The label/value pair to come from one place. | Cosmetic, and deliberately **not** patched in the frontend: rewriting a domain-produced value would be a second implementation of the summary. |
 | ~~Safety action steps in the copied plain-text summary~~ **RESOLVED in `renderPlainText` (domain).** | Raised here because deferring the copy to the domain dropped `safetyNotes[].steps` from the clipboard/fallback payload, making the pasted artefact less complete than the screen. The domain renderer now emits every step, indented under its own note so steps cannot be read as the next note's message. Blocked-gate output is unchanged and still withholds rather than prints. Covered by `packages/shared/test/plain-text-safety.test.ts`. | — none outstanding — | Closed. The domain renderer stays authoritative and the frontend still carries no second implementation. |
 
 ## Deliberate scope limits
@@ -67,6 +104,38 @@ No private write endpoint, new field, medical question or altered rule was added
 - History counts are records, not severity or risk. No scores, trends or diagnostic claims.
 - Empty/loading/error are separate. Offline deterministic mode still needs its local API service.
 - Incomplete records can be reviewed/saved as main permits. No new safety gate or safety clearance.
+
+## Notes added by the 2026-10-04 design pass
+
+- **The gate and audit runners must not use `npx`.** On a `/mnt/<drive>` checkout
+  `npx` resolves to the *Windows* node first on PATH. It cannot resolve pnpm's
+  store layout, so the seed fails outright, and a Windows child keeps the runner's
+  pipe open, so anything reading that output waits forever for an EOF that only
+  arrives when the server dies. Both runners now use `./node_modules/.bin`, which
+  is what the lockfile pins.
+- **A background server must close every inherited descriptor above 2.** Starting
+  the API and the dev server with `&` and `>log 2>&1` is not enough: the children
+  still hold the caller's stdout, so `audit-serve.sh | tee` hangs with the script's
+  own output already printed. `spawn_detached` in `scripts/audit-serve.sh` closes
+  fds 3+ before exec.
+- **Never wait on `networkidle` against the Vite dev server.** It holds an HMR
+  websocket open, so the network is never idle and each `goto` stalls. The browser
+  probes use `domcontentloaded` plus the element wait they already had; the fold
+  probe went from over fifteen minutes to seconds.
+- `vite.config.ts` sets `strictPort`. Vite's default is to take the next free port
+  when the one it was asked for is busy, so a second checkout silently serves the
+  old build on the port you are reading.
+- `scripts/audit-freshness.mjs` compares string literals rather than bytes, because
+  Vite serves esbuild output. Comments and import specifiers are stripped first —
+  esbuild removes comments and Vite rewrites paths, so without that step the check
+  reports ~18 false "missing" literals on a perfectly fresh server.
+- `final-gates.sh` has a `hooks` gate (`scripts/audit-testhooks.mjs`) that names a
+  `data-testid` a gate depends on if a redesign removes it, instead of leaving the
+  gate to fail somewhere unrelated.
+- The screenshots in `docs/design/v1-product-audit.md` were taken with real
+  production scenes at 375 / 768 / 1440. No screenshot in this repository is of a
+  fixture, and `scripts/audit-serve.sh --check-fresh` proves the module the browser
+  received is the module on disk before a capture is believed.
 
 ## Notes added by the 2026-09-30 continuation pass
 
@@ -102,7 +171,7 @@ No private write endpoint, new field, medical question or altered rule was added
 
 | UI need | Where it lives now | What the owner has to do | Blocking? |
 |---|---|---|---|
-| Real anatomy meshes | `packages/shared/src/anatomy-manifest.ts` is the **only** asset authority. `apps/web/src/anatomy/scene-manifest.ts` is a renderer contract, converted by `asset-scene-adapter.ts` | Put the real manifest through `parseManifest` and `toRendererScene`. Do **not** hand-build a scene, and do not write `externalAssetNotice` by hand — it is derived and `assertSceneAttribution` rejects one that disagrees | **Done for all four regions.** BodyParts3D 4.0 (CC BY 4.0), audited mesh by mesh against the archive before mapping. 82 production GLBs, including real MIDLINE builds for the neck and the lower back. The renderer, picking, layers, camera and fallback were already done and tested. |
+| Real anatomy meshes | `packages/shared/src/anatomy-manifest.ts` is the **only** asset authority. `apps/web/src/anatomy/scene-manifest.ts` is a renderer contract, converted by `asset-scene-adapter.ts` | Put the real manifest through `parseManifest` and `toRendererScene`. Do **not** hand-build a scene, and do not write `externalAssetNotice` by hand — it is derived and `assertSceneAttribution` rejects one that disagrees | **Done for all four regions.** BodyParts3D 4.0 (CC BY 4.0), audited mesh by mesh against the archive before mapping. **95** production GLBs — 82 bilateral plus 13 dedicated midline — including real MIDLINE builds for the neck and the lower back. The renderer, picking, layers, camera and fallback were already done and tested. |
 | One mesh per GLB | The adapter deliberately does not set `nodeName`, because the Core pipeline emits one mesh per file and requiring a name would refuse every real asset | None. A future multi-part file sets `nodeName` on the scene entry explicitly | Not blocking. Both shapes are tested. |
 | Sub-region ambiguity | A structure reachable from several sub-regions carries the whole canonical `subRegionIds`; `soleSubRegionId` exists only when there is exactly one. `resolveSubRegionForStructure` keeps / adopts / asks | None. **Do not** collapse the list to its first element — that is the bug this shape exists to prevent | Resolved, and enforced by a test that fails if a singular field appears for a multi-sub-region structure. |
 | Patient-side mirroring | `CAMERA_PRESETS` in `three3d.ts` places the camera on the figure's left flank | Decide the figure-to-patient mapping and say so in the manifest or a domain constant; the adapter deliberately does not guess | **Done.** Presets are four distinct, tested stations, and laterality now comes from the source concept rather than from camera position. The 2D map expresses side by mirroring the drawing. |

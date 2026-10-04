@@ -313,6 +313,30 @@ the title.
 
 Unchanged from the roadmap. Unglamorous, non-negotiable for a clinical audience.
 
+### 5. One place for a field's user-facing wording (non-blocking, found during the pass)
+
+The same field is worded differently on two screens the user sees in the same
+session: the review table says `Depth: Deep inside` and the saved summary says
+`Depth (patient report): Deep`, because `summary.history` is built by the domain
+from `titleCase(record.location.depth)` while the review reads the enum through a
+presentation helper.
+
+The frontend deliberately did **not** patch this. Rewriting a domain-produced
+value would be a second implementation of the summary, which is exactly the class
+of bug `renderPlainText` was centralised to prevent. The fix is for the label/value
+pair to come from one place — ideally the same lookup the summary already uses for
+`ONSET_LABEL` and `TRIGGER_LABEL`, extended to side and depth.
+
+### 6. Spatial history: does an episode count as "asked"? (non-blocking, found during the pass)
+
+`SpatialHistoryNode` carries `episodeCount` and `lastEpisodeAt`, which is enough to
+answer "where have I pointed, and when". It cannot answer "how often did this
+actually happen", because a count of records is not a count of occurrences: a
+reopened episode updates in place, so one complaint is one record however many
+times it was continued. The view therefore labels every number as episodes and
+states `Counts reflect saved records, not symptom severity` once. If the product
+wants to say anything stronger, the domain has to say it.
+
 ---
 
 ## What this audit deliberately does not do
