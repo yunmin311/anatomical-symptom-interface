@@ -47,10 +47,31 @@ for (const key of ['shoulder', 'neck', 'lowerBack', 'knee']) {
   await page.goto(BASE, { waitUntil: 'domcontentloaded' });
   await page.getByLabel('What has been bothering you?').fill(utterance);
   await page.getByRole('button', { name: 'Locate on body map' }).click();
-  await page.locator('.location-workbench, .unsupported-layout').first().waitFor();
+
+  /*
+   * THE CLARIFICATION INTERSTITIAL MUST BE HANDLED BEFORE WAITING FOR THE WORKBENCH.
+   *
+   * An ambiguous description grounds to a `clarify` stage that renders an `EmptyState`
+   * offering "Show me the body map" -- not a workbench. So waiting for `.location-workbench`
+   * first hangs forever on exactly the region whose description is ambiguous, and this script
+   * did that: it waited for the workbench, then looked for the clarify button that would have
+   * dismissed the screen it was waiting on. Knee timed out for that reason and nothing else.
+   *
+   * So the first wait is for EITHER the workbench or the interstitial, the interstitial is
+   * dismissed if it appeared, and only then is the workbench awaited. Same order and the same
+   * selectors as `user-flow-browser.mjs`, which is the working reference for this path.
+   *
+   * `unsupported-layout` is deliberately not in the first wait: an unsupported region exits
+   * rather than entering an interview, and every utterance here is a supported one, so waiting
+   * for a screen that should never appear would convert a real regression into a long timeout.
+   */
+  await page.locator('.location-workbench, .empty-state').first().waitFor({ timeout: 30_000 });
   const clarify = page.getByRole('button', { name: 'Show me the body map' });
-  if (await clarify.isVisible().catch(() => false)) await clarify.click();
-  await page.locator('.location-workbench').waitFor();
+  if (await clarify.isVisible().catch(() => false)) {
+    console.log(`(${key}: dismissed the clarification interstitial)`);
+    await clarify.click();
+  }
+  await page.locator('.location-workbench').waitFor({ timeout: 30_000 });
   await page.waitForTimeout(1500);
 
   console.log(`\n=== ${key} · default surface ===`);

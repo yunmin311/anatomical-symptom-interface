@@ -1,40 +1,36 @@
 # Design / frontend handoff
 
-> **The V1 product-design refinement pass lives on `design/v1-product-refinement`,
-> not here.** Its audit is
+> **Read this first.** It is the design/frontend handoff for ASI **V1**, which is
+> **integrated on `main`**. Anything below marked *(historical)* describes how V1 got
+> here and is kept only because the reasoning is worth not re-deriving — **it is not
+> a statement about current state.** If the two disagree, the code is right and this
+> file is wrong; fix this file.
+>
+> The design pass that produced the current UI lives on `design/v1-product-refinement`
+> and is not merged yet. Its audit is
 > [`docs/design/v1-product-audit.md`](docs/design/v1-product-audit.md) — what the
 > product actually did when driven end to end against real BodyParts3D scenes at
-> 375, 768 and 1440, before any of it was redesigned. Read that first: it is the
-> evidence, and several of the findings below are now closed and are marked as
-> such. The harness that produced it is `scripts/audit-*.{mjs,sh}`, and
-> `scripts/final-gates.sh` is still the single entry point.
+> 375, 768 and 1440, **before** any of it was redesigned. That is the evidence, and
+> several findings below are now closed and are marked as such. The harness is
+> `scripts/audit-*.{mjs,sh}`; `scripts/final-gates.sh` is the single entry point.
 
-> **Superseded in the anatomy-viewer sections by Phase 1A, which is now
-> INTEGRATED on `phase1/integration`.** The V2 notes below are kept for history;
-> where they disagree with the current code, the code is right and the note
-> is marked. Phase 1A added:
-> [`docs/design/phase1a-anatomy-workspace.md`](docs/design/phase1a-anatomy-workspace.md)
-> — a 3D adapter behind the unchanged `AnatomyAdapter` contract, a real
-> `RendererSceneManifest` fed by an adapter from the canonical asset manifest, a
-> rebuilt 2D map, depth wired to the viewer, a fallback that cannot white-screen,
-> server-authoritative spatial history, and working episode reopen.
->
-> **What integration changed, for anyone who remembers the branch state:**
->
-> - The near→ear lexical bug is **resolved** — boundary matching no longer treats
->   a substring inside a word as a token.
-> - The viewer is no longer "not implemented": it loads real GLB bytes through
->   the real `GLTFLoader`, resolves descendant meshes to canonical `asiIds` and
->   selects structures.
-> - **Depth projection is resolved** — the record's depth reaches the viewer on
->   every write.
-> - **Spatial history is server-authoritative.** It used to be derived in the
->   browser, which silently merged two places the server had deliberately kept
->   apart. The client now maps places for display and may not regroup them.
-> - `apps/web/src/anatomy/manifest.ts` is now
->   `apps/web/src/anatomy/scene-manifest.ts`, and its types are named
->   `RendererSceneManifest` / `RendererSceneEntry`. Two files called "the
->   manifest" was a correctness hazard, not a style choice.
+## Current state
+
+| | |
+|---|---|
+| V1 engineering | Integrated on `main` |
+| Baseline | `v1.0.0-rc.1` at `eaf69e9` — the immutable V1 engineering baseline |
+| Regions | shoulder, neck, lower back, knee |
+| 3D anatomy | **Real, external BodyParts3D 4.0** (CC BY 4.0), **95 production GLBs** — 82 bilateral + 13 dedicated midline |
+| Midline | Real builds for neck (7 cervical) and lower back (5 lumbar + sacrum). Shoulder and knee have no midline **because the source dataset models them per side** — the product refuses rather than mirrors |
+| Safety rules | 10 total, **10 unreviewed**, 7 urgent/emergency. `releaseReady: false`; the `release` profile refuses to boot |
+| 2D anatomy | **Placeholder schematic artwork**, hand-made. Not an atlas. Still open — see the table below |
+| FMA bindings | **Unverified** concept ids. Still open |
+| Packages | **four**: `packages/shared`, `packages/server`, `packages/mcp`, `apps/web` |
+| Units | **674** (shared 311, server 99, mcp 57, web 207) · smoke 38/38 · gates 27/27, zero skips |
+
+**None of this is clinically reviewed or approved for medical release.** Clinical review
+blocks *release*; it does not block non-clinical design work.
 
 ## What the design pass changed, and what it deliberately did not
 
@@ -70,6 +66,26 @@ The review renders raw answers, never schema defaults as answers. Saved history
 uses the shared summary renderer with a complete coverage map from saved provenance.
 No private write endpoint, new field, medical question or altered rule was added.
 
+*(historical)* **Phase 1A** added the 3D adapter behind the unchanged `AnatomyAdapter`
+contract, a real `RendererSceneManifest` fed by an adapter from the canonical asset
+manifest, a rebuilt 2D map, depth wired to the viewer, a fallback that cannot
+white-screen, server-authoritative spatial history, and working episode reopen. What
+that integration changed, for anyone who remembers the pre-integration branch state:
+
+- The near→ear lexical bug is **resolved** — boundary matching no longer treats
+  a substring inside a word as a token.
+- The viewer loads **real GLB bytes** through the real `GLTFLoader`, resolves
+  descendant meshes to canonical `asiIds` and selects structures.
+- **Depth projection is resolved** — the record's depth reaches the viewer on
+  every write.
+- **Spatial history is server-authoritative.** It used to be derived in the
+  browser, which silently merged two places the server had deliberately kept
+  apart. The client now maps places for display and may not regroup them.
+- `apps/web/src/anatomy/manifest.ts` is now
+  `apps/web/src/anatomy/scene-manifest.ts`, and its types are named
+  `RendererSceneManifest` / `RendererSceneEntry`. Two files called "the
+  manifest" was a correctness hazard, not a style choice.
+
 ## Remaining interfaces / defects for the main agent
 
 | UI need | Current limitation / evidence | Minimal support | Blocking? |
@@ -82,19 +98,21 @@ No private write endpoint, new field, medical question or altered rule was added
 | Consistent question count meaning | `questionProgress.outstanding` uses triState for all question types; some answered non-boolean values normalise to unknown. An answered count can coexist with a high outstanding count. | Domain-provided per-question unresolved/missing status appropriate to each question type. | Non-blocking; UI displays returned counts and exact raw answers without redefining resolution. |
 | Stable summary grouping | `summary.history` has English labels only. | Optional stable field/section identifiers alongside unchanged labels/values. | Non-blocking; unknown labels remain in Other details. |
 | Editing a previously answered question | ~~UI can read answers, but replacing an answer may require domain reconciliation of additive record fields.~~ **RESOLVED in the domain** — re-answering REPLACES, marked `user_edited` by the store from the row, and the answer-derived fields are recomputed from the whole answer set. | — none outstanding — | Closed. The per-answer edit controls are buttons that return to the question, and the correction banner states that the previous answer is replaced rather than kept. |
-| Clinically reviewed copy and rules | Rationale and rules remain unreviewed. Current service reports 10/10 rules unreviewed. | Clinical review through existing policy, not frontend changes. | Blocks real-user release, not prototype design. Exact supplied safety wording retained. |
+| Clinically reviewed copy and rules | Rationale and rules remain unreviewed. Current service reports **10/10** rules unreviewed. | Clinical review through existing policy, not frontend changes. | **Blocks real-user release only.** It does not block non-clinical UI/UX refinement. Exact supplied safety wording retained. |
+| **2D anatomy is placeholder artwork** | The schematic is hand-drawn, not anatomical, and it is the floor for every failure path — so a user who hits a viewer failure is looking at something that does not claim to be an atlas but is also not one. | Professionally sourced artwork under a redistributable licence, or an unmistakable placeholder label in the UI. | Non-blocking for design work. **Blocks release.** |
 | Depth cannot express "not the skin" | `Depth` is `superficial \| intermediate \| deep \| unknown`. Four values cannot carry "not the skin", "around the muscle", or a relative "deeper than I said". | A separate `depthQualifier` claim beside the enum — the smallest change that lets the interface say what the user said, and it does not overload `Depth`'s meaning. | Non-blocking for V1, blocking for the roadmap's §12.3 interaction. **The UI did not invent a fifth value**; it states the consequence of each of the four as a slice. Request 1 in the audit. |
+| FMA bindings unverified | Every structure carries a dataset concept id at `status: "unverified"`, unchecked against a real FMA release. | Verify against a licensed FMA release and record the licence and verification date per entry — the provenance fields already exist for this. | Non-blocking for design work. **Blocks release.** |
 | Summary label casing | `summary.history` renders `Depth (patient report)` → `Deep`, while the review table says `Deep inside` for the same field. | The label/value pair to come from one place. | Cosmetic, and deliberately **not** patched in the frontend: rewriting a domain-produced value would be a second implementation of the summary. |
 | ~~Safety action steps in the copied plain-text summary~~ **RESOLVED in `renderPlainText` (domain).** | Raised here because deferring the copy to the domain dropped `safetyNotes[].steps` from the clipboard/fallback payload, making the pasted artefact less complete than the screen. The domain renderer now emits every step, indented under its own note so steps cannot be read as the next note's message. Blocked-gate output is unchanged and still withholds rather than prints. Covered by `packages/shared/test/plain-text-safety.test.ts`. | — none outstanding — | Closed. The domain renderer stays authoritative and the frontend still carries no second implementation. |
 
 ## Deliberate scope limits
 
-- **No real anatomy asset yet.** The viewer renders procedurally generated
-  real sourced geometry for every region, with the 2D map as the floor for
-  every failure path. This was the single largest visual weakness and it is
-  closed: see the status table below.
+- **Real 3D anatomy exists and is the default surface** — 95 audited BodyParts3D
+  meshes across the four regions. The schematic 2D map is the deliberate floor for
+  every failure path, not a placeholder for missing 3D.
 - The 2D schematic was reproportioned (head, shoulders, waist, arm roots) but is
-  still a silhouette, not an atlas.
+  still a hand-made silhouette, not an atlas. It remains the largest visual
+  weakness and is listed above as a release blocker.
 - Front and back share one silhouette and it does not mirror. The UI states this
   where a user could otherwise assume otherwise.
 - Patient-side mirroring in 3D is **undecided on purpose** — the adapter will not
@@ -118,6 +136,12 @@ No private write endpoint, new field, medical question or altered rule was added
   still hold the caller's stdout, so `audit-serve.sh | tee` hangs with the script's
   own output already printed. `spawn_detached` in `scripts/audit-serve.sh` closes
   fds 3+ before exec.
+- **A `clarify` stage renders an interstitial, not the workbench.** An ambiguous
+  description grounds to a stage offering "Show me the body map". A diagnostic that
+  waits for `.location-workbench` *before* looking for that button hangs forever on
+  exactly the ambiguous region — wait for `.location-workbench, .empty-state` first,
+  dismiss the interstitial, then await the workbench. This is what made
+  `audit-copy-truth.mjs` time out on knee.
 - **Never wait on `networkidle` against the Vite dev server.** It holds an HMR
   websocket open, so the network is never idle and each `goto` stalls. The browser
   probes use `domcontentloaded` plus the element wait they already had; the fold
@@ -185,11 +209,18 @@ No private write endpoint, new field, medical question or altered rule was added
 ## Integration guidance
 
 Main is the source of domain truth. Run `bash scripts/final-gates.sh` before
-believing anything: it typechecks, unit-tests across all three packages, builds,
+believing anything: it typechecks, unit-tests across **all four packages**
+(`packages/shared`, `packages/server`, `packages/mcp`, `apps/web`), builds,
 smokes, checks the release gate and safety metadata, runs the migration,
 place-identity, reopen, adapter and URL-GLB suites, and finishes with the
 browser, accessibility, hit-zone, 3D, fallback, URL-GLB and evidence gates. It
 reports each gate separately and fails the run on a skip.
+
+A deployable preview of the built app plus the API on one origin, seeded with
+synthetic data and declaring itself non-clinical in `/api/health`, lives in
+`preview/` — see [`preview/README.md`](preview/README.md). `node
+preview/verify-preview.mjs <origin>` asserts on what a screenshot cannot, including
+that a **write** round-trips through the proxy.
 
 The web app is not the final product; see the product-shape section of
 [`docs/04-roadmap.md`](docs/04-roadmap.md). Anything the workspace needs that is
