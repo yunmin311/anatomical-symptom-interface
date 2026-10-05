@@ -102,11 +102,6 @@ spawn_detached packages/server "$LOGDIR/api.log" \
 spawn_detached apps/web "$LOGDIR/web.log" \
   env ASI_WEB_PORT="$WEB_PORT" ASI_API_ORIGIN="http://127.0.0.1:$API_PORT" \
       ./node_modules/.bin/vite > "$LOGDIR/web.pgid"
-(
-  cd apps/web && ASI_WEB_PORT="$WEB_PORT" ASI_API_ORIGIN="http://127.0.0.1:$API_PORT" \
-    setsid npx vite >"$LOGDIR/web.log" 2>&1 < /dev/null &
-  echo $! >"$LOGDIR/web.pgid"
-)
 
 ready=0
 for _ in $(seq 1 90); do
