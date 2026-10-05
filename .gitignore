@@ -39,6 +39,7 @@ Thumbs.db
 # rebuild. Committing 41 MB of derived binaries on a feature branch is not worth
 # it, and it would make every future diff of the spike expensive.
 spikes/**/*.blend
+spikes/**/*.blend1
 spikes/**/renders/*.png
 
 # preview runtime state (synthetic demo database)
