@@ -47,3 +47,7 @@ spikes/**/web/screens/*.png
 
 # preview runtime state (synthetic demo database)
 preview/.preview-data/
+
+# 2D derivation aid: flat per-structure ID renders, reproducible by re-running
+# derive-2d-views.py. Nothing loads these at runtime.
+spikes/shoulder-geometry/view-derivation/

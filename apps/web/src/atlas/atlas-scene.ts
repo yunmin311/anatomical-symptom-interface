@@ -30,7 +30,8 @@ import {
 } from './material-system.ts';
 import { clampDistance, fidelityPolicy, inCloseInspectionBand, type FidelityPolicy } from './fidelity.ts';
 import { CAMERA_PRESETS, normalize, type PresetName } from './camera-presets.ts';
-import { deriveRenderStates, type AtlasState, type StructureLike } from './atlas-state.ts';
+import type { AtlasState } from './atlas-state.ts';
+import { deriveContext, type ContextClass, type ContextInput } from './context.ts';
 
 export interface ManifestStructure {
   id: string;
@@ -42,7 +43,7 @@ export interface ManifestStructure {
   fma?: string | null;
   bp?: string | null;
   triangles?: number;
-  boundsMm?: { min: number[]; max: number[] } | null;
+  boundsMm?: { min: [number, number, number]; max: [number, number, number] } | null;
 }
 
 export interface AtlasManifest {
@@ -189,7 +190,7 @@ export class AtlasScene {
         roughness: 0.85,
         metalness: 0,
         transparent: true,
-        opacity: 0.16,
+        opacity: 0.055,
         depthWrite: false,
         side: THREE.FrontSide,
       });
@@ -308,40 +309,88 @@ export class AtlasScene {
   /* ---------------------------------------------------------------- render */
 
   applyState(state: AtlasState): void {
-    const structures: StructureLike[] = [...this.nodes.keys()].map((id) => ({
-      id,
-      label: this.presentations.get(id)?.label ?? id,
-      system: (this.presentations.get(id)?.system ?? 'organ') as System,
-    }));
-    const derived = deriveRenderStates(structures, state);
+    // Selective context, not one global ghost opacity. The 42-mesh global version
+    // fogged; drawing fewer things is the fix, and `context.ts` decides which.
+    const contextInputs: ContextInput[] = [...this.nodes.keys()].map((id) => {
+      const p = this.presentations.get(id);
+      const s = this.manifest?.structures.find((m) => m.id === id);
+      const b = s?.boundsMm;
+      return {
+        id,
+        system: (p?.system ?? 'organ') as System,
+        bounds: b?.min && b?.max
+          ? {
+              min: { x: b.min[0], y: b.min[1], z: b.min[2] },
+              max: { x: b.max[0], y: b.max[1], z: b.max[2] },
+            }
+          : null,
+      };
+    });
+    const { classes, opacities } = deriveContext(contextInputs, state);
 
-    for (const [id, r] of derived) {
+    for (const [id, cls] of classes) {
       const node = this.nodes.get(id);
       if (!node) continue;
-      node.visible = r.visible;
+      const opacity = opacities.get(id) ?? 0;
+      node.visible = cls !== 'hidden' && opacity > 0.001;
 
       // Assign, not just configure. The GLB is exported with
       // export_materials='NONE' so the presentation layer stays in code, which
-      // means every mesh arrives with the glTF default WHITE material. Mutating
-      // a MeshStandardMaterial without ever assigning it to the mesh leaves the
-      // whole atlas white -- the exact grey-blob failure this project exists to
-      // fix, reintroduced through the back door.
+      // means every mesh arrives with the glTF default WHITE material. Mutating a
+      // MeshStandardMaterial without ever assigning it leaves the whole atlas
+      // white -- the grey-blob failure, through the back door.
       const mat = this.materialFor(id);
       const mesh = node as THREE.Mesh;
-      if (mesh.isMesh) {
-        if (mesh.material !== mat) mesh.material = mat;
-      }
+      if (mesh.isMesh && mesh.material !== mat) mesh.material = mat;
+
       const std = mat as THREE.MeshStandardMaterial;
-      std.opacity = r.opacity;
-      std.transparent = r.opacity < 0.999;
-      std.depthWrite = r.opacity > 0.6;
+      std.opacity = opacity;
+      std.transparent = opacity < 0.999;
+      // Depth writing on a 15% ghost makes it occlude what is behind it and
+      // darkens the context into mud. Only the selection and solid structures
+      // write depth.
+      std.depthWrite = opacity > 0.6;
       // Selection is an overlay state, never an anatomical colour.
-      std.emissive = new THREE.Color(r.selected ? SELECTION_COLOUR : '#000000');
-      std.emissiveIntensity = r.selected ? 0.55 : 0;
+      std.emissive = new THREE.Color(cls === 'selected' ? SELECTION_COLOUR : '#000000');
+      std.emissiveIntensity = cls === 'selected' ? 0.55 : 0;
     }
 
-    if (this.bodyNode) this.bodyNode.visible = state.bodyVisible;
+    this.bodyOpacity = this.bodyOpacityFor(state, classes.get(state.selectedId ?? ''));
+    this.applyBodyOpacity();
     this.applyClipping(this.section);
+  }
+
+  /**
+   * The whole-body shell changes character with the framing.
+   *
+   * In WHOLE BODY mode it is the subject, so it can be prominent. In SHOULDER mode
+   * it is only a spatial reference and was competing with the anatomy for
+   * attention, so it drops to a whisper. The numbers are the two states; nothing
+   * between them is user-facing.
+   */
+  private bodyOpacityFor(state: AtlasState, selectedClass?: ContextClass): number {
+    if (!state.bodyVisible) return 0;
+    // A selection means the person is looking at one structure; the body is then
+    // pure reference.
+    if (selectedClass === 'selected') return 0.035;
+    return this.framing === 'body' ? 0.3 : 0.055;
+  }
+
+  private bodyOpacity = 0.16;
+  private framing: 'body' | 'region' = 'region';
+
+  setFraming(framing: 'body' | 'region'): void {
+    this.framing = framing;
+  }
+
+  private applyBodyOpacity(): void {
+    if (!this.bodyMaterial) return;
+    const std = this.bodyMaterial as THREE.MeshStandardMaterial;
+    std.opacity = this.bodyOpacity;
+    std.transparent = true;
+    // A faint shell must not occlude the anatomy in front of it.
+    std.depthWrite = this.bodyOpacity > 0.5;
+    if (this.bodyNode) this.bodyNode.visible = this.bodyOpacity > 0.001;
   }
 
   private section: SectionOptions = { enabled: false, axis: 'x', position: 0.5, flip: false };
@@ -387,11 +436,13 @@ export class AtlasScene {
 
   /** Frame the whole body. The viewer must never open on a floating shoulder. */
   frameBody(): void {
+    this.framing = 'body';
     this.flyTo(new THREE.Vector3(0, 0, 0), this.bodyRadius * 2.1, 'front');
   }
 
   /** Frame the shoulder region. */
   frameRegion(preset: PresetName = 'front'): void {
+    this.framing = 'region';
     this.flyTo(this.regionCentre.clone(), this.regionRadius * 2.6, preset);
   }
 

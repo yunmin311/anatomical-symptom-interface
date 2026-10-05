@@ -1,0 +1,27 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "lib": ["ES2023", "DOM", "DOM.Iterable"],
+    "jsx": "react-jsx",
+    "types": ["node"]
+  },
+  "//": [
+    "Typechecks the atlas modules AND their tests.",
+    "",
+    "The main tsconfig only includes src/**, so test files were never typechecked.",
+    "node --experimental-strip-types strips types without checking them, so a type",
+    "error in a test ran happily and produced wrong values. That is not theoretical: a",
+    "fixture helper in atlas-context.test.ts built tuple bounds where the code expected",
+    "{x,y,z}, so every adjacency distance was NaN and 'no muscle is adjacent' looked",
+    "like a correct result.",
+    "",
+    "Scoped to the atlas tests only. The pre-existing tests have a large backlog of",
+    "strict-mode errors that is real debt and deliberately not opened here."
+  ],
+  "include": [
+    "test/atlas-*.test.ts",
+    "src/atlas/**/*.ts",
+    "src/atlas/**/*.tsx"
+  ]
+}
