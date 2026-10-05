@@ -1,0 +1,423 @@
+{
+  "schemaVersion": 1,
+  "grid": {
+    "w": 160,
+    "h": 200
+  },
+  "views": {
+    "front": {
+      "layers": {
+        "surface": {
+          "image": "/anatomy/views/shoulder-front-surface.png",
+          "grid": "/anatomy/views/shoulder-front-surface.grid.json",
+          "pngBytes": 322452,
+          "gridBytes": 969,
+          "selectable": false,
+          "cellsFilled": 0,
+          "cellsTotal": 32000,
+          "distinctStructures": 0
+        },
+        "bone": {
+          "image": "/anatomy/views/shoulder-front-bone.png",
+          "grid": "/anatomy/views/shoulder-front-bone.grid.json",
+          "pngBytes": 154803,
+          "gridBytes": 2620,
+          "selectable": true,
+          "cellsFilled": 1824,
+          "cellsTotal": 32000,
+          "distinctStructures": 3
+        },
+        "muscle": {
+          "image": "/anatomy/views/shoulder-front-muscle.png",
+          "grid": "/anatomy/views/shoulder-front-muscle.grid.json",
+          "pngBytes": 252111,
+          "gridBytes": 11143,
+          "selectable": true,
+          "cellsFilled": 6304,
+          "cellsTotal": 32000,
+          "distinctStructures": 25
+        },
+        "vascular": {
+          "image": "/anatomy/views/shoulder-front-vascular.png",
+          "grid": "/anatomy/views/shoulder-front-vascular.grid.json",
+          "pngBytes": 119119,
+          "gridBytes": 2681,
+          "selectable": true,
+          "cellsFilled": 196,
+          "cellsTotal": 32000,
+          "distinctStructures": 12
+        }
+      }
+    },
+    "back": {
+      "layers": {
+        "surface": {
+          "image": "/anatomy/views/shoulder-back-surface.png",
+          "grid": "/anatomy/views/shoulder-back-surface.grid.json",
+          "pngBytes": 314725,
+          "gridBytes": 968,
+          "selectable": false,
+          "cellsFilled": 0,
+          "cellsTotal": 32000,
+          "distinctStructures": 0
+        },
+        "bone": {
+          "image": "/anatomy/views/shoulder-back-bone.png",
+          "grid": "/anatomy/views/shoulder-back-bone.grid.json",
+          "pngBytes": 155506,
+          "gridBytes": 2666,
+          "selectable": true,
+          "cellsFilled": 1824,
+          "cellsTotal": 32000,
+          "distinctStructures": 3
+        },
+        "muscle": {
+          "image": "/anatomy/views/shoulder-back-muscle.png",
+          "grid": "/anatomy/views/shoulder-back-muscle.grid.json",
+          "pngBytes": 252484,
+          "gridBytes": 8666,
+          "selectable": true,
+          "cellsFilled": 6304,
+          "cellsTotal": 32000,
+          "distinctStructures": 21
+        },
+        "vascular": {
+          "image": "/anatomy/views/shoulder-back-vascular.png",
+          "grid": "/anatomy/views/shoulder-back-vascular.grid.json",
+          "pngBytes": 119313,
+          "gridBytes": 2809,
+          "selectable": true,
+          "cellsFilled": 195,
+          "cellsTotal": 32000,
+          "distinctStructures": 12
+        }
+      }
+    },
+    "left": {
+      "layers": {
+        "surface": {
+          "image": "/anatomy/views/shoulder-left-surface.png",
+          "grid": "/anatomy/views/shoulder-left-surface.grid.json",
+          "pngBytes": 267636,
+          "gridBytes": 968,
+          "selectable": false,
+          "cellsFilled": 0,
+          "cellsTotal": 32000,
+          "distinctStructures": 0
+        },
+        "bone": {
+          "image": "/anatomy/views/shoulder-left-bone.png",
+          "grid": "/anatomy/views/shoulder-left-bone.grid.json",
+          "pngBytes": 144013,
+          "gridBytes": 2571,
+          "selectable": true,
+          "cellsFilled": 1245,
+          "cellsTotal": 32000,
+          "distinctStructures": 3
+        },
+        "muscle": {
+          "image": "/anatomy/views/shoulder-left-muscle.png",
+          "grid": "/anatomy/views/shoulder-left-muscle.grid.json",
+          "pngBytes": 240606,
+          "gridBytes": 11320,
+          "selectable": true,
+          "cellsFilled": 5042,
+          "cellsTotal": 32000,
+          "distinctStructures": 25
+        },
+        "vascular": {
+          "image": "/anatomy/views/shoulder-left-vascular.png",
+          "grid": "/anatomy/views/shoulder-left-vascular.grid.json",
+          "pngBytes": 123051,
+          "gridBytes": 3075,
+          "selectable": true,
+          "cellsFilled": 229,
+          "cellsTotal": 32000,
+          "distinctStructures": 12
+        }
+      }
+    },
+    "right": {
+      "layers": {
+        "surface": {
+          "image": "/anatomy/views/shoulder-right-surface.png",
+          "grid": "/anatomy/views/shoulder-right-surface.grid.json",
+          "pngBytes": 269868,
+          "gridBytes": 969,
+          "selectable": false,
+          "cellsFilled": 0,
+          "cellsTotal": 32000,
+          "distinctStructures": 0
+        },
+        "bone": {
+          "image": "/anatomy/views/shoulder-right-bone.png",
+          "grid": "/anatomy/views/shoulder-right-bone.grid.json",
+          "pngBytes": 146968,
+          "gridBytes": 2581,
+          "selectable": true,
+          "cellsFilled": 1245,
+          "cellsTotal": 32000,
+          "distinctStructures": 3
+        },
+        "muscle": {
+          "image": "/anatomy/views/shoulder-right-muscle.png",
+          "grid": "/anatomy/views/shoulder-right-muscle.grid.json",
+          "pngBytes": 240369,
+          "gridBytes": 10798,
+          "selectable": true,
+          "cellsFilled": 5042,
+          "cellsTotal": 32000,
+          "distinctStructures": 22
+        },
+        "vascular": {
+          "image": "/anatomy/views/shoulder-right-vascular.png",
+          "grid": "/anatomy/views/shoulder-right-vascular.grid.json",
+          "pngBytes": 123843,
+          "gridBytes": 2909,
+          "selectable": true,
+          "cellsFilled": 229,
+          "cellsTotal": 32000,
+          "distinctStructures": 11
+        }
+      }
+    }
+  },
+  "structures": [
+    {
+      "id": "bp3d:FJ3384",
+      "label": "Right scapula",
+      "system": "bone"
+    },
+    {
+      "id": "bp3d:FJ3362",
+      "label": "Right clavicle",
+      "system": "bone"
+    },
+    {
+      "id": "bp3d:FJ3368",
+      "label": "Right humerus",
+      "system": "bone"
+    },
+    {
+      "id": "bp3d:FJ1506",
+      "label": "Right supraspinatus",
+      "system": "muscle"
+    },
+    {
+      "id": "bp3d:FJ1500",
+      "label": "Right infraspinatus muscle",
+      "system": "muscle"
+    },
+    {
+      "id": "bp3d:FJ1504",
+      "label": "Right subscapularis",
+      "system": "muscle"
+    },
+    {
+      "id": "bp3d:FJ1508",
+      "label": "Right teres minor",
+      "system": "muscle"
+    },
+    {
+      "id": "bp3d:FJ1507",
+      "label": "Right teres major",
+      "system": "muscle"
+    },
+    {
+      "id": "bp3d:FJ1467",
+      "label": "Acromial part of right deltoid",
+      "system": "muscle"
+    },
+    {
+      "id": "bp3d:FJ1468",
+      "label": "Clavicular part of right deltoid",
+      "system": "muscle"
+    },
+    {
+      "id": "bp3d:FJ1513",
+      "label": "Spinal part of right deltoid",
+      "system": "muscle"
+    },
+    {
+      "id": "bp3d:FJ1520",
+      "label": "Ascending part of right trapezius",
+      "system": "muscle"
+    },
+    {
+      "id": "bp3d:FJ1521",
+      "label": "Descending part of right trapezius",
+      "system": "muscle"
+    },
+    {
+      "id": "bp3d:FJ1554",
+      "label": "Transverse part of right trapezius",
+      "system": "muscle"
+    },
+    {
+      "id": "bp3d:FJ1456",
+      "label": "Right pectoralis minor",
+      "system": "muscle"
+    },
+    {
+      "id": "bp3d:FJ1464",
+      "label": "Sternocostal part of right pectoralis major",
+      "system": "muscle"
+    },
+    {
+      "id": "bp3d:FJ1447",
+      "label": "Clavicular part of right pectoralis major",
+      "system": "muscle"
+    },
+    {
+      "id": "bp3d:FJ1446",
+      "label": "Abdominal part of right pectoralis major",
+      "system": "muscle"
+    },
+    {
+      "id": "bp3d:FJ1459",
+      "label": "Right serratus anterior",
+      "system": "muscle"
+    },
+    {
+      "id": "bp3d:FJ1542",
+      "label": "Right serratus posterior superior",
+      "system": "muscle"
+    },
+    {
+      "id": "bp3d:FJ1541",
+      "label": "Right serratus posterior inferior",
+      "system": "muscle"
+    },
+    {
+      "id": "bp3d:FJ1536",
+      "label": "Right rhomboid major",
+      "system": "muscle"
+    },
+    {
+      "id": "bp3d:FJ1537",
+      "label": "Right rhomboid minor",
+      "system": "muscle"
+    },
+    {
+      "id": "bp3d:FJ1532",
+      "label": "Right levator scapulae",
+      "system": "muscle"
+    },
+    {
+      "id": "bp3d:FJ1460",
+      "label": "Right subclavius",
+      "system": "muscle"
+    },
+    {
+      "id": "bp3d:FJ1478",
+      "label": "Long head of right biceps brachii",
+      "system": "muscle"
+    },
+    {
+      "id": "bp3d:FJ1512",
+      "label": "Short head of right biceps brachii",
+      "system": "muscle"
+    },
+    {
+      "id": "bp3d:FJ1479",
+      "label": "Long head of right triceps brachii",
+      "system": "muscle"
+    },
+    {
+      "id": "bp3d:FJ1477",
+      "label": "Lateral head of right triceps brachii",
+      "system": "muscle"
+    },
+    {
+      "id": "bp3d:FJ1480",
+      "label": "Medial head of right triceps brachii",
+      "system": "muscle"
+    },
+    {
+      "id": "bp3d:FJ2268",
+      "label": "Right axillary artery",
+      "system": "artery"
+    },
+    {
+      "id": "bp3d:FJ2303",
+      "label": "Right suprascapular artery",
+      "system": "artery"
+    },
+    {
+      "id": "bp3d:FJ2273",
+      "label": "Right circumflex scapular artery",
+      "system": "artery"
+    },
+    {
+      "id": "bp3d:FJ2284",
+      "label": "Right dorsal scapular artery",
+      "system": "artery"
+    },
+    {
+      "id": "bp3d:FJ2298",
+      "label": "Right subscapular artery",
+      "system": "artery"
+    },
+    {
+      "id": "bp3d:FJ2305",
+      "label": "Right thoracodorsal artery",
+      "system": "artery"
+    },
+    {
+      "id": "bp3d:FJ2304",
+      "label": "Trunk of right thoraco-acromial artery",
+      "system": "artery"
+    },
+    {
+      "id": "bp3d:FJ2269",
+      "label": "Right axillary vein",
+      "system": "vein"
+    },
+    {
+      "id": "bp3d:FJ2302",
+      "label": "Right suprascapular vein",
+      "system": "vein"
+    },
+    {
+      "id": "bp3d:FJ2274",
+      "label": "Right circumflex scapular vein",
+      "system": "vein"
+    },
+    {
+      "id": "bp3d:FJ2299",
+      "label": "Right subscapular vein",
+      "system": "vein"
+    },
+    {
+      "id": "bp3d:FJ2306",
+      "label": "Right thoracodorsal vein",
+      "system": "vein"
+    },
+    {
+      "id": "bp3d:FJ2810",
+      "label": "Skin",
+      "system": "skin"
+    }
+  ],
+  "provenance": {
+    "method": "orthographic render of the same BodyParts3D meshes the 3D viewer uses",
+    "dataset": "BodyParts3D",
+    "release": "4.0 (mesh archive 2013/05, 99% polygon reduction)",
+    "archive": "isa_BP3D_4.0_obj_99.zip",
+    "archiveSha256": "40665852c49f218326590e204db91064a1ecfc3c6f8cbd7bbbcaac62c7cd409e",
+    "doi": "10.18908/lsdba.nbdc00837-000",
+    "licence": "CC-BY-4.0",
+    "licenceUrl": "https://dbarchive.biosciencedb.jp/en/bodyparts3d/lic.html",
+    "attribution": "BodyParts3D, (c) The Database Center for Life Science licensed under CC Attribution 4.0 International",
+    "retrievedAt": "2026-10-01",
+    "officialLicenseLastUpdated": "2025-02-27",
+    "ourLicenseEvidenceCheckedAt": "2026-10-05",
+    "modified": true,
+    "modification": "geometry unmodified; orthographic renders and a BVH hit grid derived from it",
+    "codeLicence": "MIT (this repository's code)",
+    "assetLicence": "CC BY 4.0 (the geometry and the images derived from it)",
+    "handDrawn": false,
+    "aiGenerated": false,
+    "replaces": "the hand-authored SVG silhouette in apps/web/src/anatomy/svg-geometry.ts, which remains only as a development fallback"
+  }
+}
