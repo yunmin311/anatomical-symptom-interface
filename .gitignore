@@ -32,5 +32,14 @@ Thumbs.db
 .vscode/
 .idea/
 
+# Blender spike artefacts: DERIVED and regenerable, so not committed.
+# shoulder.blend is 24.5 MB and the 20 gate renders are 16.5 MB. The scripts that
+# produce them, the verdict, and the data they were built from ARE committed, and
+# spikes/shoulder-geometry/GEOMETRY-GATE.md documents the exact commands to
+# rebuild. Committing 41 MB of derived binaries on a feature branch is not worth
+# it, and it would make every future diff of the spike expensive.
+spikes/**/*.blend
+spikes/**/renders/*.png
+
 # preview runtime state (synthetic demo database)
 preview/.preview-data/
