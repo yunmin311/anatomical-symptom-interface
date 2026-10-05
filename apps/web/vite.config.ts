@@ -35,5 +35,15 @@ export default defineConfig({
   build: {
     target: 'es2022',
     sourcemap: true,
+    rollupOptions: {
+      input: {
+        // The product, unchanged.
+        main: fileURLToPath(new URL('./index.html', import.meta.url)),
+        // The anatomy atlas viewer spike, as its OWN entry so it cannot affect
+        // the product flow. A route inside the app would put an 8 MB model on the
+        // critical path of the interview screen.
+        atlas: fileURLToPath(new URL('./atlas.html', import.meta.url)),
+      },
+    },
   },
 });

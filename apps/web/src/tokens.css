@@ -1,4 +1,45 @@
+/*
+ * Design tokens.
+ *
+ * ## Why there is a type scale here at all
+ *
+ * Before this file the workspace had no type scale. Nineteen literal font sizes
+ * were written at the point of use, ten of them inside the anatomy workspace
+ * alone, and nothing tied a role to a size. The result was the same visual
+ * weight almost everywhere, which is why hierarchy could not be fixed by
+ * rearranging components.
+ *
+ * So the scale is defined by ROLE, and the roles are the ones the product
+ * actually has. A component picks a role; it does not pick a number.
+ *
+ * ## The scale
+ *
+ * A 1.2 ratio at the top easing to 1.125 lower down, with the display sizes
+ * pulled apart further because the anatomy workspace is read at a distance and
+ * needs a genuinely dominant title rather than a slightly larger one.
+ *
+ *   display   2.75rem  the region or view title; at most one per screen
+ *   title     1.625rem the page title
+ *   section   1.1875rem a section heading
+ *   group     0.9375rem a field or control-group heading
+ *   label     0.8125rem a control label
+ *   body      1rem      running text
+ *   small     0.875rem  annotation
+ *   meta      0.75rem   metadata
+ *
+ * Two rules make the hierarchy do the work rather than weight alone:
+ *   - weight and tracking step with role, so a heading is not merely bigger
+ *   - colour steps with role too, so secondary text recedes without shrinking
+ *
+ * ## Weights
+ *
+ * 400 body, 500 labels and metadata, 600 group and section, 700 titles. There is
+ * no 800: at these sizes it reads as shouting, and the display size does not
+ * need it.
+ */
+
 :root {
+  /* ---------------------------------------------------------------- colour */
   --bg: #f7f6f2;
   --surface: #fdfcf9;
   --workspace: #e7e6e0;
@@ -10,7 +51,51 @@
   --candidate: #78623b;
   --danger: #963a32;
   --danger-soft: #f6e7e2;
+
+  /*
+   * The viewer is a dark instrument panel so the anatomy materials read against
+   * a neutral ground. Kept separate from --bg on purpose: the canvas is a
+   * different surface with different contrast needs from the surrounding page,
+   * and borrowing the page's off-white behind a 3D viewport makes every
+   * material look washed out.
+   */
+  --canvas: #0e0f11;
+  --canvas-line: #2a2d31;
+  --canvas-ink: #e8e9ea;
+  --canvas-muted: #9aa0a6;
+  --canvas-accent: #5cf2ff;
+
   --font: "Segoe UI", system-ui, sans-serif;
+  --font-mono: "Cascadia Mono", ui-monospace, "SF Mono", Menlo, monospace;
+
+  /* ------------------------------------------------------------------ type */
+  --text-display: 2.75rem;
+  --text-display-leading: 1.06;
+  --text-title: 1.625rem;
+  --text-title-leading: 1.15;
+  --text-section: 1.1875rem;
+  --text-section-leading: 1.25;
+  --text-group: 0.9375rem;
+  --text-group-leading: 1.3;
+  --text-label: 0.8125rem;
+  --text-label-leading: 1.2;
+  --text-body: 1rem;
+  --text-body-leading: 1.55;
+  --text-small: 0.875rem;
+  --text-small-leading: 1.45;
+  --text-meta: 0.75rem;
+  --text-meta-leading: 1.35;
+
+  --weight-body: 400;
+  --weight-label: 500;
+  --weight-heading: 600;
+  --weight-display: 700;
+
+  /* Uppercase micro-labels tighten; running text never does. */
+  --track-tight: -0.018em;
+  --track-label: 0.055em;
+
+  /* ---------------------------------------------------------------- space */
   --space-1: 4px;
   --space-2: 8px;
   --space-3: 12px;
@@ -19,4 +104,114 @@
   --space-8: 32px;
   --space-12: 48px;
   --radius: 4px;
+
+  /*
+   * The anatomy canvas is the primary workspace, so the control rail is a fixed
+   * fraction of the viewport rather than a content column beside it. On a phone
+   * the rail moves under the canvas and the canvas keeps the majority of the
+   * height, because losing the model on a small screen is the failure that
+   * matters.
+   */
+  --rail-width: clamp(240px, 22vw, 320px);
+  --canvas-min-height: 52vh;
+}
+
+/* Role classes. Components use these rather than writing font sizes. */
+.t-display {
+  font-size: var(--text-display);
+  line-height: var(--text-display-leading);
+  font-weight: var(--weight-display);
+  letter-spacing: var(--track-tight);
+  color: var(--ink);
+  margin: 0;
+}
+.t-title {
+  font-size: var(--text-title);
+  line-height: var(--text-title-leading);
+  font-weight: var(--weight-display);
+  letter-spacing: var(--track-tight);
+  color: var(--ink);
+  margin: 0;
+}
+.t-section {
+  font-size: var(--text-section);
+  line-height: var(--text-section-leading);
+  font-weight: var(--weight-heading);
+  letter-spacing: var(--track-tight);
+  color: var(--ink);
+  margin: 0;
+}
+.t-group {
+  font-size: var(--text-group);
+  line-height: var(--text-group-leading);
+  font-weight: var(--weight-heading);
+  color: var(--ink);
+  margin: 0;
+}
+.t-label {
+  font-size: var(--text-label);
+  line-height: var(--text-label-leading);
+  font-weight: var(--weight-label);
+  color: var(--ink);
+  margin: 0;
+}
+.t-body {
+  font-size: var(--text-body);
+  line-height: var(--text-body-leading);
+  font-weight: var(--weight-body);
+  color: var(--ink);
+  margin: 0;
+}
+.t-annotation {
+  font-size: var(--text-small);
+  line-height: var(--text-small-leading);
+  font-weight: var(--weight-body);
+  color: var(--muted);
+  margin: 0;
+}
+.t-meta {
+  font-size: var(--text-meta);
+  line-height: var(--text-meta-leading);
+  font-weight: var(--weight-label);
+  color: var(--muted);
+  margin: 0;
+}
+/* The uppercase micro-label used for control-group headings. */
+.t-eyebrow {
+  font-size: var(--text-meta);
+  line-height: 1;
+  font-weight: var(--weight-label);
+  letter-spacing: var(--track-label);
+  text-transform: uppercase;
+  color: var(--muted);
+  margin: 0;
+}
+/*
+ * Safety copy. Distinct from --danger on purpose: this is the colour of a
+ * sentence that must not be skimmed, not the colour of an error state.
+ */
+.t-safety {
+  font-size: var(--text-body);
+  line-height: var(--text-body-leading);
+  font-weight: var(--weight-label);
+  color: var(--danger);
+  margin: 0;
+}
+
+/* On the dark canvas, the same roles against the instrument ground. */
+.on-canvas .t-display,
+.on-canvas .t-title,
+.on-canvas .t-section,
+.on-canvas .t-group,
+.on-canvas .t-label,
+.on-canvas .t-body {
+  color: var(--canvas-ink);
+}
+.on-canvas .t-annotation,
+.on-canvas .t-meta,
+.on-canvas .t-eyebrow {
+  color: var(--canvas-muted);
+}
+.on-canvas .t-eyebrow {
+  letter-spacing: var(--track-label);
 }

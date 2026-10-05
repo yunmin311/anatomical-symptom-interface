@@ -106,6 +106,15 @@ const map = JSON.parse(readFileSync(MAP, 'utf8'));
  * generated map stays pure and reproducible. An override never rewrites the
  * derivation; it is applied at read time and reported separately, so a reader
  * can always tell a derived class from a reviewed one.
+ *
+ * Two independent status axes are carried through, because they are genuinely
+ * independent and collapsing them overstates the evidence:
+ *   presentationSystemClassification -- what tissue family we PRESENT this as
+ *   ontologyFmaVerification          -- whether a human checked the source
+ *                                       dataset's FMA relations
+ * A structure can present as muscle with its ontology verification still
+ * pending. That is the expected state for the trapezius parts and must never be
+ * reported as "the FMA relations were reviewed".
  */
 let review = { entries: [] };
 try {
@@ -116,13 +125,23 @@ try {
 const overrideFor = new Map(review.entries.map((e) => [e.meshId, e]));
 const applyReview = (m) => {
   const o = overrideFor.get(m.id);
-  if (!o) return m;
+  if (!o) {
+    return {
+      ...m,
+      presentationSystemClassification: m.system === 'UNKNOWN' ? 'unknown' : 'machine_derived',
+      ontologyFmaVerification: 'pending_human_review',
+      overridden: false,
+    };
+  }
   return {
     ...m,
     derivedClass: m.system,
     system: o.overrideClass,
-    confidence: o.humanApproved ? 'reviewed' : 'proposed',
-    reviewStatus: o.humanApproved ? 'human_approved' : 'agent_proposed',
+    confidence: 'reviewed',
+    reviewStatus: 'review_override',
+    overridden: true,
+    presentationSystemClassification: o.presentationSystemClassification ?? 'proposed_with_evidence',
+    ontologyFmaVerification: o.ontologyFmaVerification ?? 'pending_human_review',
     reviewEvidence: o.evidence?.map((e) => `${e.authority}: ${e.asserts}`).join(' | '),
     reviewEvidenceLimit: o.evidenceLimit,
     reviewReviewer: o.reviewer,
@@ -179,11 +198,10 @@ if (mismatch.length) {
 const usable = resolved.filter(
   (r) =>
     r.mesh.system !== 'UNKNOWN' &&
-    ['machine-derived', 'human_approved', 'agent_proposed'].includes(r.mesh.reviewStatus),
+    ['machine-derived', 'review_override', 'needs-review'].includes(r.mesh.reviewStatus) &&
+    r.mesh.confidence !== 'low',
 );
-const pending = resolved.filter(
-  (r) => r.mesh.system === 'UNKNOWN' || r.mesh.reviewStatus === 'needs-review',
-);
+const pending = resolved.filter((r) => r.mesh.system === 'UNKNOWN' || r.mesh.confidence === 'low');
 console.log(`USABLE for the spike : ${usable.length}`);
 console.log(`PENDING review       : ${pending.length}`);
 console.log('');
@@ -191,20 +209,24 @@ console.log('');
 // Overrides must be visible, never silent. A structure whose class came from a
 // review decision rather than the derivation is reported separately, and says
 // whether a human has actually signed it off.
-const overridden = usable.filter((r) => r.mesh.reviewStatus !== 'machine-derived');
+const overridden = usable.filter((r) => r.mesh.overridden);
 if (overridden.length) {
-  console.log(`CLASS OVERRIDDEN BY REVIEW (${overridden.length}) — not machine-derived:`);
+  console.log(`CLASS OVERRIDDEN BY REVIEW (${overridden.length}) — the derived map is NOT edited:`);
   for (const r of overridden) {
     console.log(`   ${r.name}`);
-    console.log(`       derived ${r.mesh.derivedClass} -> override ${r.mesh.system}`);
-    console.log(`       status ${r.mesh.reviewStatus}   reviewer: ${r.mesh.reviewReviewer}`);
+    console.log(`       derived (unchanged) ${r.mesh.derivedClass}   ->   presented as ${r.mesh.system}`);
+    console.log(`       presentation / system classification : ${r.mesh.presentationSystemClassification}`);
+    console.log(`       ontology / FMA verification         : ${r.mesh.ontologyFmaVerification}`);
+    console.log(`       decided by: ${r.mesh.reviewReviewer}`);
     console.log(`       evidence: ${r.mesh.reviewEvidence}`);
     console.log(`       limit:    ${r.mesh.reviewEvidenceLimit}`);
   }
-  const notHuman = overridden.filter((r) => !r.mesh.reviewStatus.includes('approved'));
-  if (notHuman.length) {
-    console.log(`   !! ${notHuman.length} of these are AGENT-PROPOSED, not human-approved.`);
-    console.log('      They may be shown in the spike but must not be treated as settled.');
+  const unverified = overridden.filter((r) => r.mesh.ontologyFmaVerification !== 'verified');
+  if (unverified.length) {
+    console.log(`   !! ${unverified.length} present on external nomenclature evidence, but their ONTOLOGY`);
+    console.log('      relations are still pending human review. That is a supported PRESENTATION');
+    console.log('      decision. It is NOT a claim that the FMA relationships were reviewed by a human');
+    console.log('      expert, and the two must never be reported as one thing.');
   }
   console.log('');
 }
@@ -283,23 +305,27 @@ console.log(`wrote ${OUT_DIR}/global-pending-review.tsv     (${globalPending.len
 // off without hunting through the pending queue, and so nothing proposed can be
 // mistaken for settled by someone reading only the TSVs.
 if (overridden.length) {
+  // Route through toRow, then override the presentation columns. Passing the raw
+  // mesh object straight to tsv() wrote a file whose meshId, sourceLabel, FMA and
+  // ontologyPath columns were all empty, because the mesh uses `id` and
+  // `anatomicalName` while the columns are named meshId and sourceLabel.
   writeFileSync(
-    `${OUT_DIR}/shoulder-review-proposals.tsv`,
+    `${OUT_DIR}/shoulder-review-overrides.tsv`,
     tsv(
       overridden.map((r) => ({
-        ...r.mesh,
-        proposedClass: r.mesh.system,
+        ...toRow(r.mesh),
         currentClass: r.mesh.derivedClass,
-        externalEvidence: r.mesh.reviewEvidence,
+        proposedClass: r.mesh.system,
         whyPending: r.mesh.reviewNote,
-        reviewStatus: r.mesh.reviewStatus,
+        externalEvidence: r.mesh.reviewEvidence,
+        reviewStatus: `${r.mesh.presentationSystemClassification} / ontology:${r.mesh.ontologyFmaVerification}`,
         reviewer: r.mesh.reviewReviewer,
         reviewedAt: '',
       })),
     ),
     'utf8',
   );
-  console.log(`wrote ${OUT_DIR}/shoulder-review-proposals.tsv (${overridden.length} rows, awaiting human sign-off)`);
+  console.log(`wrote ${OUT_DIR}/shoulder-review-overrides.tsv (${overridden.length} rows; presentation decided, ontology verification outstanding)`);
 }
 console.log('');
 console.log('shoulder pending detail:');
@@ -333,7 +359,8 @@ writeFileSync(
         system: r.mesh.system,
         derivedClass: r.mesh.derivedClass ?? r.mesh.system,
         reviewStatus: r.mesh.reviewStatus ?? 'machine-derived',
-        agentProposed: r.mesh.reviewStatus === 'agent_proposed',
+        presentationSystemClassification: r.mesh.presentationSystemClassification,
+        ontologyFmaVerification: r.mesh.ontologyFmaVerification,
         reviewReviewer: r.mesh.reviewReviewer ?? null,
         fma: r.mesh.fmaConceptId,
         bp: r.mesh.bpRepresentationId,

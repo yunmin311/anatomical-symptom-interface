@@ -1,11 +1,18 @@
 {
-  "schemaVersion": 1,
+  "schemaVersion": 2,
   "purpose": "Human-reviewable classification decisions that OVERRIDE the machine-derived anatomy-system-map. The derived map stays pure and reproducible; every departure from it lives here with its evidence and its reviewer.",
   "notAClinicalReview": "This file records ANATOMICAL TAXONOMY decisions only. It has nothing to do with the clinician review of safety rules, shares no queue with it, and must never be merged with it.",
+  "twoStatusAxes": {
+    "why": "A structure can have a well-evidenced tissue class while the ontology relation that would justify it is still unverified. Collapsing both into one status field either overstates the verification or hides a usable classification, so they are tracked separately and must never be inferred from one another.",
+    "presentationSystemClassification": "What tissue family the structure is PRESENTED as, i.e. which anatomical material it receives. States: evidence_supported | proposed_with_evidence | machine_derived | unknown.",
+    "ontologyFmaVerification": "Whether the FMA ontology relationships underlying that classification have been checked by a human against the issuing authority. States: verified | pending_human_review.",
+    "prohibition": "Setting presentationSystemClassification to evidence_supported MUST NOT be read as, converted into, or reported as a claim that presentationSystemClassification's underlying FMA relations were clinically or anatomically reviewed by a human expert. The second axis exists to keep that visible."
+  },
   "rules": [
     "A machine-derived class may only be changed to a class an authority states.",
-    "An entry with agentProposed true is evidence-backed but NOT human-approved. It may be shown in a spike, visibly marked, and must not be treated as settled.",
-    "An entry with no evidence stays UNKNOWN. Absence of evidence is not a licence to infer from a structure's name."
+    "A structure whose ancestor chain states no tissue stays UNKNOWN in the derived map. Absence of evidence is not a licence to infer from a structure's name.",
+    "evidence_supported means a named external nomenclature asserts the class. It does not mean the source dataset's own ontology was verified.",
+    "An entry may present as muscle while its ontology verification is still pending. That combination is expected and is not an inconsistency."
   ],
   "entries": [
     {
@@ -14,34 +21,41 @@
       "fmaConceptId": "FMA33581",
       "machineClass": "UNKNOWN",
       "overrideClass": "muscle",
-      "agentProposed": true,
+      "presentationSystemClassification": "evidence_supported",
+      "ontologyFmaVerification": "pending_human_review",
       "humanApproved": false,
-      "rationale": "BP3D's own IS-A chain for this concept bottoms out at 'organ zone' and never states a tissue, so the derived map is UNKNOWN. The classification is instead taken from an external nomenclature authority that states it directly, rather than inferred from the word 'trapezius'.",
+      "decidedBy": "product decision, 2026-10-05",
+      "rationale": "The machine map is UNKNOWN because BodyParts3D's own IS-A chain for this concept bottoms out at 'organ zone' and never states a tissue; the derived value is left UNKNOWN and is not edited. The PRESENTATION class is muscle, which the product decision approves on the authority below. The ontology relation in the source dataset is explicitly NOT treated as verified.",
       "evidence": [
         {
           "authority": "NCI Thesaurus via EVS Explore (U.S. National Cancer Institute)",
           "concept": "C0920809",
           "label": "Structure of right trapezius muscle",
           "url": "https://evsexplore.semantics.cancer.gov/evsexplore/concept/ncim/C0920809",
-          "asserts": "The concept is named as a muscle structure; it is cross-referenced to FMA 13419 'Right trapezius' and to SNOMED CT C0224361 'Trapezius Muscle'."
+          "asserts": "The concept is named as a muscle structure; cross-referenced to FMA 13419 'Right trapezius' and to SNOMED CT C0224361 'Trapezius Muscle'."
         },
         {
           "authority": "FMA, as recorded in NCI Thesaurus",
           "concept": "C0824610",
           "label": "Set of superficial extrinsic muscles of right shoulder",
           "url": "https://evsexplore.semantics.cancer.gov/evsexplore/concept/ncim/C0920809",
-          "asserts": "FMA places the right trapezius in the set of superficial extrinsic muscles of the right shoulder. This is also what makes it a SHOULDER structure rather than a back-only one."
+          "asserts": "FMA places the right trapezius among the superficial extrinsic muscles of the right shoulder. This is also what makes it a SHOULDER structure rather than a back-only one."
         },
         {
           "authority": "FMA, as recorded in NCI Thesaurus",
           "concept": "C0825477",
           "label": "Transverse part of right trapezius",
           "url": "https://evsexplore.semantics.cancer.gov/evsexplore/concept/ncim/C0920809",
-          "asserts": "The transverse part is a has_regional_part of the right trapezius, i.e. the three named parts are siblings under one muscle. This is a sibling part, not the two in question."
+          "asserts": "The transverse part is a has_regional_part of the right trapezius, establishing the three named parts as siblings under one muscle. A sibling part, not the one in question."
+        },
+        {
+          "authority": "Product decision",
+          "date": "2026-10-05",
+          "asserts": "Authoritative anatomy sources establish that trapezius consists of descending/superior, transverse/middle and ascending/inferior MUSCULAR parts. The ascending and descending regional parts are therefore approved to PRESENT as muscle."
         }
       ],
-      "evidenceLimit": "The NCI concept covers the right trapezius as a whole (FMA 13419) and names the transverse part explicitly. The ascending and descending parts are covered as its sibling regional parts, not as separately coded concepts in this source. A reviewer should confirm the two parts directly in FMA before human approval.",
-      "reviewer": "agent-proposed (external nomenclature evidence; not human-approved)",
+      "evidenceLimit": "The NCI concept covers the right trapezius as a whole (FMA 13419) and names the transverse part explicitly. The ascending and descending parts are covered as sibling regional parts, not as separately coded concepts in this source. A human reviewer should confirm both parts directly in FMA before ontologyFmaVerification may become 'verified'.",
+      "reviewer": "product decision (2026-10-05); ontology verification still outstanding",
       "reviewedAt": "2026-10-05"
     },
     {
@@ -50,9 +64,11 @@
       "fmaConceptId": "FMA33586",
       "machineClass": "UNKNOWN",
       "overrideClass": "muscle",
-      "agentProposed": true,
+      "presentationSystemClassification": "evidence_supported",
+      "ontologyFmaVerification": "pending_human_review",
       "humanApproved": false,
-      "rationale": "Same authority and same reasoning as bp3d:FJ1520. The BP3D IS-A chain states no tissue; the classification comes from the NCI/FMA record, not from the name.",
+      "decidedBy": "product decision, 2026-10-05",
+      "rationale": "Same authority and same reasoning as bp3d:FJ1520. The derived map stays UNKNOWN; only the presentation class is muscle. The source dataset's ontology relation is not treated as verified.",
       "evidence": [
         {
           "authority": "NCI Thesaurus via EVS Explore (U.S. National Cancer Institute)",
@@ -60,10 +76,15 @@
           "label": "Structure of right trapezius muscle",
           "url": "https://evsexplore.semantics.cancer.gov/evsexplore/concept/ncim/C0920809",
           "asserts": "Cross-referenced to FMA 13419 'Right trapezius' and SNOMED CT C0224361 'Trapezius Muscle'; FMA places it among the superficial extrinsic muscles of the right shoulder."
+        },
+        {
+          "authority": "Product decision",
+          "date": "2026-10-05",
+          "asserts": "Trapezius consists of descending/superior, transverse/middle and ascending/inferior muscular parts; the descending regional part is approved to PRESENT as muscle."
         }
       ],
-      "evidenceLimit": "Same as bp3d:FJ1520: covered as a regional part of the right trapezius, not separately coded in this source. Confirm in FMA before human approval.",
-      "reviewer": "agent-proposed (external nomenclature evidence; not human-approved)",
+      "evidenceLimit": "Same as bp3d:FJ1520: covered as a regional part of the right trapezius, not separately coded in this source. Confirm in FMA before ontologyFmaVerification may become 'verified'.",
+      "reviewer": "product decision (2026-10-05); ontology verification still outstanding",
       "reviewedAt": "2026-10-05"
     }
   ]
