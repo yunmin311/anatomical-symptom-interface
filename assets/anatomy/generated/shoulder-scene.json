@@ -1,30 +1,51 @@
 {
   "schemaVersion": 1,
-  "units": "metres",
-  "glTFYup": true,
-  "shoulder": {
-    "file": "shoulder-atlas.glb",
-    "objects": 42,
-    "triangles": 199108,
-    "bytes": 4313560
+  "region": "shoulder",
+  "side": "right",
+  "units": "mm",
+  "lateralityConvention": "the model's own Right occupies negative x",
+  "framing": {
+    "min": [
+      -240.841,
+      -219.582,
+      969.5149
+    ],
+    "max": [
+      3.9492,
+      24.6253,
+      1506.2427
+    ],
+    "centre": [
+      -118.44590000000001,
+      -97.47834999999999,
+      1237.8788
+    ],
+    "extent": [
+      244.7902,
+      244.2073,
+      536.7278
+    ]
   },
-  "bodyContext": {
-    "file": "body-context.glb",
-    "objects": 1,
-    "triangles": 203382,
-    "bytes": 4900892
+  "totals": {
+    "structures": 43,
+    "triangles": 402490,
+    "pending": 0,
+    "declaredAbsent": 2
   },
   "structures": [
     {
       "id": "bp3d:FJ3384",
       "label": "Right scapula",
+      "role": "bone",
       "system": "bone",
       "derivedClass": "bone",
+      "reviewStatus": "machine-derived",
       "presentationSystemClassification": "machine_derived",
       "ontologyFmaVerification": "pending_human_review",
-      "reviewStatus": "machine-derived",
+      "reviewReviewer": null,
       "fma": "FMA13395",
       "bp": "BP9101",
+      "meshFile": "FJ3384.obj",
       "triangles": 26172,
       "boundsMm": {
         "min": [
@@ -42,13 +63,16 @@
     {
       "id": "bp3d:FJ3362",
       "label": "Right clavicle",
+      "role": "bone",
       "system": "bone",
       "derivedClass": "bone",
+      "reviewStatus": "machine-derived",
       "presentationSystemClassification": "machine_derived",
       "ontologyFmaVerification": "pending_human_review",
-      "reviewStatus": "machine-derived",
+      "reviewReviewer": null,
       "fma": "FMA13322",
       "bp": "BP9271",
+      "meshFile": "FJ3362.obj",
       "triangles": 1146,
       "boundsMm": {
         "min": [
@@ -66,13 +90,16 @@
     {
       "id": "bp3d:FJ3368",
       "label": "Right humerus",
+      "role": "bone",
       "system": "bone",
       "derivedClass": "bone",
+      "reviewStatus": "machine-derived",
       "presentationSystemClassification": "machine_derived",
       "ontologyFmaVerification": "pending_human_review",
-      "reviewStatus": "machine-derived",
+      "reviewReviewer": null,
       "fma": "FMA23130",
       "bp": "BP9206",
+      "meshFile": "FJ3368.obj",
       "triangles": 3784,
       "boundsMm": {
         "min": [
@@ -90,13 +117,16 @@
     {
       "id": "bp3d:FJ1506",
       "label": "Right supraspinatus",
+      "role": "muscle",
       "system": "muscle",
       "derivedClass": "muscle",
+      "reviewStatus": "machine-derived",
       "presentationSystemClassification": "machine_derived",
       "ontologyFmaVerification": "pending_human_review",
-      "reviewStatus": "machine-derived",
+      "reviewReviewer": null,
       "fma": "FMA32544",
       "bp": "BP4791",
+      "meshFile": "FJ1506.obj",
       "triangles": 878,
       "boundsMm": {
         "min": [
@@ -114,13 +144,16 @@
     {
       "id": "bp3d:FJ1500",
       "label": "Right infraspinatus muscle",
+      "role": "muscle",
       "system": "muscle",
       "derivedClass": "muscle",
+      "reviewStatus": "machine-derived",
       "presentationSystemClassification": "machine_derived",
       "ontologyFmaVerification": "pending_human_review",
-      "reviewStatus": "machine-derived",
+      "reviewReviewer": null,
       "fma": "FMA32547",
       "bp": "BP4797",
+      "meshFile": "FJ1500.obj",
       "triangles": 866,
       "boundsMm": {
         "min": [
@@ -138,13 +171,16 @@
     {
       "id": "bp3d:FJ1504",
       "label": "Right subscapularis",
+      "role": "muscle",
       "system": "muscle",
       "derivedClass": "muscle",
+      "reviewStatus": "machine-derived",
       "presentationSystemClassification": "machine_derived",
       "ontologyFmaVerification": "pending_human_review",
-      "reviewStatus": "machine-derived",
+      "reviewReviewer": null,
       "fma": "FMA13414",
       "bp": "BP4795",
+      "meshFile": "FJ1504.obj",
       "triangles": 2092,
       "boundsMm": {
         "min": [
@@ -162,13 +198,16 @@
     {
       "id": "bp3d:FJ1508",
       "label": "Right teres minor",
+      "role": "muscle",
       "system": "muscle",
       "derivedClass": "muscle",
+      "reviewStatus": "machine-derived",
       "presentationSystemClassification": "machine_derived",
       "ontologyFmaVerification": "pending_human_review",
-      "reviewStatus": "machine-derived",
+      "reviewReviewer": null,
       "fma": "FMA32553",
       "bp": "BP4793",
+      "meshFile": "FJ1508.obj",
       "triangles": 506,
       "boundsMm": {
         "min": [
@@ -186,13 +225,16 @@
     {
       "id": "bp3d:FJ1507",
       "label": "Right teres major",
+      "role": "muscle",
       "system": "muscle",
       "derivedClass": "muscle",
+      "reviewStatus": "machine-derived",
       "presentationSystemClassification": "machine_derived",
       "ontologyFmaVerification": "pending_human_review",
-      "reviewStatus": "machine-derived",
+      "reviewReviewer": null,
       "fma": "FMA32551",
       "bp": "BP4789",
+      "meshFile": "FJ1507.obj",
       "triangles": 1042,
       "boundsMm": {
         "min": [
@@ -210,13 +252,16 @@
     {
       "id": "bp3d:FJ1467",
       "label": "Acromial part of right deltoid",
+      "role": "muscle",
       "system": "muscle",
       "derivedClass": "muscle",
+      "reviewStatus": "machine-derived",
       "presentationSystemClassification": "machine_derived",
       "ontologyFmaVerification": "pending_human_review",
-      "reviewStatus": "machine-derived",
+      "reviewReviewer": null,
       "fma": "FMA34682",
       "bp": "BP7571",
+      "meshFile": "FJ1467.obj",
       "triangles": 1300,
       "boundsMm": {
         "min": [
@@ -234,13 +279,16 @@
     {
       "id": "bp3d:FJ1468",
       "label": "Clavicular part of right deltoid",
+      "role": "muscle",
       "system": "muscle",
       "derivedClass": "muscle",
+      "reviewStatus": "machine-derived",
       "presentationSystemClassification": "machine_derived",
       "ontologyFmaVerification": "pending_human_review",
-      "reviewStatus": "machine-derived",
+      "reviewReviewer": null,
       "fma": "FMA34680",
       "bp": "BP7573",
+      "meshFile": "FJ1468.obj",
       "triangles": 2206,
       "boundsMm": {
         "min": [
@@ -258,13 +306,16 @@
     {
       "id": "bp3d:FJ1513",
       "label": "Spinal part of right deltoid",
+      "role": "muscle",
       "system": "muscle",
       "derivedClass": "muscle",
+      "reviewStatus": "machine-derived",
       "presentationSystemClassification": "machine_derived",
       "ontologyFmaVerification": "pending_human_review",
-      "reviewStatus": "machine-derived",
+      "reviewReviewer": null,
       "fma": "FMA34684",
       "bp": "BP5607",
+      "meshFile": "FJ1513.obj",
       "triangles": 1900,
       "boundsMm": {
         "min": [
@@ -282,13 +333,16 @@
     {
       "id": "bp3d:FJ1520",
       "label": "Ascending part of right trapezius",
+      "role": "muscle",
       "system": "muscle",
       "derivedClass": "UNKNOWN",
+      "reviewStatus": "review_override",
       "presentationSystemClassification": "evidence_supported",
       "ontologyFmaVerification": "pending_human_review",
-      "reviewStatus": "review_override",
+      "reviewReviewer": "product decision (2026-10-05); ontology verification still outstanding",
       "fma": "FMA33581",
       "bp": "BP5638",
+      "meshFile": "FJ1520.obj",
       "triangles": 10530,
       "boundsMm": {
         "min": [
@@ -306,13 +360,16 @@
     {
       "id": "bp3d:FJ1521",
       "label": "Descending part of right trapezius",
+      "role": "muscle",
       "system": "muscle",
       "derivedClass": "UNKNOWN",
+      "reviewStatus": "review_override",
       "presentationSystemClassification": "evidence_supported",
       "ontologyFmaVerification": "pending_human_review",
-      "reviewStatus": "review_override",
+      "reviewReviewer": "product decision (2026-10-05); ontology verification still outstanding",
       "fma": "FMA33586",
       "bp": "BP5636",
+      "meshFile": "FJ1521.obj",
       "triangles": 7108,
       "boundsMm": {
         "min": [
@@ -330,13 +387,16 @@
     {
       "id": "bp3d:FJ1554",
       "label": "Transverse part of right trapezius",
+      "role": "muscle",
       "system": "muscle",
       "derivedClass": "muscle",
+      "reviewStatus": "machine-derived",
       "presentationSystemClassification": "machine_derived",
       "ontologyFmaVerification": "pending_human_review",
-      "reviewStatus": "machine-derived",
+      "reviewReviewer": null,
       "fma": "FMA33584",
       "bp": "BP5610",
+      "meshFile": "FJ1554.obj",
       "triangles": 4460,
       "boundsMm": {
         "min": [
@@ -354,13 +414,16 @@
     {
       "id": "bp3d:FJ1456",
       "label": "Right pectoralis minor",
+      "role": "muscle",
       "system": "muscle",
       "derivedClass": "muscle",
+      "reviewStatus": "machine-derived",
       "presentationSystemClassification": "machine_derived",
       "ontologyFmaVerification": "pending_human_review",
-      "reviewStatus": "machine-derived",
+      "reviewReviewer": null,
       "fma": "FMA13375",
       "bp": "BP4775",
+      "meshFile": "FJ1456.obj",
       "triangles": 9468,
       "boundsMm": {
         "min": [
@@ -378,13 +441,16 @@
     {
       "id": "bp3d:FJ1464",
       "label": "Sternocostal part of right pectoralis major",
+      "role": "muscle",
       "system": "muscle",
       "derivedClass": "muscle",
+      "reviewStatus": "machine-derived",
       "presentationSystemClassification": "machine_derived",
       "ontologyFmaVerification": "pending_human_review",
-      "reviewStatus": "machine-derived",
+      "reviewReviewer": null,
       "fma": "FMA79979",
       "bp": "BP5613",
+      "meshFile": "FJ1464.obj",
       "triangles": 7114,
       "boundsMm": {
         "min": [
@@ -402,13 +468,16 @@
     {
       "id": "bp3d:FJ1447",
       "label": "Clavicular part of right pectoralis major",
+      "role": "muscle",
       "system": "muscle",
       "derivedClass": "muscle",
+      "reviewStatus": "machine-derived",
       "presentationSystemClassification": "machine_derived",
       "ontologyFmaVerification": "pending_human_review",
-      "reviewStatus": "machine-derived",
+      "reviewReviewer": null,
       "fma": "FMA34690",
       "bp": "BP5582",
+      "meshFile": "FJ1447.obj",
       "triangles": 1846,
       "boundsMm": {
         "min": [
@@ -426,13 +495,16 @@
     {
       "id": "bp3d:FJ1446",
       "label": "Abdominal part of right pectoralis major",
+      "role": "muscle",
       "system": "muscle",
       "derivedClass": "muscle",
+      "reviewStatus": "machine-derived",
       "presentationSystemClassification": "machine_derived",
       "ontologyFmaVerification": "pending_human_review",
-      "reviewStatus": "machine-derived",
+      "reviewReviewer": null,
       "fma": "FMA45874",
       "bp": "BP5615",
+      "meshFile": "FJ1446.obj",
       "triangles": 1536,
       "boundsMm": {
         "min": [
@@ -450,13 +522,16 @@
     {
       "id": "bp3d:FJ1459",
       "label": "Right serratus anterior",
+      "role": "muscle",
       "system": "muscle",
       "derivedClass": "muscle",
+      "reviewStatus": "machine-derived",
       "presentationSystemClassification": "machine_derived",
       "ontologyFmaVerification": "pending_human_review",
-      "reviewStatus": "machine-derived",
+      "reviewReviewer": null,
       "fma": "FMA13398",
       "bp": "BP4782",
+      "meshFile": "FJ1459.obj",
       "triangles": 49212,
       "boundsMm": {
         "min": [
@@ -474,13 +549,16 @@
     {
       "id": "bp3d:FJ1542",
       "label": "Right serratus posterior superior",
+      "role": "muscle",
       "system": "muscle",
       "derivedClass": "muscle",
+      "reviewStatus": "machine-derived",
       "presentationSystemClassification": "machine_derived",
       "ontologyFmaVerification": "pending_human_review",
-      "reviewStatus": "machine-derived",
+      "reviewReviewer": null,
       "fma": "FMA13403",
       "bp": "BP4766",
+      "meshFile": "FJ1542.obj",
       "triangles": 9066,
       "boundsMm": {
         "min": [
@@ -498,13 +576,16 @@
     {
       "id": "bp3d:FJ1541",
       "label": "Right serratus posterior inferior",
+      "role": "muscle",
       "system": "muscle",
       "derivedClass": "muscle",
+      "reviewStatus": "machine-derived",
       "presentationSystemClassification": "machine_derived",
       "ontologyFmaVerification": "pending_human_review",
-      "reviewStatus": "machine-derived",
+      "reviewReviewer": null,
       "fma": "FMA13405",
       "bp": "BP4768",
+      "meshFile": "FJ1541.obj",
       "triangles": 13164,
       "boundsMm": {
         "min": [
@@ -522,13 +603,16 @@
     {
       "id": "bp3d:FJ1536",
       "label": "Right rhomboid major",
+      "role": "muscle",
       "system": "muscle",
       "derivedClass": "muscle",
+      "reviewStatus": "machine-derived",
       "presentationSystemClassification": "machine_derived",
       "ontologyFmaVerification": "pending_human_review",
-      "reviewStatus": "machine-derived",
+      "reviewReviewer": null,
       "fma": "FMA13381",
       "bp": "BP4780",
+      "meshFile": "FJ1536.obj",
       "triangles": 7202,
       "boundsMm": {
         "min": [
@@ -546,13 +630,16 @@
     {
       "id": "bp3d:FJ1537",
       "label": "Right rhomboid minor",
+      "role": "muscle",
       "system": "muscle",
       "derivedClass": "muscle",
+      "reviewStatus": "machine-derived",
       "presentationSystemClassification": "machine_derived",
       "ontologyFmaVerification": "pending_human_review",
-      "reviewStatus": "machine-derived",
+      "reviewReviewer": null,
       "fma": "FMA13383",
       "bp": "BP4784",
+      "meshFile": "FJ1537.obj",
       "triangles": 2206,
       "boundsMm": {
         "min": [
@@ -570,13 +657,16 @@
     {
       "id": "bp3d:FJ1532",
       "label": "Right levator scapulae",
+      "role": "muscle",
       "system": "muscle",
       "derivedClass": "muscle",
+      "reviewStatus": "machine-derived",
       "presentationSystemClassification": "machine_derived",
       "ontologyFmaVerification": "pending_human_review",
-      "reviewStatus": "machine-derived",
+      "reviewReviewer": null,
       "fma": "FMA32540",
       "bp": "BP4786",
+      "meshFile": "FJ1532.obj",
       "triangles": 4718,
       "boundsMm": {
         "min": [
@@ -594,13 +684,16 @@
     {
       "id": "bp3d:FJ1460",
       "label": "Right subclavius",
+      "role": "muscle",
       "system": "muscle",
       "derivedClass": "muscle",
+      "reviewStatus": "machine-derived",
       "presentationSystemClassification": "machine_derived",
       "ontologyFmaVerification": "pending_human_review",
-      "reviewStatus": "machine-derived",
+      "reviewReviewer": null,
       "fma": "FMA13412",
       "bp": "BP4773",
+      "meshFile": "FJ1460.obj",
       "triangles": 1640,
       "boundsMm": {
         "min": [
@@ -618,13 +711,16 @@
     {
       "id": "bp3d:FJ1478",
       "label": "Long head of right biceps brachii",
+      "role": "muscle",
       "system": "muscle",
       "derivedClass": "muscle",
+      "reviewStatus": "machine-derived",
       "presentationSystemClassification": "machine_derived",
       "ontologyFmaVerification": "pending_human_review",
-      "reviewStatus": "machine-derived",
+      "reviewReviewer": null,
       "fma": "FMA37686",
       "bp": "BP5566",
+      "meshFile": "FJ1478.obj",
       "triangles": 1426,
       "boundsMm": {
         "min": [
@@ -642,13 +738,16 @@
     {
       "id": "bp3d:FJ1512",
       "label": "Short head of right biceps brachii",
+      "role": "muscle",
       "system": "muscle",
       "derivedClass": "muscle",
+      "reviewStatus": "machine-derived",
       "presentationSystemClassification": "machine_derived",
       "ontologyFmaVerification": "pending_human_review",
-      "reviewStatus": "machine-derived",
+      "reviewReviewer": null,
       "fma": "FMA37684",
       "bp": "BP5558",
+      "meshFile": "FJ1512.obj",
       "triangles": 1856,
       "boundsMm": {
         "min": [
@@ -666,13 +765,16 @@
     {
       "id": "bp3d:FJ1479",
       "label": "Long head of right triceps brachii",
+      "role": "muscle",
       "system": "muscle",
       "derivedClass": "muscle",
+      "reviewStatus": "machine-derived",
       "presentationSystemClassification": "machine_derived",
       "ontologyFmaVerification": "pending_human_review",
-      "reviewStatus": "machine-derived",
+      "reviewReviewer": null,
       "fma": "FMA37699",
       "bp": "BP5564",
+      "meshFile": "FJ1479.obj",
       "triangles": 1588,
       "boundsMm": {
         "min": [
@@ -690,13 +792,16 @@
     {
       "id": "bp3d:FJ1477",
       "label": "Lateral head of right triceps brachii",
+      "role": "muscle",
       "system": "muscle",
       "derivedClass": "muscle",
+      "reviewStatus": "machine-derived",
       "presentationSystemClassification": "machine_derived",
       "ontologyFmaVerification": "pending_human_review",
-      "reviewStatus": "machine-derived",
+      "reviewReviewer": null,
       "fma": "FMA37697",
       "bp": "BP5550",
+      "meshFile": "FJ1477.obj",
       "triangles": 2606,
       "boundsMm": {
         "min": [
@@ -714,13 +819,16 @@
     {
       "id": "bp3d:FJ1480",
       "label": "Medial head of right triceps brachii",
+      "role": "muscle",
       "system": "muscle",
       "derivedClass": "muscle",
+      "reviewStatus": "machine-derived",
       "presentationSystemClassification": "machine_derived",
       "ontologyFmaVerification": "pending_human_review",
-      "reviewStatus": "machine-derived",
+      "reviewReviewer": null,
       "fma": "FMA37695",
       "bp": "BP5562",
+      "meshFile": "FJ1480.obj",
       "triangles": 832,
       "boundsMm": {
         "min": [
@@ -738,13 +846,16 @@
     {
       "id": "bp3d:FJ2268",
       "label": "Right axillary artery",
+      "role": "artery",
       "system": "artery",
       "derivedClass": "artery",
+      "reviewStatus": "machine-derived",
       "presentationSystemClassification": "machine_derived",
       "ontologyFmaVerification": "pending_human_review",
-      "reviewStatus": "machine-derived",
+      "reviewReviewer": null,
       "fma": "FMA22655",
       "bp": "BP6023",
+      "meshFile": "FJ2268.obj",
       "triangles": 1826,
       "boundsMm": {
         "min": [
@@ -762,13 +873,16 @@
     {
       "id": "bp3d:FJ2303",
       "label": "Right suprascapular artery",
+      "role": "artery",
       "system": "artery",
       "derivedClass": "artery",
+      "reviewStatus": "machine-derived",
       "presentationSystemClassification": "machine_derived",
       "ontologyFmaVerification": "pending_human_review",
-      "reviewStatus": "machine-derived",
+      "reviewReviewer": null,
       "fma": "FMA10698",
       "bp": "BP6201",
+      "meshFile": "FJ2303.obj",
       "triangles": 1912,
       "boundsMm": {
         "min": [
@@ -786,13 +900,16 @@
     {
       "id": "bp3d:FJ2273",
       "label": "Right circumflex scapular artery",
+      "role": "artery",
       "system": "artery",
       "derivedClass": "artery",
+      "reviewStatus": "machine-derived",
       "presentationSystemClassification": "machine_derived",
       "ontologyFmaVerification": "pending_human_review",
-      "reviewStatus": "machine-derived",
+      "reviewReviewer": null,
       "fma": "FMA23180",
       "bp": "BP6244",
+      "meshFile": "FJ2273.obj",
       "triangles": 778,
       "boundsMm": {
         "min": [
@@ -810,13 +927,16 @@
     {
       "id": "bp3d:FJ2284",
       "label": "Right dorsal scapular artery",
+      "role": "artery",
       "system": "artery",
       "derivedClass": "artery",
+      "reviewStatus": "machine-derived",
       "presentationSystemClassification": "machine_derived",
       "ontologyFmaVerification": "pending_human_review",
-      "reviewStatus": "machine-derived",
+      "reviewReviewer": null,
       "fma": "FMA4057",
       "bp": "BP6211",
+      "meshFile": "FJ2284.obj",
       "triangles": 4446,
       "boundsMm": {
         "min": [
@@ -834,13 +954,16 @@
     {
       "id": "bp3d:FJ2298",
       "label": "Right subscapular artery",
+      "role": "artery",
       "system": "artery",
       "derivedClass": "artery",
+      "reviewStatus": "machine-derived",
       "presentationSystemClassification": "machine_derived",
       "ontologyFmaVerification": "pending_human_review",
-      "reviewStatus": "machine-derived",
+      "reviewReviewer": null,
       "fma": "FMA22678",
       "bp": "BP6290",
+      "meshFile": "FJ2298.obj",
       "triangles": 786,
       "boundsMm": {
         "min": [
@@ -858,13 +981,16 @@
     {
       "id": "bp3d:FJ2305",
       "label": "Right thoracodorsal artery",
+      "role": "artery",
       "system": "artery",
       "derivedClass": "artery",
+      "reviewStatus": "machine-derived",
       "presentationSystemClassification": "machine_derived",
       "ontologyFmaVerification": "pending_human_review",
-      "reviewStatus": "machine-derived",
+      "reviewReviewer": null,
       "fma": "FMA66321",
       "bp": "BP6241",
+      "meshFile": "FJ2305.obj",
       "triangles": 2108,
       "boundsMm": {
         "min": [
@@ -882,13 +1008,16 @@
     {
       "id": "bp3d:FJ2304",
       "label": "Trunk of right thoraco-acromial artery",
+      "role": "artery",
       "system": "artery",
       "derivedClass": "artery",
+      "reviewStatus": "machine-derived",
       "presentationSystemClassification": "machine_derived",
       "ontologyFmaVerification": "pending_human_review",
-      "reviewStatus": "machine-derived",
+      "reviewReviewer": null,
       "fma": "FMA66563",
       "bp": "BP6424",
+      "meshFile": "FJ2304.obj",
       "triangles": 472,
       "boundsMm": {
         "min": [
@@ -906,13 +1035,16 @@
     {
       "id": "bp3d:FJ2269",
       "label": "Right axillary vein",
+      "role": "vein",
       "system": "vein",
       "derivedClass": "vein",
+      "reviewStatus": "machine-derived",
       "presentationSystemClassification": "machine_derived",
       "ontologyFmaVerification": "pending_human_review",
-      "reviewStatus": "machine-derived",
+      "reviewReviewer": null,
       "fma": "FMA13330",
       "bp": "BP5956",
+      "meshFile": "FJ2269.obj",
       "triangles": 2146,
       "boundsMm": {
         "min": [
@@ -930,13 +1062,16 @@
     {
       "id": "bp3d:FJ2302",
       "label": "Right suprascapular vein",
+      "role": "vein",
       "system": "vein",
       "derivedClass": "vein",
+      "reviewStatus": "machine-derived",
       "presentationSystemClassification": "machine_derived",
       "ontologyFmaVerification": "pending_human_review",
-      "reviewStatus": "machine-derived",
+      "reviewReviewer": null,
       "fma": "FMA50859",
       "bp": "BP5909",
+      "meshFile": "FJ2302.obj",
       "triangles": 1986,
       "boundsMm": {
         "min": [
@@ -954,13 +1089,16 @@
     {
       "id": "bp3d:FJ2274",
       "label": "Right circumflex scapular vein",
+      "role": "vein",
       "system": "vein",
       "derivedClass": "vein",
+      "reviewStatus": "machine-derived",
       "presentationSystemClassification": "machine_derived",
       "ontologyFmaVerification": "pending_human_review",
-      "reviewStatus": "machine-derived",
+      "reviewReviewer": null,
       "fma": "FMA77949",
       "bp": "BP5940",
+      "meshFile": "FJ2274.obj",
       "triangles": 960,
       "boundsMm": {
         "min": [
@@ -978,13 +1116,16 @@
     {
       "id": "bp3d:FJ2299",
       "label": "Right subscapular vein",
+      "role": "vein",
       "system": "vein",
       "derivedClass": "vein",
+      "reviewStatus": "machine-derived",
       "presentationSystemClassification": "machine_derived",
       "ontologyFmaVerification": "pending_human_review",
-      "reviewStatus": "machine-derived",
+      "reviewReviewer": null,
       "fma": "FMA23114",
       "bp": "BP5913",
+      "meshFile": "FJ2299.obj",
       "triangles": 526,
       "boundsMm": {
         "min": [
@@ -1002,13 +1143,16 @@
     {
       "id": "bp3d:FJ2306",
       "label": "Right thoracodorsal vein",
+      "role": "vein",
       "system": "vein",
       "derivedClass": "vein",
+      "reviewStatus": "machine-derived",
       "presentationSystemClassification": "machine_derived",
       "ontologyFmaVerification": "pending_human_review",
-      "reviewStatus": "machine-derived",
+      "reviewReviewer": null,
       "fma": "FMA71214",
       "bp": "BP5937",
+      "meshFile": "FJ2306.obj",
       "triangles": 1692,
       "boundsMm": {
         "min": [
@@ -1022,42 +1166,44 @@
           1295.1746
         ]
       }
+    },
+    {
+      "id": "bp3d:FJ2810",
+      "label": "Skin",
+      "role": "skin",
+      "system": "skin",
+      "derivedClass": "skin",
+      "reviewStatus": "machine-derived",
+      "presentationSystemClassification": "machine_derived",
+      "ontologyFmaVerification": "pending_human_review",
+      "reviewReviewer": null,
+      "fma": "FMA7163",
+      "bp": "BP9115",
+      "meshFile": "FJ2810.obj",
+      "triangles": 203382,
+      "boundsMm": {
+        "min": [
+          -334.119,
+          -246.783,
+          -78.1112
+        ],
+        "max": [
+          332.825,
+          45.2476,
+          1641.36
+        ]
+      }
     }
   ],
-  "unavailableInSource": [
+  "excludedPending": [],
+  "declaredAbsent": [
     {
-      "system": "nerve",
-      "reason": "BodyParts3D 4.0 has 42 nerve meshes in the whole body and none in the shoulder: no brachial plexus, no axillary or suprascapular nerve."
+      "role": "nerve",
+      "name": "Right axillary nerve"
     },
     {
-      "system": "tendon",
-      "reason": "BodyParts3D 4.0 models 8 tendons, none in the shoulder: the rotator cuff tendons are absent."
-    },
-    {
-      "system": "ligament",
-      "reason": "BodyParts3D 4.0 models 20 ligaments, none in the shoulder: the glenohumeral and coracohumeral ligaments are absent."
-    },
-    {
-      "system": "cartilage",
-      "reason": "BodyParts3D 4.0 models 51 cartilages, none in the shoulder."
+      "role": "nerve",
+      "name": "Suprascapular nerve"
     }
-  ],
-  "provenance": {
-    "dataset": "BodyParts3D",
-    "release": "4.0 (mesh archive 2013/05, 99% polygon reduction)",
-    "archive": "isa_BP3D_4.0_obj_99.zip",
-    "archiveSha256": "40665852c49f218326590e204db91064a1ecfc3c6f8cbd7bbbcaac62c7cd409e",
-    "doi": "10.18908/lsdba.nbdc00837-000",
-    "licence": "CC-BY-4.0",
-    "licenceUrl": "https://dbarchive.biosciencedb.jp/en/bodyparts3d/lic.html",
-    "attribution": "BodyParts3D, (c) The Database Center for Life Science licensed under CC Attribution 4.0 International",
-    "retrievedAt": "2026-10-01",
-    "officialLicenseLastUpdated": "2025-02-27",
-    "ourLicenseEvidenceCheckedAt": "2026-10-05",
-    "modified": true,
-    "modification": "geometry unmodified; per-system presentation applied in the viewer; GLB re-encoded by Blender",
-    "codeLicence": "MIT (this repository's code)",
-    "assetLicence": "CC BY 4.0 (the geometry). The two are separate and must not be conflated.",
-    "fidelity": "99% polygon reduction. Approved for regional localisation, layer exploration, selection and contextual viewing. NOT approved for surgical-grade, microscopic or high-magnification insertion/origin inspection; close zoom exposes visible polygon reduction and torn boundaries."
-  }
+  ]
 }

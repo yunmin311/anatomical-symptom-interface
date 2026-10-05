@@ -1,0 +1,470 @@
+/*
+ * Anatomy atlas viewer layout.
+ *
+ * The canvas is the primary workspace. Two rules drive everything here:
+ *   1. the model keeps the majority of the available space at every width
+ *   2. nothing may cause horizontal overflow, at 375 or anywhere else
+ *
+ * The control rail is a fixed fraction of the viewport on wide screens and drops
+ * below the canvas on narrow ones. It is a rail, not a page column: it does not
+ * grow to fit its content and it does not push the canvas smaller than its share.
+ */
+
+.atlas {
+  /* The workspace ground, so the canvas reads as the dominant surface. */
+  background: var(--workspace);
+  min-height: 100vh;
+  min-height: 100dvh;
+  display: flex;
+  flex-direction: column;
+  color: var(--ink);
+  /* Belt and braces against a wide child forcing a scrollbar. */
+  overflow-x: hidden;
+}
+
+.atlas__head {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: var(--space-4);
+  padding: var(--space-4) var(--space-6) var(--space-3);
+  flex-wrap: wrap;
+}
+
+.atlas__attribution {
+  max-width: 46ch;
+  text-align: right;
+}
+
+.atlas__body {
+  flex: 1;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) var(--rail-width);
+  gap: var(--space-4);
+  padding: 0 var(--space-6) var(--space-6);
+  align-items: stretch;
+  min-height: 0;
+}
+
+/* ------------------------------------------------------------------ canvas */
+
+.atlas__stage {
+  position: relative;
+  background: var(--canvas);
+  border-radius: var(--radius);
+  overflow: hidden;
+  /* The canvas takes the space; the rail never dictates its size. */
+  min-height: var(--canvas-min-height);
+  min-width: 0;
+}
+
+.atlas__canvas {
+  position: absolute;
+  inset: 0;
+}
+
+.atlas__canvas canvas {
+  display: block;
+  width: 100% !important;
+  height: 100% !important;
+  touch-action: none;
+}
+
+.atlas__overlay {
+  position: absolute;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  pointer-events: none;
+}
+
+.atlas__overlay--tl {
+  top: var(--space-3);
+  left: var(--space-3);
+}
+
+/* The orientation cue. Monospace so the letters do not jitter while orbiting. */
+.atlas__cue {
+  font-family: var(--font-mono);
+  font-size: var(--text-group);
+  line-height: 1;
+  font-weight: var(--weight-heading);
+  letter-spacing: 0.04em;
+  color: var(--canvas-ink);
+  background: rgb(14 15 17 / 0.62);
+  border: 1px solid var(--canvas-line);
+  border-radius: var(--radius);
+  padding: var(--space-2) var(--space-3);
+}
+
+.atlas__cue-label {
+  font-size: var(--text-meta);
+  line-height: 1;
+  color: var(--canvas-muted);
+  padding-left: 2px;
+}
+
+.atlas__fidelity {
+  position: absolute;
+  left: var(--space-3);
+  right: var(--space-3);
+  bottom: var(--space-3);
+  margin: 0;
+  font-size: var(--text-small);
+  line-height: var(--text-small-leading);
+  color: var(--canvas-ink);
+  background: rgb(14 15 17 / 0.78);
+  border: 1px solid var(--canvas-line);
+  border-left: 3px solid var(--canvas-accent);
+  border-radius: var(--radius);
+  padding: var(--space-2) var(--space-3);
+}
+
+.atlas__loading {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  margin: 0;
+  color: var(--canvas-muted);
+  font-size: var(--text-small);
+}
+
+.atlas-fail {
+  padding: var(--space-8);
+  display: grid;
+  gap: var(--space-3);
+}
+
+/* -------------------------------------------------------------------- rail */
+
+.atlas__rail {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-5);
+  min-width: 0;
+  overflow-y: auto;
+  /* The rail scrolls, the page does not. */
+  max-height: calc(100dvh - 120px);
+  padding-right: 2px;
+}
+
+.atlas__group {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: var(--space-3) var(--space-4) var(--space-4);
+}
+
+.atlas__group--foot {
+  background: transparent;
+  border-style: dashed;
+}
+
+.atlas__groupnote {
+  color: var(--muted);
+}
+
+.atlas__groupnote--gap {
+  margin-top: var(--space-2);
+}
+
+.atlas__row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  align-items: center;
+}
+
+.atlas__row--modes {
+  margin-top: var(--space-2);
+}
+
+/* Controls. Flat, quiet, and clearly secondary to the canvas. */
+.atlas__btn {
+  font-family: inherit;
+  font-size: var(--text-label);
+  line-height: 1;
+  font-weight: var(--weight-label);
+  color: var(--ink);
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: var(--space-2) var(--space-3);
+  cursor: pointer;
+  min-height: 32px;
+}
+
+.atlas__btn:hover {
+  border-color: var(--muted);
+}
+
+.atlas__btn:focus-visible,
+.atlas__input:focus-visible,
+.atlas__result:focus-visible,
+.atlas__layer input:focus-visible,
+.atlas__check input:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.atlas__btn.is-on {
+  background: var(--ink);
+  color: var(--surface);
+  border-color: var(--ink);
+}
+
+.atlas__btn.is-off {
+  background: var(--danger-soft);
+  border-color: var(--danger);
+  color: var(--danger);
+}
+
+.atlas__btn--tiny {
+  font-size: var(--text-meta);
+  padding: var(--space-1) var(--space-2);
+  min-height: 26px;
+}
+
+/* ------------------------------------------------------------------ layers */
+
+.atlas__layers {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.atlas__layer {
+  display: grid;
+  grid-template-columns: auto auto 1fr auto;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: var(--text-label);
+  line-height: var(--text-label-leading);
+  padding: var(--space-1) 0;
+  cursor: pointer;
+}
+
+.atlas__swatch {
+  width: 12px;
+  height: 12px;
+  border-radius: 2px;
+  border: 1px solid rgb(0 0 0 / 0.25);
+}
+
+.atlas__layername {
+  min-width: 0;
+}
+
+.atlas__count {
+  font-family: var(--font-mono);
+  font-size: var(--text-meta);
+  color: var(--muted);
+}
+
+/*
+ * Absent layers are shown, not omitted. Omitting them would teach the user that
+ * these tissues are absent from the shoulder, which is false -- they are absent
+ * from this model.
+ */
+.atlas__layers--absent {
+  gap: var(--space-2);
+}
+
+.atlas__absent {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: var(--space-2) 0;
+  border-top: 1px dotted var(--line);
+  color: var(--muted);
+}
+
+.atlas__absent .atlas__layername {
+  font-size: var(--text-label);
+  color: var(--ink);
+  text-decoration: line-through;
+  text-decoration-color: var(--line);
+  text-decoration-thickness: 1px;
+  width: fit-content;
+}
+
+.atlas__absentnote {
+  margin-top: var(--space-2);
+  padding-top: var(--space-2);
+  border-top: 1px solid var(--line);
+}
+
+/* ------------------------------------------------------------------ search */
+
+.atlas__search {
+  position: relative;
+}
+
+.atlas__input {
+  width: 100%;
+  font-family: inherit;
+  font-size: var(--text-label);
+  line-height: var(--text-label-leading);
+  color: var(--ink);
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: var(--space-2) var(--space-3);
+  min-height: 32px;
+}
+
+.atlas__results {
+  position: absolute;
+  z-index: 20;
+  top: calc(100% + 4px);
+  left: 0;
+  right: 0;
+  list-style: none;
+  margin: 0;
+  padding: var(--space-1);
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  box-shadow: 0 8px 24px rgb(0 0 0 / 0.14);
+  max-height: 260px;
+  overflow-y: auto;
+}
+
+.atlas__results-empty {
+  padding: var(--space-2);
+}
+
+.atlas__result {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: var(--space-2);
+  width: 100%;
+  text-align: left;
+  font-family: inherit;
+  font-size: var(--text-label);
+  color: var(--ink);
+  background: transparent;
+  border: 0;
+  border-radius: var(--radius);
+  padding: var(--space-2);
+  cursor: pointer;
+}
+
+.atlas__result:hover {
+  background: var(--accent-soft);
+}
+
+/* --------------------------------------------------------------- selection */
+
+.atlas__selected {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-2) 0;
+  border-top: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
+}
+
+.atlas__flag {
+  padding: var(--space-2);
+  background: var(--accent-soft);
+  border-radius: var(--radius);
+  color: var(--ink);
+}
+
+/* ----------------------------------------------------------------- sliders */
+
+.atlas__slider {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  margin-top: var(--space-2);
+}
+
+.atlas__slider input[type="range"],
+.atlas__section input[type="range"] {
+  width: 100%;
+  accent-color: var(--accent);
+}
+
+.atlas__check {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: var(--text-label);
+  line-height: var(--text-label-leading);
+  cursor: pointer;
+}
+
+.atlas__check--gap {
+  margin-top: var(--space-2);
+}
+
+.atlas__section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-2);
+  background: var(--bg);
+  border-radius: var(--radius);
+}
+
+/* ---------------------------------------------------------------- responsive
+ *
+ * Below 900px the rail moves under the canvas. The canvas still gets the
+ * majority of the height, because a small screen losing the model is the
+ * failure that matters.
+ */
+@media (max-width: 900px) {
+  .atlas__body {
+    grid-template-columns: minmax(0, 1fr);
+    gap: var(--space-3);
+  }
+
+  .atlas__stage {
+    min-height: 58vh;
+  }
+
+  .atlas__rail {
+    max-height: none;
+    overflow: visible;
+  }
+
+  .atlas__head {
+    padding: var(--space-3) var(--space-4) var(--space-2);
+  }
+
+  .atlas__attribution {
+    text-align: left;
+    max-width: none;
+  }
+
+  .atlas__body {
+    padding: 0 var(--space-4) var(--space-4);
+  }
+}
+
+/* At 375 the display size is the first thing to give, and the caption labels
+   below it are the second. */
+@media (max-width: 420px) {
+  :root {
+    --text-display: 1.875rem;
+    --text-title: 1.375rem;
+  }
+
+  .atlas__cue-label {
+    display: none;
+  }
+
+  .atlas__stage {
+    min-height: 54vh;
+  }
+}

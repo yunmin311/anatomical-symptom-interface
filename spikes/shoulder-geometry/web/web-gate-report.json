@@ -1,0 +1,258 @@
+{
+  "url": "http://localhost:5199/atlas.html",
+  "when": "2026-10-05T13:51:28.791Z",
+  "total": 50,
+  "failed": 0,
+  "results": [
+    {
+      "name": "1440: model is drawn on the canvas",
+      "ok": true,
+      "detail": "19712 lit pixels, 92 colour buckets"
+    },
+    {
+      "name": "1440: more than one colour present (not a grey blob)",
+      "ok": true,
+      "detail": "92 buckets"
+    },
+    {
+      "name": "1440: FIRST untouched frame already carries the muscle material",
+      "ok": true,
+      "detail": "2801 muscle-family pixels before any interaction"
+    },
+    {
+      "name": "1440: FIRST untouched frame is not the glTF default white",
+      "ok": true,
+      "detail": "signature 2042892132"
+    },
+    {
+      "name": "1440: no console errors on load",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "1440: no horizontal overflow",
+      "ok": true,
+      "detail": "doc 1440 vs win 1440"
+    },
+    {
+      "name": "1440: canvas dominates the workspace",
+      "ok": true,
+      "detail": "canvas 77% of stage+rail area, stacked=false"
+    },
+    {
+      "name": "coverage: bone/muscle/artery/vein are listed as in the model",
+      "ok": true,
+      "detail": "Bone\n3 | Muscle\n27 | Artery\n7 | Vein\n5"
+    },
+    {
+      "name": "coverage: nerve/tendon/ligament/cartilage are listed as NOT in the model",
+      "ok": true,
+      "detail": "Cartilage\nNot present in this model for the shoulder. This model has 51 elsewhere in the body. | Nerve\nNot present in this model for the shoulder. This model has 42 elsewhere in the body. | Ligament\nN"
+    },
+    {
+      "name": "coverage: the absence is framed as a data gap, not missing anatomy",
+      "ok": true,
+      "detail": "These tissues exist in the shoulder. This particular model does not include them, so there is nothing to show. That is a gap in the source data, not in the anat"
+    },
+    {
+      "name": "search: finds supraspinatus",
+      "ok": true,
+      "detail": "Right supraspinatus Muscle"
+    },
+    {
+      "name": "select: clicking a result selects the structure",
+      "ok": true,
+      "detail": "Right supraspinatus"
+    },
+    {
+      "name": "isolate: selecting adopts isolate, not solo",
+      "ok": true,
+      "detail": "mode=Isolate"
+    },
+    {
+      "name": "isolate: the model is still drawn",
+      "ok": true,
+      "detail": "33622 lit pixels"
+    },
+    {
+      "name": "solo: draws fewer pixels than isolate (context removed)",
+      "ok": true,
+      "detail": "solo 33574 vs isolate 33622"
+    },
+    {
+      "name": "hide: hiding the selected structure changes the render",
+      "ok": true,
+      "detail": "sig 2684875059 -> 2346902160, lit 33641 -> 33641"
+    },
+    {
+      "name": "layers: switching bone off visibly changes the anatomy",
+      "ok": true,
+      "detail": "sig 2946996578 -> 3288133479, lit 33641"
+    },
+    {
+      "name": "layers: switching muscle off visibly changes the anatomy",
+      "ok": true,
+      "detail": "sig 2946996578 -> 1892272277"
+    },
+    {
+      "name": "layers: muscle-coloured pixels disappear when muscle is off",
+      "ok": true,
+      "detail": "muscle pixels 18603 -> 73"
+    },
+    {
+      "name": "opacity: the slider changes the render",
+      "ok": true,
+      "detail": "at 30% the canvas still reports 33632 lit pixels"
+    },
+    {
+      "name": "vascular: artery+vein only still renders",
+      "ok": true,
+      "detail": "33574 lit pixels"
+    },
+    {
+      "name": "camera: Front reports the anterior direction",
+      "ok": true,
+      "detail": "Front -> A / level / level"
+    },
+    {
+      "name": "camera: Back reports the posterior direction",
+      "ok": true,
+      "detail": "Back -> P / level / level"
+    },
+    {
+      "name": "camera: Left reports the body own left",
+      "ok": true,
+      "detail": "Left -> L / L / level"
+    },
+    {
+      "name": "camera: Right reports the body own right",
+      "ok": true,
+      "detail": "Right -> R / R / level"
+    },
+    {
+      "name": "camera: all four presets give distinct orientations",
+      "ok": true,
+      "detail": "{\"Front\":\"A / level / level\",\"Back\":\"P / level / level\",\"Left\":\"L / L / level\",\"Right\":\"R / R / level\"}"
+    },
+    {
+      "name": "whole body: context is drawn",
+      "ok": true,
+      "detail": "6741 lit pixels"
+    },
+    {
+      "name": "section: clipping changes the render",
+      "ok": true,
+      "detail": "section lit pixels 4501"
+    },
+    {
+      "name": "section: it is not described as a CT or MRI slice",
+      "ok": true,
+      "detail": "A cut through the surface model. This is not a CT or MRI slice — there is no internal data to show."
+    },
+    {
+      "name": "orbit: dragging changes the viewing direction",
+      "ok": true,
+      "detail": "A / level / level -> R / R / S"
+    },
+    {
+      "name": "fidelity: the close-inspection notice appears at close range",
+      "ok": true,
+      "detail": "This is a 99%-reduced anatomical model. It shows where things are and how they relate. It is not detailed enough to inspect fine structure closely."
+    },
+    {
+      "name": "reset: returns to a known orientation",
+      "ok": true,
+      "detail": "A / level / level"
+    },
+    {
+      "name": "1440: still no horizontal overflow after exercising controls",
+      "ok": true,
+      "detail": "doc 1440 vs win 1440"
+    },
+    {
+      "name": "1440: no console errors after exercising controls",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "768: model is drawn",
+      "ok": true,
+      "detail": "23238 lit pixels"
+    },
+    {
+      "name": "768: FIRST untouched frame already carries the muscle material",
+      "ok": true,
+      "detail": "3377 muscle-family pixels before any interaction"
+    },
+    {
+      "name": "768: no horizontal overflow",
+      "ok": true,
+      "detail": "doc 768 vs win 768"
+    },
+    {
+      "name": "768: canvas keeps the majority of the height",
+      "ok": true,
+      "detail": "canvas 594px of 1024px (58%)"
+    },
+    {
+      "name": "768: rail is stacked below the canvas, not beside it",
+      "ok": true,
+      "detail": "stage 720x594px above a full-width rail"
+    },
+    {
+      "name": "768: camera presets work",
+      "ok": true,
+      "detail": "Back -> P / level / level"
+    },
+    {
+      "name": "768: no horizontal overflow after interacting",
+      "ok": true,
+      "detail": "doc 768 vs win 768"
+    },
+    {
+      "name": "768: no console errors",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "375: model is drawn",
+      "ok": true,
+      "detail": "46886 lit pixels"
+    },
+    {
+      "name": "375: FIRST untouched frame already carries the muscle material",
+      "ok": true,
+      "detail": "9025 muscle-family pixels before any interaction"
+    },
+    {
+      "name": "375: no horizontal overflow",
+      "ok": true,
+      "detail": "doc 375 vs win 375"
+    },
+    {
+      "name": "375: canvas keeps the majority of the height",
+      "ok": true,
+      "detail": "canvas 438px of 812px (54%)"
+    },
+    {
+      "name": "375: rail is stacked below the canvas, not beside it",
+      "ok": true,
+      "detail": "stage 327x438px above a full-width rail"
+    },
+    {
+      "name": "375: camera presets work",
+      "ok": true,
+      "detail": "Back -> P / level / level"
+    },
+    {
+      "name": "375: no horizontal overflow after interacting",
+      "ok": true,
+      "detail": "doc 375 vs win 375"
+    },
+    {
+      "name": "375: no console errors",
+      "ok": true,
+      "detail": ""
+    }
+  ]
+}

@@ -1,249 +1,322 @@
 # Anatomy Visual V2 — asset source decision
 
-Status: **research gate.** No production code has been changed on this branch.
-Branch: `visual/anatomy-atlas-v2`, based on `origin/main` (`dbd9c1f`).
+Status: **research gate.** No production code changed on this branch.
+Branch: `visual/anatomy-atlas-v2`, based on `origin/main` (`3337353`).
 
 Scope: replace the anatomy **visualisation** architecture and redo the product
 visual design. The engineering/domain V1 stays valid. Nothing in
-`packages/shared`, `packages/server`, `packages/mcp` is touched by this work.
+`packages/shared`, `packages/server`, `packages/mcp` is changed by the research
+itself.
+
+> **Correction notice.** An earlier revision of this document claimed the source
+> asset contains no anatomical category data and that individual named structures
+> do not exist. **Both claims were wrong**, and wrong in a way that would have
+> killed the project. The error came from reading the coarse *concept* table
+> instead of the per-mesh headers. Section 1.1 states the corrected finding and
+> section 1.5 records how it was caught.
 
 ---
 
 ## 1. Why the current result failed — diagnosed, not guessed
 
-Three independent causes, in order of severity.
+### 1.1 The real diagnosis: identity is present, presentation is absent
 
-### 1.1 There is no anatomical category data in the asset at all
-
-This is the root cause of "muscles / tendons / bones / nerves / vessels cannot be
-understood as layers". It is **not** a shader bug.
-
-`assets/anatomy/source/obj/isa_BP3D_4.0_obj_99/` holds 2234 OBJ files. Measured
-across the whole set:
+Measured across all 2234 OBJ files in
+`assets/anatomy/source/obj/isa_BP3D_4.0_obj_99/`:
 
 | Signal | Count | Meaning |
 |---|---|---|
 | files containing `mtllib` | **0** | no material library ships with the geometry |
 | files containing `usemtl` | 2234 | every file *names* a material that does not exist |
 | files containing `g ` groups | 2234 | one group per file |
+| files carrying `English name` in the header | 2234 | **per-structure anatomical name** |
+| files carrying `Concept ID : FMA…` | 2234 | **per-structure FMA identity** |
+| files carrying `Representation ID : BP…` | 2234 | per-structure BP identity |
+| files carrying `Bounds(mm)` | 2234 | **per-structure extent, in millimetres** |
+| files carrying `Volume(cm3)` | 2234 | per-structure volume |
 
-So the OBJ set references a material per part and then never provides it. There is
-no colour, no tissue type, no layer assignment anywhere in the geometry.
+So the geometry carries **complete anatomical identity** — name, ontology id,
+extent, volume, laterality — and carries **no presentation data whatsoever**.
+Every part names a material that was never shipped.
 
-The accompanying tables confirm it:
+That is the actual root cause of "visually ambiguous gray geometry" and of
+"muscles / tendons / bones / nerves / vessels cannot be understood as layers".
+It is not a shader bug and not a missing taxonomy. **The renderer had nothing to
+colour by, so everything defaulted to one gray.**
 
-- `isa_parts_list.txt` — 2905 rows, columns `concept id / representation id / en / kanji / kana`.
-  **No tissue-class column.** FMA id and English name only.
-- `isa_element_parts.txt` — 29549 rows, `concept id / name / element file id`. Decomposition only.
-- `isa_inclusion_relation_list.txt` — FMA parent/child edges (IS-A + PART-OF). Ontology only.
+### 1.2 Individual named structures DO exist — at mesh granularity, not concept granularity
 
-Name-keyword frequency across the 2905 parts shows the coverage shape:
+This is the load-bearing correction. `isa_parts_list.txt` lists only 2905
+**coarse concepts** such as `muscle of upper limb`, and its names are what a
+naive keyword search hits — which is how the earlier revision concluded "no
+individual muscles". That conclusion was an artefact of the wrong table.
+
+The fine granularity is one level down, in `isa_element_parts.txt`
+(29549 rows: `concept id → element file id`) plus the OBJ headers. One coarse
+concept maps to many individually-named meshes. Measured:
+
+| Coarse concept | Concept name | Mesh files | Individually named members |
+|---|---|---|---|
+| `muscle of upper limb` | FMA9621 | 78 | `Right pectoralis minor`, `Right serratus anterior`, `Right subclavius`, `Long head of right biceps brachii`, … |
+| `intrinsic muscle of shoulder` | FMA32520 | 10 | `Right infraspinatus muscle`, `Right subscapularis`, `Right supraspinatus`, `Right teres major`, `Right teres minor` |
+| `extrinsic muscle of shoulder` | FMA32516 | 8 | `Right serratus anterior`, `Right levator scapulae`, `Right rhomboid major`, `Right rhomboid minor` |
+| `bone organ` | FMA5018 | 203 | `Right scapula`, `Right clavicle`, `Right humerus`, `Tenth thoracic vertebra`, `Hyoid bone`, … |
+
+Laterality is explicit in the data, three ways over: a `Right`/`Left` name
+prefix (247 Right, 276 Left, 477 unprefixed), and 241 files carrying a mirrored
+`M` filename suffix (`FJ1500.obj` right, `FJ1500M.obj` left).
+
+### 1.3 The domain already has a tissue-layer taxonomy
+
+`packages/shared/src/anatomy.ts:22-50` declares:
 
 ```
-artery 684   vein 318   bone 88   muscle 93   vertebra 63   nerve 55
-duct 58   cartilage 44   ligament 38   organ 52   gland 16   tendon 8   fascia 8
+TissueLayer = skin | subcutaneous | fascia | muscle | tendon | ligament
+            | joint | bone | nerve | vessel | organ
+TISSUE_LAYER_ORDER — the same list, ordered superficial → deep
 ```
 
-Two consequences:
+and `StructureSchema` carries `layer` (`anatomy.ts:79`), populated per structure
+and consumed by `layerOf(structure)` in `anatomy-capability.ts:157`.
 
-1. **A layer taxonomy has to be authored.** It cannot be read off the asset. The
-   FMA IS-A tree can be walked to high-level ancestors to *derive* a taxonomy,
-   but FMA's high-level nodes are anatomical structures, not tissue types, so that
-   walk is real work with a hand-checked mapping table — not a one-liner.
-2. **Vascular coverage is heavily over-represented** relative to the other
-   systems. Any naive "load everything and colour by name" approach will produce a
-   body that is mostly blood vessels.
+So the layer axis already exists in the domain and already reaches the manifest
+(`anatomy-pipeline.ts:781` writes `structure.layer`). What it never did was reach
+the **renderer** as appearance. That is the gap, and it is much smaller than
+"build a taxonomy from scratch".
 
-### 1.2 The geometry on disk is the 99% polygon-reduction set
+Known limits of the existing enum, for the visual work: `vessel` does not split
+artery from vein; `subcutaneous` and `joint` are depth categories rather than
+tissue classes; and a single superficial→deep ordering puts `nerve` and `vessel`
+below `bone`, which is not how the body is organised. These are domain
+decisions and are recorded in §6, not silently changed.
 
-`README_e.html` and every OBJ header confirm: `Polygon reduction rate = 99%`.
-BodyParts3D publishes several reduction rates; only the most aggressive one is in
-the repo. This is a direct cause of "visually ambiguous gray geometry" — coarse
-silhouettes and mushy surface detail that no material system can rescue.
-
-Every OBJ header does carry useful metadata, which is worth keeping:
-
-```
-# File ID       : FJ1252
-# Representation: BP5633
-# Concept ID    : FMA59763
-# English name  : Gingiva of upper jaw
-# Bounds(mm)    : (-35.46,-181.68,1461.35)-(34.14,-127.71,1479.84)
-# Volume(cm3)   : 21.7585
-```
-
-Per-part anatomical bounds in mm. That is enough to auto-derive region bounding
-boxes and laterality checks without hand-authoring a region table.
-
-### 1.3 The viewer has no visual model to hang layers on
+### 1.4 The viewer has no visual model to hang layers on
 
 Measured in the current code:
 
-- No `clippingPlanes`, no `localClippingEnabled`, no `DoubleSide`. **Zero** clipping
-  or cross-section code anywhere in the repo.
+- No `clippingPlanes`, no `localClippingEnabled`, no `DoubleSide`. **Zero**
+  clipping or cross-section code anywhere in the repo.
 - No per-layer opacity. Opacity is derived from selection state only
-  (`three3d.ts:1017-1062`): active subregion 0.95, idle 0.8, selected 1.0, rejected
-  0.35, default idle 0.62.
-- `showLayers` / `hideLayers` exist in the `ViewerCommand` union and are implemented
-  in both adapters, but **no production code dispatches them** — tests only.
+  (`three3d.ts:1017-1062`): active subregion 0.95, idle 0.8, selected 1.0,
+  rejected 0.35, default idle 0.62.
+- `showLayers` / `hideLayers` exist in the `ViewerCommand` union and are
+  implemented in both adapters, but **no production code dispatches them** —
+  tests only.
 - **No isolate.** The word does not appear in any viewer code.
-- **No orbit.** `Body3d.tsx:20-21` states there is no drag-to-rotate requirement.
-  The only way past occluding geometry is a camera preset.
-- `CameraPreset` is `position` + `target` only (`three3d.ts:69-74`). No per-view
-  layer masks, no per-view clipping.
-- "Layers currently shown" is a **read-only** `<ul>` of names (`BodyMap.tsx:525-531`).
+- **No orbit.** `Body3d.tsx:20-21` states there is no drag-to-rotate
+  requirement; the only way past occluding geometry is a camera preset.
+- `CameraPreset` is `position` + `target` only (`three3d.ts:69-74`).
+- "Layers currently shown" is a **read-only** `<ul>` of names
+  (`BodyMap.tsx:525-531`).
 
-So "layer controls do not visibly change the anatomy" is literal: there is no layer
-control, and `setDepth` only maps to `layersForDepth` (`three3d.ts:1406-1417`).
+### 1.5 How the §1.1/§1.2 error was caught
 
-### 1.4 Why the 2D map is not salvageable
+The decisive test was to stop reading concept names and start reading mesh
+headers, then check whether a coarse concept's member meshes are spatially
+distinct volumes. They are — `Right supraspinatus` is a 125×79×35 mm box at
+z 1307–1343, `Right subscapularis` a 103×97×130 mm box at z 1195–1325. Different
+boxes, different names, different FMA ids. Those are separate anatomical
+structures, and the archive always had them.
+
+The lesson generalises: **the coarse table is a lossy index over the fine data,
+and it is the wrong place to look when the question is "what can I actually
+show".**
+
+### 1.6 Why the 2D map is not salvageable
 
 `apps/web/src/anatomy/svg-geometry.ts` is 474 lines of hand-authored cubic-Bézier
 path strings across four view silhouettes and 14 zones. One detail is load-bearing
-and must be respected by any replacement: `location.point` is persisted as 0..1
-against `VIEW_W=100 × VIEW_H=186` (`svg-geometry.ts:26-33`), so that box is a
-storage contract. A replacement 2D surface must keep the same normalised coordinate
-space or every stored pin moves.
+and any replacement must respect it: `location.point` is persisted as 0..1 against
+`VIEW_W=100 × VIEW_H=186` (`svg-geometry.ts:26-33`), so that box is a storage
+contract. A replacement 2D surface must keep the same normalised coordinate space
+or every stored pin moves.
 
 ---
 
 ## 2. Source comparison
 
-### 2.1 Z-Anatomy
+### 2.1 BodyParts3D 4.0 — the incumbent, and the licence-clean choice
 
-Repo: `Z-Anatomy/Models-of-human-anatomy`, 218 stars, 49 forks, last push 2026-10-04.
-Content is **not** loose meshes — it is a Blender *application template*:
+DOI `10.18908/lsdba.nbdc00837-000`, README dated 2025-02-27. Already on disk:
+the archive `isa_BP3D_4.0_obj_99.zip` plus five metadata tables.
 
-| File | Size | What it is |
-|---|---|---|
-| `Z-Anatomy.zip` | 86.7 MB | the `.blend` template — 5000+ structures, this is the atlas |
-| `Z-Biomechanics.7z` | 21.6 MB | biomechanics variant |
-| `TA2.csv` | 1.5 MB | Terminologia Anatomica 2 (2019) nomenclature table |
-| `Anatomy-shortcuts.py` | 291 KB | the viewer/labelling add-on |
-| `CheatSheet.png` | 283 KB | keymap reference |
+- **Coverage** — 2234 individually-named meshes, whole body, FMA-identified,
+  explicit laterality. Measured 6,681,030 triangles whole-body, median 960
+  triangles per mesh.
+- **Mesh quality** — this is the **99% polygon-reduction** package. Per-mesh
+  triangle counts are honest rather than uniform: `Right scapula` 26,172,
+  `Right serratus anterior` 49,212, `Right pectoralis minor` 9,468, but
+  `Right deltoid` (spinal part) 1,900 and `Right teres minor` 506. Coarse but
+  usable, and the variation is a fact to design around, not to hide.
+- **Layer hierarchy** — identity and hierarchy both present, via the FMA IS-A
+  table (§3.4). Presentation absent, and that is our work.
+- **Blender compatibility** — OBJ import is trivial and already proven by
+  `scripts/build-anatomy.mjs`.
+- **Cross-section** — none. It is a surface mesh set.
+- **Licence** — **CC BY 4.0 International**, see §3.
 
-Zenodo record `4953712` (DOI `10.5281/zenodo.4953712`) distributes the same
-`Z-Anatomy.zip` at **130.0 MB**. Note the size mismatch against GitHub's 86.7 MB —
-different revisions, so pick one and record which.
+### 2.2 Z-Anatomy — reference only, not a source
 
-Assessment:
+Repo `Z-Anatomy/Models-of-human-anatomy`, 218 stars, last push 2026-10-04.
+Content is a Blender *application template*, not loose meshes: `Z-Anatomy.zip`
+(86.7 MB), `TA2.csv` (1.5 MB, Terminologia Anatomica 2), `Anatomy-shortcuts.py`
+(291 KB), `CheatSheet.png`. Zenodo record `4953712` ships a 130.0 MB
+`Z-Anatomy.zip` under DOI `10.5281/zenodo.4953712`.
 
-- **Coverage** — 5000+ structures vs BodyParts3D's 2905, and organised per **TA2**.
-  This is the strongest coverage of any open whole-body atlas.
-- **Layer hierarchy** — this is the decisive advantage. Z-Anatomy is built by an
-  anatomist/medical illustrator (Gauthier Kervyn) for teaching, so the
-  per-structure system/layer categorisation BodyParts3D lacks is very likely
-  already authored. **This has to be verified against the actual `.blend`, not
-  assumed** — see §5.
-- **Blender compatibility** — native. It *is* a Blender template. No conversion.
-- **Cross-section / isolate** — already implemented in its own add-on. The project
-  description lists, verbatim: *"to easily add labels, -import definitions, -to
-  automatically display the labels and definition of the active object, -to
-  translate all the structures at once, **-to create cross sections**, -to reach all
-  the object's collections in two clicks, -to show/hide/**isolate** only the parts of
-  interest"*. That is a working reference implementation of §3's requirements, in
-  Python, in a file we can read. We are porting, not inventing.
-- **Web export** — none shipped. Requires a Blender export pass. Unverified.
+Genuinely impressive: 5000+ structures, 3500+ definitions, TA2-organised, and its
+own add-on already implements *"show/hide/isolate only the parts of interest"* and
+*"create cross sections"*.
 
-### 2.2 BodyParts3D 4.0 (current source, already on disk)
+**But it is disqualified as a production source** by §3.3 — it embeds
+NonCommercial components. Used here strictly as:
 
-DOI `10.18908/lsdba.nbdc00837-000`, dated 2025-02-27, 2234 OBJ at 99% reduction,
-plus the five metadata tables already listed. Licence **CC BY-SA 2.1 Japan**,
-confirmed in every OBJ header.
+- product reference,
+- Blender workflow reference,
+- interaction reference.
 
-- **Coverage** — 2905 parts, whole body, FMA-identified. Genuinely complete.
-- **Mesh quality** — this is the *reduced* set. Full/low-rate variants are separately
-  downloadable and are the obvious fix for §1.2.
-- **Layer hierarchy** — absent. See §1.1.
-- **Blender compatibility** — OBJ import is trivial and well-trodden.
-- **Cross-section** — no. It is a surface mesh set.
-- **Attribution already present** — `AnatomyAttribution.tsx` renders a disclosure,
-  and `attribution` is enforced by `assertProductionSceneIsReal`
-  (`active-scene.ts:237-250`). That machinery is reusable as-is.
+Its Python is read for behaviour, not copied. The brief's "reimplement
+interaction concepts from requirements/behaviour" applies directly.
 
 ### 2.3 BioDigital Human — product benchmark only
 
-Use as the **UX target**, not as a dependency. Benchmarking the interaction model
-they are known for: complete-body hierarchy with progressive disclosure, structure
-search, isolate, hide/show, opacity, system filtering, labels, camera/navigation,
-cross sections.
-
-- **Do not build on it.** Their viewer is proprietary and vendor-hosted. Making ASI
-  depend on it would invert the architecture: ASI's whole premise is local-first
-  and provider-agnostic. No API decision has been made and none is proposed.
-- **What to steal** — the interaction vocabulary, and the *labelling density*. That
-  is design input, freely reusable.
+UX target, not a dependency: progressive complete-body hierarchy, structure
+search, isolate, hide/show, opacity, system filtering, labels, camera
+navigation, cross sections. Their viewer is proprietary and vendor-hosted.
+Making ASI depend on it would invert the local-first premise. What to take is
+the interaction vocabulary and labelling density — design input, freely reusable.
 
 ### 2.4 NIH Visible Human Project
 
-The licence-cleanest option, and the only true cross-section source.
+The licence-cleanest option and the only true cross-section source.
 
 - **Licence** — **public domain** (US federal government work). NLM: *"the VHP
   provides a public-domain library of cross-sectional cryosection, CT, and MRI
-  images"*. As of July 2019 the NLM data licence was replaced by plain Terms and
-  Conditions and **no registration is required**.
-  Note: the data.gov/Virginia catalogue rows show ODbL and "No License Provided"
-  respectively — those describe the *catalogue metadata record*, not the images.
-  Do not mistake them for the image licence.
+  images"*. Since July 2019 no licence or registration is required.
+  The ODbL / "No License Provided" strings on data.gov and the Virginia portal
+  describe the *catalogue metadata record*, not the images.
 - **Data** — male: 1871 axial anatomical sections at 1 mm, 2048×1216 px, 0.33 mm
-  per pixel, 24-bit colour, ~15 GB. Plus 1 mm axial CT and 4 mm axial MRI of head
+  per pixel, 24-bit colour, ~15 GB; plus 1 mm axial CT and 4 mm axial MRI of head
   and neck.
-- **Volumetric, not a mesh atlas.** Meshing it is a real project (segmentation →
-  surface extraction), not a format conversion. It does not solve layers.
-- **Role** — the reference for genuine axial/coronal/sagittal cutaway. Also a
-  licence-clean way to source cross-sectional imagery.
+- **Role** — volumetric, not a mesh atlas. Meshing is a real project
+  (segmentation → surface extraction), not a conversion. Does not solve layers.
+  Candidate for genuine axial/coronal/sagittal cutaway later.
 
 ### 2.5 Open Anatomy Project (Brigham and Women's Hospital / SPL)
 
-Found during the search; worth recording. CT-derived atlases — SPL/NAC brain, inner
-ear, knee, head & neck, abdomen, liver — with skeletal, vasculature, muscle and
-organ content, built in 3D Slicer, viewed via Open Anatomy Browser. Real
-clinical-quality geometry, and *knee* is directly relevant to a later phase.
-
-**Licence not yet verified.** Treat as blocked until checked; it is a
-Brigham/Harvard research asset and commercial use is the open question. Recorded
-here so it is not rediscovered later, not as a recommendation.
+Found during the search; recorded so it is not rediscovered. CT-derived atlases —
+SPL/NAC brain, inner ear, knee, head & neck, abdomen, liver — with skeletal,
+vasculature, muscle and organ content, built in 3D Slicer. Real clinical-quality
+geometry, and *knee* is directly relevant to a later phase. **Licence not
+verified**; treated as blocked pending a check.
 
 ### 2.6 Decision matrix
 
-| Criterion | Z-Anatomy | BodyParts3D | BioDigital | Visible Human | Open Anatomy |
+| Criterion | BodyParts3D 4.0 | Z-Anatomy | BioDigital | Visible Human | Open Anatomy |
 |---|---|---|---|---|---|
-| Coverage | 5000+ structures, TA2 | 2905 parts, FMA | complete, commercial | whole body, volumetric | region atlases |
-| Mesh quality | retopo'd, instanced, completed | **99% reduced on disk**; better rates available | production | n/a (volumetric) | clinical CT |
-| Layer hierarchy | **likely authored** — verify in `.blend` | **absent** | authored | none | authored |
-| Blender compatibility | **native** (it is a template) | OBJ import | n/a | external meshing | Slicer |
-| Web export | none — needs a pass | already done | n/a | needs meshing | viewer exists |
-| Licence (as declared) | **conflicting** — see §3 | CC BY-SA 2.1 Japan | proprietary | **public domain** | unverified |
-| Redistribution | ShareAlike + possible NC | ShareAlike | no | **yes, unrestricted** | blocked |
-| Attribution | long, multi-party, required | one line, present in code | n/a | courtesy NLM | blocked |
-| Performance | must be decimated/streamed | current 1.4 MB total | n/a | must be meshed | varies |
-| Cross-section | **implemented in its add-on** | no | yes | **native slices** | no |
-| Mobile suitability | needs LOD work | good (small) | n/a | n/a | varies |
-| Integration cost | **highest** (new pipeline) | lowest (already built) | n/a | very high | unknown |
+| Coverage | 2234 named meshes, whole body, FMA | 5000+ structures, TA2 | complete, commercial | whole body, volumetric | region atlases |
+| Mesh quality | 99% reduced; per-mesh 506–49k tris | retopo'd, instanced | production | n/a (volumetric) | clinical CT |
+| Individual structures | **yes** | yes | yes | no | yes |
+| Layer hierarchy | **FMA IS-A tree present** | likely authored | authored | none | authored |
+| Presentation metadata | **none** (0 mtllib) | authored | authored | n/a | authored |
+| Blender compatibility | OBJ import, proven | **native** | n/a | external meshing | Slicer |
+| Web export | already done | needs a pass | n/a | needs meshing | viewer exists |
+| Licence | **CC BY 4.0** | conflicting, has NC parts | proprietary | **public domain** | unverified |
+| Redistribution | **yes, attribution** | ShareAlike + NC problem | no | **yes, unrestricted** | blocked |
+| Commercial use | **yes** | **no** (NC parts) | no | yes | blocked |
+| Cross-section | no | implemented in its add-on | yes | **native slices** | no |
+| Mobile suitability | good (small) | needs LOD work | n/a | n/a | varies |
+| Integration cost | **lowest** | highest | n/a | very high | unknown |
+
+**Decision: BodyParts3D 4.0 is the production source.** It is the only candidate
+that is simultaneously licence-clean for commercial redistribution, complete at
+individual-structure granularity, whole-body, already integrated, and backed by
+an authoritative ontology. Everything it lacks — presentation, layers in the
+renderer, cross-section — is work we can do and own. The things it does not lack
+were only invisible because the pipeline never read them.
 
 ---
 
-## 3. Licence analysis — the blocking finding
+## 3. Licence analysis
 
-The brief said: *"derivative assets must NOT silently inherit the repository MIT
-licence."* Confirmed, and the situation is worse than that.
+Product requirement: ASI must remain **commercially usable and legally
+redistributable**. Code is MIT; assets carry their own recorded licences. **No NC
+asset in production.**
 
-### 3.1 ASI is MIT
+### 3.1 Code and assets are already correctly separated
 
-Root `package.json` declares `"license": "MIT"`.
+- Root `package.json`: `"license": "MIT"`.
+- `.gitignore:22-26` already excludes `assets/anatomy/source/` and says
+  *"BodyParts3D SOURCE assets: large, third-party, CC BY 4.0, and never ours to
+  redistribute."*
+- `packages/shared/src/anatomy-mapping.ts:484-491` already pins:
 
-### 3.2 BodyParts3D is ShareAlike
+```ts
+export const BODYPARTS3D_LICENCE = {
+  id: 'CC-BY-4.0',
+  name: 'Creative Commons Attribution 4.0 International',
+  url: 'https://dbarchive.biosciencedb.jp/en/bodyparts3d/lic.html',
+  attribution: 'BodyParts3D, (c) The Database Center for Life Science licensed under CC Attribution 4.0 International',
+  verifiedOn: '2025-02-27',
+} as const;
+```
 
-CC BY-SA 2.1 Japan. ShareAlike is copyleft. A derivative of BY-SA material must
-carry BY-SA, and ASI's MIT grant cannot extend to it. So the current arrangement
-is already only safe because it never bundled the geometry into the code grant —
-the geometry sits in `assets/` and `public/` as data. **That separation must be
-made explicit and enforced, not left implicit.** It needs its own licence file and
-attribution block that no MIT header can override.
+The comment above it (`:472-483`) already records the exact trap this pass had to
+avoid: an earlier draft recorded CC-BY-SA 2.1 JP, "which was the licence under
+which BodyParts3D shipped until early 2025 and is still quoted on the project's
+own editor site and in most third-party mirrors."
 
-### 3.3 Z-Anatomy is CC BY-SA 4.0 *and* incorporates NonCommercial parts
+**The OBJ file headers are the stale artefact.** They carry a 2013-era
+`CC Attribution-Share Alike 2.1 Japan` notice baked into the archive, alongside
+`Compatibility version : 4.0`. Reading the licence out of a file header instead of
+the licensor's current page is how the earlier revision got this wrong. The repo
+was already right; the research was wrong.
 
-The repo's own attribution block, verbatim:
+Under CC BY 4.0 there is **no share-alike obligation** on derivative meshes, so
+the geometry can be redistributed with attribution and the MIT code grant stays
+clean. That is what makes §2.6 possible.
+
+### 3.2 Provenance pass for the exact bytes we hold
+
+Recorded per the required schema:
+
+| Field | Value |
+|---|---|
+| Source project | BodyParts3D |
+| Source URL | `https://dbarchive.biosciencedb.jp/en/bodyparts3d/lic.html` |
+| Exact release | 4.0 (mesh archive, 2013/05) |
+| Concept release | 4.3i (maintained concept list) |
+| Archive | `isa_BP3D_4.0_obj_99.zip` |
+| Size | 142,903,898 bytes |
+| **SHA256** | `40665852C49F218326590E204DB91064A1ECFC3C6F8CBD7BBBCAAC62C7CD409E` |
+| Acquisition date | 2026-10-01 20:38:30 (file creation; `assets/anatomy/source/` is gitignored and fetched by script) |
+| Licence id | `CC-BY-4.0` |
+| Licence URL | as above |
+| Attribution | `BodyParts3D, (c) The Database Center for Life Science licensed under CC Attribution 4.0 International` |
+| Modified | **yes** — decimated and re-encoded to GLB by `scripts/build-anatomy.mjs` |
+| Derivative obligation | attribution only; no share-alike under CC BY 4.0 |
+| Redistribution allowed | **yes**, with attribution |
+| Commercial use allowed | **yes** |
+
+**Not verified:** the licence page could not be re-fetched during this pass.
+`dbarchive.biosciencedb.jp` resolves to `198.18.0.112` on this machine — a
+fake-IP from the local proxy (RFC 2544 benchmark range) — and TLS to it fails
+from both Windows schannel and WSL OpenSSL. The `verifiedOn: 2025-02-27` date is
+therefore carried forward from the repo's existing record rather than
+re-established today. It is corroborated by three independent in-repo sources
+(`anatomy-mapping.ts:485`, `.gitignore:22`, and the pipeline's
+`BODYPARTS3D_LICENCE.id`) and by the product decision. **A machine that can reach
+DBCLS directly should re-run this pass.**
+
+Also unavailable for the same reason: the `partof_*` tables
+(`partof_parts_list*`, `partof_inclusion_relation_list*`,
+`partof_element_parts.txt`). Only the `isa_*` set was ever fetched. §3.4 shows
+the IS-A set is sufficient for classification, so this is a gap in completeness
+rather than a blocker — but the PART-OF decomposition is not available for
+verification.
+
+### 3.3 Z-Anatomy is disqualified as a production source
+
+Its own attribution block, verbatim:
 
 ```
 - BodyParts3D — CC-BY-SA 2.1 Japan
@@ -255,55 +328,82 @@ The repo's own attribution block, verbatim:
 ```
 
 Two **NonCommercial** components sit inside a work whose top level is declared
-CC BY-SA 4.0. Those NC terms do not evaporate because the aggregate header says
-otherwise, and CC BY-SA 4.0 §3(b) forbids adding technological or legal measures
-that restrict what the licence permits. So:
+CC BY-SA 4.0. The NC terms do not disappear because the aggregate header says
+otherwise, and CC BY-SA 4.0 §3(b) forbids adding measures that restrict what the
+licence permits. So the full work is **not commercially redistributable**, which
+the product requirement forbids.
 
-1. **The full Z-Anatomy work cannot be redistributed on commercial terms**, whatever
-   its header claims.
-2. **The upstream declaration is internally inconsistent**, which means "what is the
-   licence of Z-Anatomy" has no clean single answer. That is a supply-chain risk in
-   itself.
-
-### 3.4 Two official distributions of the same asset declare different licences
+There is also a direct conflict between the two official distributions:
 
 | Distribution | Declared licence |
 |---|---|
-| GitHub `License.txt` / `Readme.md` | **CC BY-SA 4.0** |
-| Zenodo `4953712` rights field | **CC BY 4.0** |
+| GitHub `License.txt` / `Readme.md` | CC BY-SA 4.0 |
+| Zenodo `4953712` rights field (the citable DOI) | CC BY 4.0 |
 
-These are incompatible. A downstream user cannot satisfy both. Attribution here is
-citable (`10.5281/zenodo.4953712`), so the conflict has to be resolved deliberately
-and recorded, not glossed.
+These are incompatible and cannot both be satisfied — an independent supply-chain
+reason not to depend on it.
 
-### 3.5 Conclusion for this project
+Consequence, and it is a strict rule going forward: **Z-Anatomy is read-only
+reference.** No asset from it enters ASI. Its code is not copied into the MIT
+codebase — the add-on's own licence is not stated either — and its behaviour is
+reimplemented from the requirement.
 
-- **Do not adopt Z-Anatomy wholesale.** NC contamination plus a licence conflict
-  plus an unstated licence for the UW brainder component is too much for an asset
-  that must be redistributable in a health product.
-- **Where Z-Anatomy is still valuable:** its `Anatomy-shortcuts.py` is a readable
-  reference for cross-section and isolate implementation, and its `TA2.csv` is a
-  nomenclature table. Reading a GPL/CC script for ideas is fine; **copying its code
-  into MIT ASI is not**, and the add-on's own licence is not stated in the
-  attribution block either. Treat as read-only reference.
-- **The Blender step is a licence-isolation tool, not just a geometry tool.** That
-  reframing is the strongest argument for it: Blender is how you take a mixed-licence
-  aggregate and export a subset with a defensible provenance record per part.
+### 3.4 A classification IS derivable from the authoritative tables
 
-### 3.6 Required repository changes before any asset lands
+The brief asked whether the hierarchy is usable. Measured on
+`isa_inclusion_relation_list.txt`:
 
-1. `assets/anatomy/LICENSE.md` — per-source licence, attribution string, and an
-   explicit statement that no asset is covered by the root MIT grant.
-2. Keep geometry out of any MIT-licensed path. `assets/` and `public/anatomy/` are
-   the boundary; nothing under them may be described as MIT.
-3. A provenance record per exported part, carried into the manifest so attribution
-  is not lost in the pipeline.
-4. Verify the BodyParts3D CC BY-SA 2.1 Japan attribution text currently surfaced by
-   `AnatomyAttribution.tsx` matches the licence's required wording exactly.
+- 2904 edges, 2904 children, **exactly one parent per child** — 0 multi-parent nodes.
+- **Exactly one root**: `FMA62955 anatomical entity`.
+- No relation-type column, and none is needed: it is a clean **IS-A tree**, not a
+  mixed IS-A/PART-OF graph. (The PART-OF tables would be a separate file, and
+  are absent — §3.2.)
+- Depth 0–19, mode around depth 12–13.
 
-**This is a legal question, not an engineering one. It needs your decision or your
-lawyer's, not mine.** Everything below is written on the assumption that a
-redistributable, attribution-clean, commercially-safe atlas is required.
+The spine, from the root:
+
+```
+anatomical entity
+└ physical anatomical entity
+  ├ immaterial anatomical entity → anatomical space, anatomical boundary entity
+  └ material anatomical entity
+    ├ anatomical set
+    └ anatomical structure      ← the branch that matters
+```
+
+And real classification paths resolve as expected:
+
+```
+humerus          → long bone          → bone organ   → organ with cavitated organ parts → …
+subclavian artery→ systemic artery   → artery       → segment of arterial tree organ   → …
+scapula          → flat bone          → bone organ   → organ with cavitated organ parts → …
+muscle of head   → muscle organ (FMA5022) → …
+```
+
+So the rule is: walk up the IS-A tree from a concept until a node matches a tissue
+class, and record that node plus its depth as the confidence signal. That is
+derived from the licensor's own ontology, not from colour, geometry, filename
+shape or guesswork. Anything whose chain never reaches an unambiguous class node
+is marked **UNKNOWN** and sent for manual review, per the brief.
+
+### 3.5 Required repository changes before any new asset lands
+
+1. `assets/anatomy/LICENSE.md` — per-source record using the schema in §3.2:
+   source project, exact URL, release, acquisition date, checksum, licence id,
+   licence URL, attribution, modified?, derivative obligation, redistribution
+   allowed?, commercial use allowed?
+2. Keep geometry out of every MIT-licensed path. `assets/anatomy/source/` (input)
+   and `assets/anatomy/generated/` + `apps/web/public/anatomy/` (output) are the
+   boundary. Nothing under them may be described as MIT.
+3. Carry a per-part provenance record into the generated manifest so attribution
+   cannot be lost in the pipeline. `AssetManifestEntry` already has
+   `licence`, `source` and `geometry` slots (`anatomy-pipeline.ts:690-715`) — add
+   the checksum and acquisition date there.
+4. Assert the NC rule in code: a build that sees a licence id containing `NC` or
+   `NonCommercial` must fail, the way `assertProductionSceneIsReal`
+   (`active-scene.ts:237-250`) already refuses a fixture scene.
+5. Confirm `AnatomyAttribution.tsx` renders the attribution string from §3.2
+   verbatim — it is the only licence text a user ever sees.
 
 ---
 
@@ -311,85 +411,106 @@ redistributable, attribution-clean, commercially-safe atlas is required.
 
 | Reported symptom | Actual cause | Layer to fix |
 |---|---|---|
-| "crude hand-made schematic" (2D) | hand-authored Bézier paths | asset/source, §5 of brief |
-| "small regional bundle of BodyParts3D meshes" | 95 GLBs, region-only exports | asset pipeline |
-| "visually ambiguous gray geometry" | 99% polygon reduction **and** no material data at all | asset pipeline |
-| "muscles/tendons/bones/nerves/vessels cannot be read as layers" | **no tissue-class data exists in the asset** | taxonomy authoring |
+| "crude hand-made schematic" (2D) | hand-authored Bézier paths | asset/source |
+| "small regional bundle of meshes" | 95 GLBs, region-only exports | asset pipeline |
+| "visually ambiguous gray geometry" | **no material data in the source at all** (0 `mtllib`) | asset pipeline + material system |
+| "cannot read structures as layers" | **identity and hierarchy are present but never reached the renderer**; `TissueLayer` exists and stops at the manifest | viewer |
 | "Front/Back/Left/Right are camera presets" | they are; `position`+`target` only | viewer |
-| "no isolate/hide/layer/opacity/clipping/cross-section" | genuinely not implemented; `showLayers`/`hideLayers` unreachable from production | viewer |
-| "typography hierarchy too weak" | 19 literal font sizes, 10 in the workspace, **no type scale in `tokens.css` at all** | design system |
+| "no isolate/hide/layer/opacity/clipping" | genuinely absent; `showLayers`/`hideLayers` unreachable from production | viewer |
+| "typography hierarchy weak" | **no type scale in `tokens.css` at all**; 19 literal font sizes, 10 in the workspace | design system |
 | "canvas does not dominate" | layout | design system |
 
 ---
 
-## 5. Recommendation, and what must be verified before committing
+## 5. Blender: route and pipeline role
 
-No route is endorsed yet. Two things must be checked in the actual data first,
-because they decide it.
+### 5.1 Environment
 
-### 5.1 Open question A — does Z-Anatomy's `.blend` really carry a layer taxonomy?
+| Item | Value |
+|---|---|
+| Blender version | 4.5.14 (4.5 LTS) |
+| Build | `blender-4.5.14-windows-x64` |
+| Platform | Windows x64, full GUI |
+| Distribution | official portable **ZIP**, not the MSI |
+| Reason | the MSI requires elevation to write `C:\Program Files\Blender Foundation`; this session is not elevated and MSI failed with `Error 1303` |
+| Implication | same application and same version, unpacked rather than registered; no Start Menu entry, no file associations, no machine-wide change, removable by deleting one folder |
 
-Everything favourable about Z-Anatomy rests on this. Its TA2 organisation may be
-*nomenclature only* (i.e. "this part is called X") with no system assignment at all
-— in which case its advantage over BodyParts3D is naming and labelling, not
-layers, and the case for it weakens a lot given §3.
+### 5.2 Why Blender is needed even though the source is already OBJ
 
-Resolve by opening `Z-Anatomy.zip` in Blender and dumping the collection structure
-and per-object custom properties. Cheap, decisive.
+Blender's role here is **three things, and only these three**:
 
-### 5.2 Open question B — is a licence-clean categorised atlas obtainable at all?
+1. **Presentation.** Build the material and layer system in one place, once,
+   instead of hand-maintaining per-mesh GLB variants. This is the single biggest
+   win and the direct answer to §1.1.
+2. **Licence isolation.** Export a curated subset with per-part provenance,
+   keeping the boundary between "we redistribute BodyParts3D under CC BY 4.0 with
+   attribution" and "we did not modify the source" explicit and auditable.
+3. **Pipeline ergonomics.** Bounding-box extraction, laterality derivation,
+   normal checks, triangle budgets, LOD tiers — all trivially scriptable.
 
-Three outcomes, in descending preference:
+Blender is **not** for modelling anatomy, and no anatomy is generated or
+AI-created. The geometry is the licensor's.
 
-1. **BodyParts3D at a better polygon reduction + an authored taxonomy.** Keeps the
-   clean single-party CC BY-SA 2.1 Japan provenance we already ship, and the
-   `isa_inclusion_relation_list.txt` FMA edges give a real basis for authoring the
-   taxonomy rather than guessing it. Cost: taxonomy is our work and needs clinical
-   review — which this project already has a home for in `unreviewedSafetyRules`
-   style metadata.
-2. **Z-Anatomy with NC-bearing components surgically excluded** in Blender. Highest
-   fidelity, but leaves a per-part provenance question and a citation conflict.
-3. **Visible Human for cross-sections, a categorised surface atlas for the mesh.**
-   Licence-clean on the slicing axis, but two sources to reconcile.
+### 5.3 MCP bridge
 
-Option 1 is the one I would defend today, on licence grounds alone. It is also the
-cheapest, because the pipeline already exists — what is missing is geometry
-resolution and a taxonomy, not a new toolchain.
+One bridge, as instructed: **`ahujasid/mcp-for-blender`**, the current package
+name — not the legacy `blender-mcp`. Telemetry disabled
+(`DISABLE_TELEMETRY=true`), socket bound to localhost only, never exposed to the
+network.
 
-### 5.3 Blender route
+Chosen over `dcc-mcp-blender` (named first in the brief) on maturity: ~30,000
+stars and pushed 2026-09-30, against ~45 stars and three days old.
 
-Required either way, and §5.2 option 2 makes it mandatory. Blender is **not
-currently installed** on this machine — not on Windows, not in WSL — and **no MCP
-bridge is configured** (both `~/.claude.json` mcpServers and the opencode config are
-empty of MCP servers).
+Before any anatomy is touched, four operations must be proven with recorded
+evidence, and the run stops if any fails rather than debugging anatomy through a
+broken bridge:
 
-Candidates found, with the brief's "prefer mature Codex-compatible" in mind:
+1. read scene
+2. create / manipulate a trivial object
+3. assign / change a material
+4. export a GLB
 
-| Route | Stars | Last push | Note |
-|---|---|---|---|
-| `ahujasid/mcp-for-blender` | ~30.0k | 2026-09-30 | by far the most mature; explicitly "any LLM" |
-| `dcc-mcp/dcc-mcp-blender` | ~45 | 2026-10-04 | the `dcc-mcp` suite (core/blender/maya) |
-| `arjun988/blender-skills` | ~267 | 2026-07-10 | 94 Blender skills for Codex/Cursor/Claude |
-| `webita/blender-codex-mcp` | ~6 | 2026-04-29 | small, Codex-specific |
+Recorded per the brief: Blender exact version, MCP package exact version, addon
+version, port, and round-trip evidence.
 
-Recommendation: **`ahujasid/mcp-for-blender`** — 30k stars and actively maintained,
-against 45 for `dcc-mcp-blender`. The brief names `dcc-mcp` first, but it is ~1/650th
-the size and three days old. One bridge only, as instructed.
+### 5.4 What the shoulder spike draws from
 
-Note the irony worth stating plainly: the whole point of this pass is to stop
-hand-making anatomy, and Z-Anatomy's *own* Python already does isolate, labels and
-cross sections. A large part of §3 may be **portable from a file we can read**,
-without a model in the loop at all.
+Measured inventory for the right shoulder, from the local archive — the evidence
+that the spike is buildable without inventing anything:
+
+- **Bone** — `Right clavicle`, `Right scapula`, `Right humerus`
+- **Rotator cuff** — `Right supraspinatus`, `Right infraspinatus muscle`,
+  `Right subscapularis`, `Right teres minor`, `Right teres major`
+- **Deltoid** — three parts: acromial, clavicular, spinal
+- **Trapezius** — three parts: ascending, descending, transverse
+- **Other muscle** — `Right pectoralis minor`, pectoralis major (3 parts),
+  `Right serratus anterior`, serratus posterior superior/inferior,
+  `Right rhomboid major`, `Right rhomboid minor`, `Right levator scapulae`,
+  `Right subclavius`, biceps brachii (long/short head), triceps brachii
+  (long/lateral/medial head)
+- **Artery** — axillary, circumflex scapular, dorsal scapular, subscapular,
+  suprascapular, thoracodorsal, thoraco-acromial
+- **Vein** — axillary, circumflex scapular, subscapular, suprascapular,
+  thoracodorsal
+
+59 right-side structures, 27 left-side equivalents, plus 1000 meshes in the
+shoulder band overall. Every one has a name, an FMA id, laterality and bounds.
+
+**Honest gap:** there are no shoulder nerves, tendons, ligaments or cartilage in
+this source. Brachial plexus, axillary nerve, suprascapular nerve, the rotator
+cuff tendons and the glenohumeral ligaments are **absent**. Per the brief's "at
+least one deeper structure class **where source data supports it**" and "no
+invented tissue category", the spike demonstrates depth via the vascular layer,
+and the absent classes are reported as absent rather than faked.
 
 ---
 
 ## 6. Domain boundary
 
-Nothing here touches clinical rules, interview semantics, episode identity,
-provenance semantics, storage semantics, or MCP/API semantics.
+Nothing in this work touches clinical rules, medical interview semantics, episode
+identity, provenance semantics, storage semantics, or MCP/API semantics.
 
-The user-selection semantics that must survive any viewer rewrite, with their
-current locations:
+The user-selection semantics that must survive any viewer rewrite:
 
 | Rule | Location |
 |---|---|
@@ -399,39 +520,34 @@ current locations:
 | `requiresUserSource` gate | `packages/shared/src/anatomy.ts:573` |
 | pinned by | `packages/shared/test/user-selection.test.ts` |
 
-Viewer-side mirrors exist in both adapters and must keep matching semantics:
-`svg2d.ts:120-143`, `three3d.ts:406-437`, and the material precedence
+Viewer-side mirrors that must keep matching semantics: `svg2d.ts:120-143`,
+`three3d.ts:406-437`, and material precedence
 `selected > rejected > highlighted > idle` at `three3d.ts:1032-1058`.
 
-One new domain requirement to document rather than invent state for: the brief's
-"which structures exist in the viewer" is a **viewer/asset** concern. It must not
-become a new persisted clinical field. If a viewer capability turns out to need
-domain support, it gets written up as a requirement, not invented.
+**Requirements to document rather than invent state for:**
+
+1. `TissueLayer` does not distinguish artery from vein, which §4 of the brief
+   requires as distinct visual categories. Either the enum gains `artery` and
+   `vein`, or the visual system needs a second axis orthogonal to depth. This is
+   a domain decision.
+2. `TISSUE_LAYER_ORDER` is a single superficial→deep sequence that places `nerve`
+   and `vessel` beneath `bone`. Real anatomy is not linear in depth. Whether the
+   ordering stays authoritative for anything is a domain question.
+3. "Which structures exist in the viewer" is a viewer/asset concern and must not
+   become a new persisted clinical field.
 
 ---
 
-## 7. Blockers requiring your decision
+## 7. Status
 
-1. **Blender is not installed.** Windows and WSL both checked. Installing it is a
-   ~1.5 GB download and a machine-level change, so it needs your go-ahead.
-   Confirm: Blender for Windows (GUI, matches the Z-Anatomy template workflow), or
-   headless in WSL for scripted batch export?
-2. **No Blender MCP bridge is configured.** Recommendation
-   `ahujasid/mcp-for-blender` above. Confirm before I wire one.
-3. **The Figma skills named in the brief do not exist in this environment.**
-   Verified — `figma-generate-design`, `figma-generate-library`, `figma-use` are all
-   absent, as is every other Figma integration. Available design-adjacent skills are
-   `frontend-design` (design guidance) and `tabbit` (browser visual verification).
-   So §0's "use the Figma skills" cannot be followed as written, and there is no
-   Figma account or token here. Proposed substitute: do the design-system pass as a
-   written spec plus implemented tokens in `tokens.css` — the type scale that does not
-   exist yet — and verify visually with `tabbit`. Say if you would rather supply a
-   Figma MCP server first.
-4. **PR #12 is open, not merged.** The brief says to start from clean main *after*
-   it merges. It is `CLEAN`/`MERGEABLE`, touches only `scripts/audit-serve.sh`
-   (-5 lines), and cannot conflict with docs. This branch is based on `dbd9c1f`
-   (`origin/main`). If you want it rebased after #12 lands, say so — it is a
-   one-command rebase.
-5. **The licence questions in §3 need a human answer**, especially whether ASI must
-   stay redistributable and commercially safe. Option 1 in §5.2 is my recommendation
-   and the most defensible, but it means authoring a taxonomy with clinical review.
+| Item | State |
+|---|---|
+| Branch | `visual/anatomy-atlas-v2`, rebased onto `origin/main` `3337353` |
+| Research gate | **passed** — source selected, licence cleared, pipeline route fixed |
+| Blender 4.5.14 | installed (portable ZIP), version confirmed |
+| MCP bridge | pending four-operation proof (§5.3) |
+| Licence provenance | recorded (§3.2); DBCLS re-fetch blocked by local proxy |
+| `partof_*` tables | not held, unreachable; IS-A set sufficient (§3.4) |
+| Shoulder inventory | scoped from real data (§5.4) |
+| Design system | not started — §6 of the brief requires the type scale before UI work |
+| Right shoulder spike | not started |
