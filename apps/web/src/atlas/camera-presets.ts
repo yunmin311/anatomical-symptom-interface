@@ -213,6 +213,47 @@ export function orientationCue(frame: FrameInput): OrientationCue {
 }
 
 /**
+ * The camera's NAME, which is what a person should read first.
+ *
+ * The A/P L/R S/I triple is a secondary cue, not the headline. Leading with
+ * "A / level / level" put a diagnostic string where a label belongs, and
+ * "level / level" reads like an error rather than an answer. A person
+ * positioning themselves wants to know "am I looking at the front or the side",
+ * and the letters are the detail underneath that.
+ *
+ * Returns Free when the camera is genuinely between presets, which is the honest
+ * answer after any orbit and is better than snapping the name to the nearest
+ * preset and implying a precision that is not there.
+ */
+export const ORIENTATION_TOLERANCE = 0.985;
+
+export function cameraNameFor(frame: FrameInput): PresetName | 'Free' {
+  const d = normalize({
+    x: frame.eye.x - frame.target.x,
+    y: frame.eye.y - frame.target.y,
+    z: frame.eye.z - frame.target.z,
+  });
+  for (const name of Object.keys(CAMERA_PRESETS) as PresetName[]) {
+    if (isFacing(frame, name, ORIENTATION_TOLERANCE)) return name;
+  }
+  return 'Free';
+}
+
+export function cameraNameLabel(name: PresetName | 'Free'): string {
+  if (name === 'Free') return 'Free';
+  return CAMERA_PRESETS[name].label;
+}
+
+/**
+ * Which of the four primary presets a camera is closest to, for highlighting a
+ * button. Unlike cameraNameFor this always answers, because a button has to
+ * light up something.
+ */
+export function nearestPrimary(frame: FrameInput): PresetName {
+  return facingOf(frame) as PresetName;
+}
+
+/**
  * Compact string for the indicator, e.g. "A / R / level".
  *
  * Deliberately spells out "level" instead of blanking it, so a square-on view is
