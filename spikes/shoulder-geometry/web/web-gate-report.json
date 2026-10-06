@@ -1,6 +1,6 @@
 {
   "url": "http://localhost:5199/atlas.html",
-  "when": "2026-10-05T13:51:28.791Z",
+  "when": "2026-10-06T02:29:13.858Z",
   "total": 50,
   "failed": 0,
   "results": [
@@ -22,7 +22,7 @@
     {
       "name": "1440: FIRST untouched frame is not the glTF default white",
       "ok": true,
-      "detail": "signature 2042892132"
+      "detail": "signature 1039518089"
     },
     {
       "name": "1440: no console errors on load",
@@ -42,7 +42,7 @@
     {
       "name": "coverage: bone/muscle/artery/vein are listed as in the model",
       "ok": true,
-      "detail": "Bone\n3 | Muscle\n27 | Artery\n7 | Vein\n5"
+      "detail": "Bone\n3 | Muscle\n27 | Artery\n7 | Vein\n5 | Skin\n1"
     },
     {
       "name": "coverage: nerve/tendon/ligament/cartilage are listed as NOT in the model",
@@ -82,17 +82,17 @@
     {
       "name": "hide: hiding the selected structure changes the render",
       "ok": true,
-      "detail": "sig 2684875059 -> 2346902160, lit 33641 -> 33641"
+      "detail": "sig 2946996578 -> 4093489047, lit 33641 -> 33641"
     },
     {
       "name": "layers: switching bone off visibly changes the anatomy",
       "ok": true,
-      "detail": "sig 2946996578 -> 3288133479, lit 33641"
+      "detail": "sig 2946996578 -> 2474559792, lit 33641"
     },
     {
       "name": "layers: switching muscle off visibly changes the anatomy",
       "ok": true,
-      "detail": "sig 2946996578 -> 1892272277"
+      "detail": "sig 1392988156 -> 58712785"
     },
     {
       "name": "layers: muscle-coloured pixels disappear when muscle is off",
@@ -222,7 +222,7 @@
     {
       "name": "375: FIRST untouched frame already carries the muscle material",
       "ok": true,
-      "detail": "9025 muscle-family pixels before any interaction"
+      "detail": "9020 muscle-family pixels before any interaction"
     },
     {
       "name": "375: no horizontal overflow",
