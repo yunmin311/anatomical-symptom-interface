@@ -43,7 +43,16 @@ import { PRIMARY_PRESETS, CAMERA_PRESETS, cueText, orientationCue, type PresetNa
 import { coverageForRegion, coverageSentence, type SystemCoverage } from './coverage.ts';
 import type { FidelityPolicy } from './fidelity.ts';
 
-const ASSET_ROOT = '/anatomy/shoulder/right/';
+/**
+ * The atlas asset root.
+ *
+ * Deliberately `anatomy/atlas/...`, not `anatomy/shoulder/right/`. The second path
+ * holds the canonical per-mesh GLBs and the canonical manifest, which the product
+ * embeds at build time; the viewer has no business reading either. Keeping the two
+ * in different directories is what stops "just point the viewer at the other
+ * manifest" from being a one-line change that destroys a shared contract.
+ */
+const ASSET_ROOT = '/anatomy/atlas/shoulder/right/';
 
 const MODES: ReadonlyArray<{ id: AtlasMode; label: string; hint: string }> = [
   {
@@ -165,7 +174,7 @@ export function AtlasViewer() {
       (manifest?.structures ?? []).map((s) => ({
         id: s.id,
         label: s.label,
-        system: s.system as System,
+        system: s.presentationSystem as System,
       })),
     [manifest],
   );
@@ -173,7 +182,7 @@ export function AtlasViewer() {
   const hits = useMemo(() => searchStructures(structures, query), [structures, query]);
 
   const coverage = useMemo(() => {
-    const present = [...new Set((manifest?.structures ?? []).map((s) => s.system))];
+    const present = [...new Set((manifest?.structures ?? []).map((s) => s.presentationSystem))];
     return coverageForRegion('Shoulder', present);
   }, [manifest]);
 
@@ -349,8 +358,21 @@ export function AtlasViewer() {
               <div className="atlas__selected">
                 <p className="t-group">{selected.label}</p>
                 <p className="t-meta">
-                  {SYSTEM_LABEL[selected.system as System] ?? selected.system}
-                  {selected.fma ? ` · ${selected.fma}` : ''}
+                  {SYSTEM_LABEL[selected.presentationSystem as System] ?? selected.presentationSystem}
+                  {selected.fma?.conceptId ? ` · ${selected.fma.conceptId}` : ''}
+                  {/*
+                    Whether this selection may become a SymptomRecord entry, stated
+                    plainly. A structure with no canonical asi id can still be
+                    looked at, searched, isolated and hidden -- it simply has no
+                    legal value to write. Silently treating the two the same is how
+                    a bp3d:FJ#### id would reach the record.
+                  */}
+                  {selected.symptomRecordSelectable === false && (
+                    <span className="atlas__flag">
+                      {' '}View only · no {selected.canonicalAsiId ? '' : 'canonical structure'} to
+                      record
+                    </span>
+                  )}
                 </p>
                 <div className="atlas__row">
                   <button
@@ -367,7 +389,8 @@ export function AtlasViewer() {
                 </div>
                 {selected.presentationSystemClassification === 'evidence_supported' && (
                   <p className="t-meta atlas__flag">
-                    Presented as {SYSTEM_LABEL[selected.system as System]?.toLowerCase()} on published
+                    Presented as{' '}
+                    {SYSTEM_LABEL[selected.presentationSystem as System]?.toLowerCase()} on published
                     anatomical evidence. Its underlying ontology links have not been checked by a person.
                   </p>
                 )}

@@ -10,14 +10,28 @@ import { decodeGrid, type ViewGrid } from '../src/atlas/view-grid.ts';
 // working directory is apps/web and the generated assets live at the repo root.
 const REPO = fileURLToPath(new URL('../../../', import.meta.url));
 const VIEWS_DIR = join(REPO, 'assets', 'anatomy', 'generated', 'views');
-const MANIFEST_3D = join(REPO, 'assets', 'anatomy', 'generated', 'shoulder', 'right', 'manifest.json');
+
+/**
+ * The ATLAS manifest, not the canonical one.
+ *
+ * These hit maps carry `bp3d:FJ####` ids, which exist only in the atlas contract.
+ * `assets/anatomy/generated/shoulder/right/manifest.json` is the canonical
+ * AssetManifest and describes `asi:*` structures; reading `.structures` from it
+ * returned undefined, and the whole file died on the first access.
+ *
+ * That is the split working as intended rather than a broken test: the 2D map and
+ * the 3D scene are atlas products, so they are checked against the atlas manifest.
+ */
+const ATLAS_MANIFEST = join(REPO, 'assets', 'anatomy', 'atlas', 'shoulder', 'right', 'atlas-manifest.json');
+
 const VIEWS = ['front', 'back', 'left', 'right'] as const;
 const LAYERS = ['surface', 'bone', 'muscle', 'vascular'] as const;
 
-const knownIds = new Set(
-  (JSON.parse(readFileSync(MANIFEST_3D, 'utf8')) as { structures: { id: string }[] })
-    .structures.map((s) => s.id),
-);
+const atlas = JSON.parse(readFileSync(ATLAS_MANIFEST, 'utf8')) as {
+  structures: { id: string; canonicalAsiId: string | null; symptomRecordSelectable: boolean }[];
+};
+
+const knownIds = new Set(atlas.structures.map((s) => s.id));
 
 describe('2D view hit maps', () => {
   for (const view of VIEWS) {
@@ -33,13 +47,13 @@ describe('2D view hit maps', () => {
         assert.equal(grid.length, raw.grid.h, 'row count must match the declared height');
         for (const row of grid) assert.equal(row.length, raw.grid.w, 'every row must be grid.w wide');
 
-        // The whole point of deriving the 2D map from the same source: a tap here
+// The whole point of deriving the 2D map from the same source: a tap here
         // must select something the 3D viewer can also select. Skin is the one
         // documented exception -- it is loaded as a whole-body context shell and
-        // is not in the 3D manifest -- so it is dropped rather than selectable.
+        // is not in the atlas manifest -- so it is dropped rather than selectable.
         const named = new Set(grid.flat().filter(Boolean));
         for (const id of named) {
-          assert.ok(knownIds.has(id), `${id} is in the 2D hit map but not the 3D manifest`);
+          assert.ok(knownIds.has(id), `${id} is in the 2D hit map but not the atlas manifest`);
         }
 
         const filled = grid.flat().filter(Boolean).length;
@@ -47,6 +61,30 @@ describe('2D view hit maps', () => {
       });
     }
   }
+
+  it('a tapped 2D cell resolves to a structure that may be written to a record, or not', () => {
+    // The 2D map is a presentation surface, so it may show structures with no
+    // canonical identity. What it must never do is imply that tapping one produced
+    // something recordable. Carrying the crosswalk here makes that checkable
+    // per-cell rather than only in the atlas contract test.
+    const grid = decodeGrid(
+      JSON.parse(readFileSync(join(VIEWS_DIR, 'shoulder-front-muscle.grid.json'), 'utf8')) as ViewGrid,
+    );
+    const byId = new Map(atlas.structures.map((s) => [s.id, s]));
+    const tapped = [...new Set(grid.flat().filter(Boolean))];
+    assert.ok(tapped.length > 0, 'the muscle layer resolved no structures at all');
+
+    for (const id of tapped) {
+      const s = byId.get(id);
+      assert.ok(s, `${id} is not in the atlas manifest`);
+      if (s.symptomRecordSelectable) {
+        assert.ok(
+          s.canonicalAsiId !== null,
+          `${id} is selectable but names no canonical asi structure, so a tap could not become a record`,
+        );
+      }
+    }
+  });
 
   it('a deep layer is never silently empty', () => {
     // Guards the failure that actually happened: the hit map resolved to nothing

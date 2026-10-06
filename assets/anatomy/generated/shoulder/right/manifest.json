@@ -1,1063 +1,530 @@
 {
   "schemaVersion": 1,
-  "units": "metres",
-  "glTFYup": true,
-  "shoulder": {
-    "file": "shoulder-atlas.glb",
-    "objects": 42,
-    "triangles": 199108,
-    "bytes": 4313560
+  "regions": [
+    "shoulder"
+  ],
+  "licence": {
+    "id": "CC-BY-4.0",
+    "name": "Creative Commons Attribution 4.0 International",
+    "url": "https://dbarchive.biosciencedbc.jp/en/bodyparts3d/lic.html",
+    "attribution": "BodyParts3D, (c) The Database Center for Life Science licensed under CC Attribution 4.0 International",
+    "verifiedOn": "2025-02-27"
   },
-  "bodyContext": {
-    "file": "body-context.glb",
-    "objects": 1,
-    "triangles": 203382,
-    "bytes": 4900892
+  "generator": {
+    "name": "asi-anatomy-pipeline",
+    "version": "1.0.0"
   },
-  "structures": [
+  "entries": [
     {
-      "id": "bp3d:FJ3384",
-      "label": "Right scapula",
-      "system": "bone",
-      "derivedClass": "bone",
-      "presentationSystemClassification": "machine_derived",
-      "ontologyFmaVerification": "pending_human_review",
-      "reviewStatus": "machine-derived",
-      "fma": "FMA13395",
-      "bp": "BP9101",
-      "triangles": 26172,
-      "boundsMm": {
+      "asiId": "asi:shoulder.deltoid-clavicular-part",
+      "meshName": "FJ1468",
+      "region": "shoulder",
+      "subRegionIds": [
+        "shoulder.anterior"
+      ],
+      "layer": "muscle",
+      "anatomicalLabel": "Clavicular part of deltoid",
+      "layTerm": "the front part of the shoulder muscle, near the collarbone",
+      "laterality": "right",
+      "fma": {
+        "conceptId": "34680",
+        "status": "unverified",
+        "note": "BodyParts3D 4.3i concept list; not yet checked against FMA Explorer"
+      },
+      "source": {
+        "dataset": "BodyParts3D",
+        "release": "4.0",
+        "conceptId": "FMA:34680",
+        "archive": "isa_BP3D_4.0_obj_99.zip",
+        "doi": "10.18908/lsdba.nbdc00837-000",
+        "retrievedAt": null
+      },
+      "licence": {
+        "id": "CC-BY-4.0",
+        "name": "Creative Commons Attribution 4.0 International",
+        "url": "https://dbarchive.biosciencedbc.jp/en/bodyparts3d/lic.html",
+        "attribution": "BodyParts3D, (c) The Database Center for Life Science licensed under CC Attribution 4.0 International",
+        "verifiedOn": "2025-02-27"
+      },
+      "geometry": {
+        "triangles": 166,
+        "sourceTriangles": 2206,
+        "reduction": 0.9248,
+        "units": "mm"
+      },
+      "bounds": {
         "min": [
-          -166.464,
-          -102.856,
-          1183.96
+          -201.4812,
+          -119.29046153846153,
+          1210.1778787878786
         ],
         "max": [
-          -57.0538,
-          5.0828,
-          1349.86
+          -91.27122575757575,
+          -75.39473333333335,
+          1355.39
         ]
-      }
+      },
+      "file": "shoulder/asi-shoulder-deltoid-clavicular-part.glb"
     },
     {
-      "id": "bp3d:FJ3362",
-      "label": "Right clavicle",
-      "system": "bone",
-      "derivedClass": "bone",
-      "presentationSystemClassification": "machine_derived",
-      "ontologyFmaVerification": "pending_human_review",
-      "reviewStatus": "machine-derived",
-      "fma": "FMA13322",
-      "bp": "BP9271",
-      "triangles": 1146,
-      "boundsMm": {
+      "asiId": "asi:shoulder.deltoid-acromial-part",
+      "meshName": "FJ1467",
+      "region": "shoulder",
+      "subRegionIds": [
+        "shoulder.anterior",
+        "shoulder.lateral"
+      ],
+      "layer": "muscle",
+      "anatomicalLabel": "Acromial part of deltoid",
+      "layTerm": "the middle part of the shoulder muscle, over the shoulder blade",
+      "laterality": "right",
+      "fma": {
+        "conceptId": "34682",
+        "status": "unverified",
+        "note": "BodyParts3D 4.3i concept list; not yet checked against FMA Explorer"
+      },
+      "source": {
+        "dataset": "BodyParts3D",
+        "release": "4.0",
+        "conceptId": "FMA:34682",
+        "archive": "isa_BP3D_4.0_obj_99.zip",
+        "doi": "10.18908/lsdba.nbdc00837-000",
+        "retrievedAt": null
+      },
+      "licence": {
+        "id": "CC-BY-4.0",
+        "name": "Creative Commons Attribution 4.0 International",
+        "url": "https://dbarchive.biosciencedbc.jp/en/bodyparts3d/lic.html",
+        "attribution": "BodyParts3D, (c) The Database Center for Life Science licensed under CC Attribution 4.0 International",
+        "verifiedOn": "2025-02-27"
+      },
+      "geometry": {
+        "triangles": 198,
+        "sourceTriangles": 1300,
+        "reduction": 0.8477,
+        "units": "mm"
+      },
+      "bounds": {
         "min": [
-          -145.277,
-          -146.948,
-          1308.62
+          -224.8327083333334,
+          -102.568,
+          1208.4093548387095
         ],
         "max": [
-          -9.6616,
-          -54.4125,
-          1355.4399
+          -148.77969230769233,
+          -41.96295714285714,
+          1349.22
         ]
-      }
+      },
+      "file": "shoulder/asi-shoulder-deltoid-acromial-part.glb"
     },
     {
-      "id": "bp3d:FJ3368",
-      "label": "Right humerus",
-      "system": "bone",
-      "derivedClass": "bone",
-      "presentationSystemClassification": "machine_derived",
-      "ontologyFmaVerification": "pending_human_review",
-      "reviewStatus": "machine-derived",
-      "fma": "FMA23130",
-      "bp": "BP9206",
-      "triangles": 3784,
-      "boundsMm": {
+      "asiId": "asi:shoulder.deltoid-spinal-part",
+      "meshName": "FJ1513",
+      "region": "shoulder",
+      "subRegionIds": [
+        "shoulder.anterior"
+      ],
+      "layer": "muscle",
+      "anatomicalLabel": "Spinal part of deltoid",
+      "layTerm": "the back part of the shoulder muscle",
+      "laterality": "right",
+      "fma": {
+        "conceptId": "34684",
+        "status": "unverified",
+        "note": "BodyParts3D 4.3i concept list; not yet checked against FMA Explorer"
+      },
+      "source": {
+        "dataset": "BodyParts3D",
+        "release": "4.0",
+        "conceptId": "FMA:34684",
+        "archive": "isa_BP3D_4.0_obj_99.zip",
+        "doi": "10.18908/lsdba.nbdc00837-000",
+        "retrievedAt": null
+      },
+      "licence": {
+        "id": "CC-BY-4.0",
+        "name": "Creative Commons Attribution 4.0 International",
+        "url": "https://dbarchive.biosciencedbc.jp/en/bodyparts3d/lic.html",
+        "attribution": "BodyParts3D, (c) The Database Center for Life Science licensed under CC Attribution 4.0 International",
+        "verifiedOn": "2025-02-27"
+      },
+      "geometry": {
+        "triangles": 244,
+        "sourceTriangles": 1900,
+        "reduction": 0.8716,
+        "units": "mm"
+      },
+      "bounds": {
         "min": [
-          -240.841,
-          -100.219,
-          1029.2
+          -218.2607142857143,
+          -78.41628301886792,
+          1192.306730769231
         ],
         "max": [
-          -140.09,
-          -51.0391,
-          1336.54
+          -86.82120434782607,
+          -2.72512,
+          1339.84
         ]
-      }
+      },
+      "file": "shoulder/asi-shoulder-deltoid-spinal-part.glb"
     },
     {
-      "id": "bp3d:FJ1506",
-      "label": "Right supraspinatus",
-      "system": "muscle",
-      "derivedClass": "muscle",
-      "presentationSystemClassification": "machine_derived",
-      "ontologyFmaVerification": "pending_human_review",
-      "reviewStatus": "machine-derived",
-      "fma": "FMA32544",
-      "bp": "BP4791",
-      "triangles": 878,
-      "boundsMm": {
+      "asiId": "asi:shoulder.supraspinatus-tendon",
+      "meshName": "FJ1506",
+      "region": "shoulder",
+      "subRegionIds": [
+        "shoulder.lateral"
+      ],
+      "layer": "tendon",
+      "anatomicalLabel": "Supraspinatus tendon",
+      "layTerm": "the tendon that runs over the top of the shoulder joint",
+      "laterality": "right",
+      "fma": {
+        "conceptId": "32544",
+        "status": "unverified",
+        "note": "BodyParts3D 4.3i concept list; not yet checked against FMA Explorer"
+      },
+      "source": {
+        "dataset": "BodyParts3D",
+        "release": "4.0",
+        "conceptId": "FMA:32544",
+        "archive": "isa_BP3D_4.0_obj_99.zip",
+        "doi": "10.18908/lsdba.nbdc00837-000",
+        "retrievedAt": null
+      },
+      "licence": {
+        "id": "CC-BY-4.0",
+        "name": "Creative Commons Attribution 4.0 International",
+        "url": "https://dbarchive.biosciencedbc.jp/en/bodyparts3d/lic.html",
+        "attribution": "BodyParts3D, (c) The Database Center for Life Science licensed under CC Attribution 4.0 International",
+        "verifiedOn": "2025-02-27"
+      },
+      "geometry": {
+        "triangles": 126,
+        "sourceTriangles": 878,
+        "reduction": 0.8565,
+        "units": "mm"
+      },
+      "bounds": {
         "min": [
-          -188.6518,
-          -91.9013,
-          1307.3385
+          -186.0728666666667,
+          -89.88746249999998,
+          1308.5866
         ],
         "max": [
           -63.876,
-          -12.9613,
-          1342.7391
+          -15.074999999999998,
+          1340.2766666666666
         ]
-      }
+      },
+      "file": "shoulder/asi-shoulder-supraspinatus-tendon.glb"
     },
     {
-      "id": "bp3d:FJ1500",
-      "label": "Right infraspinatus muscle",
-      "system": "muscle",
-      "derivedClass": "muscle",
-      "presentationSystemClassification": "machine_derived",
-      "ontologyFmaVerification": "pending_human_review",
-      "reviewStatus": "machine-derived",
-      "fma": "FMA32547",
-      "bp": "BP4797",
-      "triangles": 866,
-      "boundsMm": {
+      "asiId": "asi:shoulder.infraspinatus",
+      "meshName": "FJ1500",
+      "region": "shoulder",
+      "subRegionIds": [
+        "shoulder.posterior"
+      ],
+      "layer": "muscle",
+      "anatomicalLabel": "Infraspinatus",
+      "layTerm": "the muscle on the shoulder blade below the spine of the blade",
+      "laterality": "right",
+      "fma": {
+        "conceptId": "32547",
+        "status": "unverified",
+        "note": "BodyParts3D 4.3i concept list; not yet checked against FMA Explorer"
+      },
+      "source": {
+        "dataset": "BodyParts3D",
+        "release": "4.0",
+        "conceptId": "FMA:32547",
+        "archive": "isa_BP3D_4.0_obj_99.zip",
+        "doi": "10.18908/lsdba.nbdc00837-000",
+        "retrievedAt": null
+      },
+      "licence": {
+        "id": "CC-BY-4.0",
+        "name": "Creative Commons Attribution 4.0 International",
+        "url": "https://dbarchive.biosciencedbc.jp/en/bodyparts3d/lic.html",
+        "attribution": "BodyParts3D, (c) The Database Center for Life Science licensed under CC Attribution 4.0 International",
+        "verifiedOn": "2025-02-27"
+      },
+      "geometry": {
+        "triangles": 182,
+        "sourceTriangles": 866,
+        "reduction": 0.7898,
+        "units": "mm"
+      },
+      "bounds": {
         "min": [
-          -189.1577,
-          -77.087,
-          1206.532
+          -187.7897169811321,
+          -73.46691000000008,
+          1207.24
         ],
         "max": [
           -60.2584,
-          4.0817,
-          1331.084
+          3.42368,
+          1329.282222222222
         ]
-      }
+      },
+      "file": "shoulder/asi-shoulder-infraspinatus.glb"
     },
     {
-      "id": "bp3d:FJ1504",
-      "label": "Right subscapularis",
-      "system": "muscle",
-      "derivedClass": "muscle",
-      "presentationSystemClassification": "machine_derived",
-      "ontologyFmaVerification": "pending_human_review",
-      "reviewStatus": "machine-derived",
-      "fma": "FMA13414",
-      "bp": "BP4795",
-      "triangles": 2092,
-      "boundsMm": {
+      "asiId": "asi:shoulder.teres-minor",
+      "meshName": "FJ1508",
+      "region": "shoulder",
+      "subRegionIds": [
+        "shoulder.posterior"
+      ],
+      "layer": "muscle",
+      "anatomicalLabel": "Teres minor",
+      "layTerm": "a small muscle at the outer edge of the shoulder blade",
+      "laterality": "right",
+      "fma": {
+        "conceptId": "32553",
+        "status": "unverified",
+        "note": "BodyParts3D 4.3i concept list; not yet checked against FMA Explorer"
+      },
+      "source": {
+        "dataset": "BodyParts3D",
+        "release": "4.0",
+        "conceptId": "FMA:32553",
+        "archive": "isa_BP3D_4.0_obj_99.zip",
+        "doi": "10.18908/lsdba.nbdc00837-000",
+        "retrievedAt": null
+      },
+      "licence": {
+        "id": "CC-BY-4.0",
+        "name": "Creative Commons Attribution 4.0 International",
+        "url": "https://dbarchive.biosciencedbc.jp/en/bodyparts3d/lic.html",
+        "attribution": "BodyParts3D, (c) The Database Center for Life Science licensed under CC Attribution 4.0 International",
+        "verifiedOn": "2025-02-27"
+      },
+      "geometry": {
+        "triangles": 156,
+        "sourceTriangles": 506,
+        "reduction": 0.6917,
+        "units": "mm"
+      },
+      "bounds": {
         "min": [
-          -166.1167,
-          -100.0486,
-          1195.1649
+          -188.6731428571429,
+          -76.72517142857146,
+          1222.767966101695
         ],
         "max": [
-          -63.1822,
-          -2.7578,
-          1324.8041
+          -108.50493220338984,
+          -12.4567,
+          1316.92
         ]
-      }
+      },
+      "file": "shoulder/asi-shoulder-teres-minor.glb"
     },
     {
-      "id": "bp3d:FJ1508",
-      "label": "Right teres minor",
-      "system": "muscle",
-      "derivedClass": "muscle",
-      "presentationSystemClassification": "machine_derived",
-      "ontologyFmaVerification": "pending_human_review",
-      "reviewStatus": "machine-derived",
-      "fma": "FMA32553",
-      "bp": "BP4793",
-      "triangles": 506,
-      "boundsMm": {
+      "asiId": "asi:shoulder.subscapularis",
+      "meshName": "FJ1504",
+      "region": "shoulder",
+      "subRegionIds": [
+        "shoulder.anterior"
+      ],
+      "layer": "muscle",
+      "anatomicalLabel": "Subscapularis",
+      "layTerm": "a deep muscle right in front of the shoulder joint",
+      "laterality": "right",
+      "fma": {
+        "conceptId": "13414",
+        "status": "unverified",
+        "note": "BodyParts3D 4.3i concept list; not yet checked against FMA Explorer"
+      },
+      "source": {
+        "dataset": "BodyParts3D",
+        "release": "4.0",
+        "conceptId": "FMA:13414",
+        "archive": "isa_BP3D_4.0_obj_99.zip",
+        "doi": "10.18908/lsdba.nbdc00837-000",
+        "retrievedAt": null
+      },
+      "licence": {
+        "id": "CC-BY-4.0",
+        "name": "Creative Commons Attribution 4.0 International",
+        "url": "https://dbarchive.biosciencedbc.jp/en/bodyparts3d/lic.html",
+        "attribution": "BodyParts3D, (c) The Database Center for Life Science licensed under CC Attribution 4.0 International",
+        "verifiedOn": "2025-02-27"
+      },
+      "geometry": {
+        "triangles": 232,
+        "sourceTriangles": 2092,
+        "reduction": 0.8891,
+        "units": "mm"
+      },
+      "bounds": {
         "min": [
-          -190.8236,
-          -80.3424,
-          1220.5625
+          -161.15677192982454,
+          -96.42367192982451,
+          1198.9314159292044
         ],
         "max": [
-          -105.4089,
-          -12.2812,
-          1316.9154
+          -64.58389612903225,
+          -3.6431627906976773,
+          1324.8
         ]
-      }
+      },
+      "file": "shoulder/asi-shoulder-subscapularis.glb"
     },
     {
-      "id": "bp3d:FJ1507",
-      "label": "Right teres major",
-      "system": "muscle",
-      "derivedClass": "muscle",
-      "presentationSystemClassification": "machine_derived",
-      "ontologyFmaVerification": "pending_human_review",
-      "reviewStatus": "machine-derived",
-      "fma": "FMA32551",
-      "bp": "BP4789",
-      "triangles": 1042,
-      "boundsMm": {
+      "asiId": "asi:shoulder.trapezius-upper",
+      "meshName": "FJ1520",
+      "region": "shoulder",
+      "subRegionIds": [
+        "shoulder.posterior"
+      ],
+      "layer": "muscle",
+      "anatomicalLabel": "Upper trapezius",
+      "layTerm": "the muscle from the neck to the top of the shoulder",
+      "laterality": "right",
+      "fma": {
+        "conceptId": "33581",
+        "status": "unverified",
+        "note": "BodyParts3D 4.3i concept list; not yet checked against FMA Explorer"
+      },
+      "source": {
+        "dataset": "BodyParts3D",
+        "release": "4.0",
+        "conceptId": "FMA:33581",
+        "archive": "isa_BP3D_4.0_obj_99.zip",
+        "doi": "10.18908/lsdba.nbdc00837-000",
+        "retrievedAt": null
+      },
+      "licence": {
+        "id": "CC-BY-4.0",
+        "name": "Creative Commons Attribution 4.0 International",
+        "url": "https://dbarchive.biosciencedbc.jp/en/bodyparts3d/lic.html",
+        "attribution": "BodyParts3D, (c) The Database Center for Life Science licensed under CC Attribution 4.0 International",
+        "verifiedOn": "2025-02-27"
+      },
+      "geometry": {
+        "triangles": 208,
+        "sourceTriangles": 10530,
+        "reduction": 0.9802,
+        "units": "mm"
+      },
+      "bounds": {
         "min": [
-          -172.2095,
-          -79.5569,
-          1189.6538
+          -130.24252617079878,
+          -27.18524421487608,
+          1060.4209090909092
         ],
         "max": [
-          -86.1425,
-          1.6568,
-          1285.3506
+          1.111120075757576,
+          20.399221276595743,
+          1342.97
         ]
-      }
+      },
+      "file": "shoulder/asi-shoulder-trapezius-upper.glb"
     },
     {
-      "id": "bp3d:FJ1467",
-      "label": "Acromial part of right deltoid",
-      "system": "muscle",
-      "derivedClass": "muscle",
-      "presentationSystemClassification": "machine_derived",
-      "ontologyFmaVerification": "pending_human_review",
-      "reviewStatus": "machine-derived",
-      "fma": "FMA34682",
-      "bp": "BP7571",
-      "triangles": 1300,
-      "boundsMm": {
+      "asiId": "asi:shoulder.scapula",
+      "meshName": "FJ3384",
+      "region": "shoulder",
+      "subRegionIds": [
+        "shoulder.posterior"
+      ],
+      "layer": "bone",
+      "anatomicalLabel": "Scapula",
+      "layTerm": "the shoulder blade bone",
+      "laterality": "right",
+      "fma": {
+        "conceptId": "13395",
+        "status": "unverified",
+        "note": "BodyParts3D 4.3i concept list; not yet checked against FMA Explorer"
+      },
+      "source": {
+        "dataset": "BodyParts3D",
+        "release": "4.0",
+        "conceptId": "FMA:13395",
+        "archive": "isa_BP3D_4.0_obj_99.zip",
+        "doi": "10.18908/lsdba.nbdc00837-000",
+        "retrievedAt": null
+      },
+      "licence": {
+        "id": "CC-BY-4.0",
+        "name": "Creative Commons Attribution 4.0 International",
+        "url": "https://dbarchive.biosciencedbc.jp/en/bodyparts3d/lic.html",
+        "attribution": "BodyParts3D, (c) The Database Center for Life Science licensed under CC Attribution 4.0 International",
+        "verifiedOn": "2025-02-27"
+      },
+      "geometry": {
+        "triangles": 348,
+        "sourceTriangles": 26172,
+        "reduction": 0.9867,
+        "units": "mm"
+      },
+      "bounds": {
         "min": [
-          -227.4322,
-          -103.8038,
-          1205.0864
+          -162.07587869822484,
+          -96.9052031809145,
+          1186.6782894736841
         ],
         "max": [
-          -146.5569,
-          -40.6889,
-          1349.6547
+          -59.85935714285716,
+          3.19313551682243,
+          1349.86
         ]
-      }
+      },
+      "file": "shoulder/asi-shoulder-scapula.glb"
     },
     {
-      "id": "bp3d:FJ1468",
-      "label": "Clavicular part of right deltoid",
-      "system": "muscle",
-      "derivedClass": "muscle",
-      "presentationSystemClassification": "machine_derived",
-      "ontologyFmaVerification": "pending_human_review",
-      "reviewStatus": "machine-derived",
-      "fma": "FMA34680",
-      "bp": "BP7573",
-      "triangles": 2206,
-      "boundsMm": {
+      "asiId": "asi:shoulder.biceps-long-head-tendon",
+      "meshName": "FJ1478",
+      "region": "shoulder",
+      "subRegionIds": [
+        "shoulder.anterior"
+      ],
+      "layer": "tendon",
+      "anatomicalLabel": "Long head of biceps tendon",
+      "layTerm": "the tendon that runs down the front of the shoulder joint",
+      "laterality": "right",
+      "fma": {
+        "conceptId": "37686",
+        "status": "unverified",
+        "note": "BodyParts3D 4.3i concept list; not yet checked against FMA Explorer"
+      },
+      "source": {
+        "dataset": "BodyParts3D",
+        "release": "4.0",
+        "conceptId": "FMA:37686",
+        "archive": "isa_BP3D_4.0_obj_99.zip",
+        "doi": "10.18908/lsdba.nbdc00837-000",
+        "retrievedAt": null
+      },
+      "licence": {
+        "id": "CC-BY-4.0",
+        "name": "Creative Commons Attribution 4.0 International",
+        "url": "https://dbarchive.biosciencedbc.jp/en/bodyparts3d/lic.html",
+        "attribution": "BodyParts3D, (c) The Database Center for Life Science licensed under CC Attribution 4.0 International",
+        "verifiedOn": "2025-02-27"
+      },
+      "geometry": {
+        "triangles": 24,
+        "sourceTriangles": 1426,
+        "reduction": 0.9832,
+        "units": "mm"
+      },
+      "bounds": {
         "min": [
-          -203.7212,
-          -121.3312,
-          1203.8544
+          -224.0059999999999,
+          -95.64487027027027,
+          1006.7431061452519
         ],
         "max": [
-          -88.555,
-          -75.1252,
-          1355.4122
+          -138.53315625,
+          -69.90318124999999,
+          1339.42
         ]
-      }
-    },
-    {
-      "id": "bp3d:FJ1513",
-      "label": "Spinal part of right deltoid",
-      "system": "muscle",
-      "derivedClass": "muscle",
-      "presentationSystemClassification": "machine_derived",
-      "ontologyFmaVerification": "pending_human_review",
-      "reviewStatus": "machine-derived",
-      "fma": "FMA34684",
-      "bp": "BP5607",
-      "triangles": 1900,
-      "boundsMm": {
-        "min": [
-          -219.4958,
-          -79.253,
-          1187.7498
-        ],
-        "max": [
-          -82.8341,
-          -2.7251,
-          1339.8445
-        ]
-      }
-    },
-    {
-      "id": "bp3d:FJ1520",
-      "label": "Ascending part of right trapezius",
-      "system": "muscle",
-      "derivedClass": "UNKNOWN",
-      "presentationSystemClassification": "evidence_supported",
-      "ontologyFmaVerification": "pending_human_review",
-      "reviewStatus": "review_override",
-      "fma": "FMA33581",
-      "bp": "BP5638",
-      "triangles": 10530,
-      "boundsMm": {
-        "min": [
-          -148.5859,
-          -46.9637,
-          1054.006
-        ],
-        "max": [
-          3.321,
-          24.6253,
-          1343.0248
-        ]
-      }
-    },
-    {
-      "id": "bp3d:FJ1521",
-      "label": "Descending part of right trapezius",
-      "system": "muscle",
-      "derivedClass": "UNKNOWN",
-      "presentationSystemClassification": "evidence_supported",
-      "ontologyFmaVerification": "pending_human_review",
-      "reviewStatus": "review_override",
-      "fma": "FMA33586",
-      "bp": "BP5636",
-      "triangles": 7108,
-      "boundsMm": {
-        "min": [
-          -130.8405,
-          -100.6604,
-          1340.5887
-        ],
-        "max": [
-          3.5107,
-          -7.6041,
-          1506.2427
-        ]
-      }
-    },
-    {
-      "id": "bp3d:FJ1554",
-      "label": "Transverse part of right trapezius",
-      "system": "muscle",
-      "derivedClass": "muscle",
-      "presentationSystemClassification": "machine_derived",
-      "ontologyFmaVerification": "pending_human_review",
-      "reviewStatus": "machine-derived",
-      "fma": "FMA33584",
-      "bp": "BP5610",
-      "triangles": 4460,
-      "boundsMm": {
-        "min": [
-          -163.2418,
-          -69.6539,
-          1303.5778
-        ],
-        "max": [
-          3.9492,
-          10.7742,
-          1382.1543
-        ]
-      }
-    },
-    {
-      "id": "bp3d:FJ1456",
-      "label": "Right pectoralis minor",
-      "system": "muscle",
-      "derivedClass": "muscle",
-      "presentationSystemClassification": "machine_derived",
-      "ontologyFmaVerification": "pending_human_review",
-      "reviewStatus": "machine-derived",
-      "fma": "FMA13375",
-      "bp": "BP4775",
-      "triangles": 9468,
-      "boundsMm": {
-        "min": [
-          -130.2203,
-          -173.0468,
-          1181.6632
-        ],
-        "max": [
-          -69.7359,
-          -80.2891,
-          1326.6676
-        ]
-      }
-    },
-    {
-      "id": "bp3d:FJ1464",
-      "label": "Sternocostal part of right pectoralis major",
-      "system": "muscle",
-      "derivedClass": "muscle",
-      "presentationSystemClassification": "machine_derived",
-      "ontologyFmaVerification": "pending_human_review",
-      "reviewStatus": "machine-derived",
-      "fma": "FMA79979",
-      "bp": "BP5613",
-      "triangles": 7114,
-      "boundsMm": {
-        "min": [
-          -187.8484,
-          -219.582,
-          1140.6141
-        ],
-        "max": [
-          -4.8156,
-          -81,
-          1313.9423
-        ]
-      }
-    },
-    {
-      "id": "bp3d:FJ1447",
-      "label": "Clavicular part of right pectoralis major",
-      "system": "muscle",
-      "derivedClass": "muscle",
-      "presentationSystemClassification": "machine_derived",
-      "ontologyFmaVerification": "pending_human_review",
-      "reviewStatus": "machine-derived",
-      "fma": "FMA34690",
-      "bp": "BP5582",
-      "triangles": 1846,
-      "boundsMm": {
-        "min": [
-          -194.2617,
-          -145.1914,
-          1234.5129
-        ],
-        "max": [
-          -26.4139,
-          -82,
-          1335.8962
-        ]
-      }
-    },
-    {
-      "id": "bp3d:FJ1446",
-      "label": "Abdominal part of right pectoralis major",
-      "system": "muscle",
-      "derivedClass": "muscle",
-      "presentationSystemClassification": "machine_derived",
-      "ontologyFmaVerification": "pending_human_review",
-      "reviewStatus": "machine-derived",
-      "fma": "FMA45874",
-      "bp": "BP5615",
-      "triangles": 1536,
-      "boundsMm": {
-        "min": [
-          -180.8963,
-          -213.7461,
-          1104.7821
-        ],
-        "max": [
-          -48,
-          -81.6289,
-          1277.9364
-        ]
-      }
-    },
-    {
-      "id": "bp3d:FJ1459",
-      "label": "Right serratus anterior",
-      "system": "muscle",
-      "derivedClass": "muscle",
-      "presentationSystemClassification": "machine_derived",
-      "ontologyFmaVerification": "pending_human_review",
-      "reviewStatus": "machine-derived",
-      "fma": "FMA13398",
-      "bp": "BP4782",
-      "triangles": 49212,
-      "boundsMm": {
-        "min": [
-          -144.4859,
-          -157.5921,
-          1078.1566
-        ],
-        "max": [
-          -57.7141,
-          5.2641,
-          1348.4019
-        ]
-      }
-    },
-    {
-      "id": "bp3d:FJ1542",
-      "label": "Right serratus posterior superior",
-      "system": "muscle",
-      "derivedClass": "muscle",
-      "presentationSystemClassification": "machine_derived",
-      "ontologyFmaVerification": "pending_human_review",
-      "reviewStatus": "machine-derived",
-      "fma": "FMA13403",
-      "bp": "BP4766",
-      "triangles": 9066,
-      "boundsMm": {
-        "min": [
-          -103.1411,
-          -73.6913,
-          1254.3728
-        ],
-        "max": [
-          0.7037,
-          -8.9546,
-          1385.5251
-        ]
-      }
-    },
-    {
-      "id": "bp3d:FJ1541",
-      "label": "Right serratus posterior inferior",
-      "system": "muscle",
-      "derivedClass": "muscle",
-      "presentationSystemClassification": "machine_derived",
-      "ontologyFmaVerification": "pending_human_review",
-      "reviewStatus": "machine-derived",
-      "fma": "FMA13405",
-      "bp": "BP4768",
-      "triangles": 13164,
-      "boundsMm": {
-        "min": [
-          -106.3146,
-          -42.3563,
-          969.5149
-        ],
-        "max": [
-          2.4511,
-          -1.1969,
-          1132.0179
-        ]
-      }
-    },
-    {
-      "id": "bp3d:FJ1536",
-      "label": "Right rhomboid major",
-      "system": "muscle",
-      "derivedClass": "muscle",
-      "presentationSystemClassification": "machine_derived",
-      "ontologyFmaVerification": "pending_human_review",
-      "reviewStatus": "machine-derived",
-      "fma": "FMA13381",
-      "bp": "BP4780",
-      "triangles": 7202,
-      "boundsMm": {
-        "min": [
-          -89.5036,
-          -22.0981,
-          1188.1918
-        ],
-        "max": [
-          0.8199,
-          6.0922,
-          1361.6567
-        ]
-      }
-    },
-    {
-      "id": "bp3d:FJ1537",
-      "label": "Right rhomboid minor",
-      "system": "muscle",
-      "derivedClass": "muscle",
-      "presentationSystemClassification": "machine_derived",
-      "ontologyFmaVerification": "pending_human_review",
-      "reviewStatus": "machine-derived",
-      "fma": "FMA13383",
-      "bp": "BP4784",
-      "triangles": 2206,
-      "boundsMm": {
-        "min": [
-          -61.7606,
-          -36.0764,
-          1280.8032
-        ],
-        "max": [
-          0.9161,
-          -4.7702,
-          1387.5121
-        ]
-      }
-    },
-    {
-      "id": "bp3d:FJ1532",
-      "label": "Right levator scapulae",
-      "system": "muscle",
-      "derivedClass": "muscle",
-      "presentationSystemClassification": "machine_derived",
-      "ontologyFmaVerification": "pending_human_review",
-      "reviewStatus": "machine-derived",
-      "fma": "FMA32540",
-      "bp": "BP4786",
-      "triangles": 4718,
-      "boundsMm": {
-        "min": [
-          -81.0786,
-          -82.5287,
-          1309.3202
-        ],
-        "max": [
-          -21.0748,
-          -12.0873,
-          1468.5638
-        ]
-      }
-    },
-    {
-      "id": "bp3d:FJ1460",
-      "label": "Right subclavius",
-      "system": "muscle",
-      "derivedClass": "muscle",
-      "presentationSystemClassification": "machine_derived",
-      "ontologyFmaVerification": "pending_human_review",
-      "reviewStatus": "machine-derived",
-      "fma": "FMA13412",
-      "bp": "BP4773",
-      "triangles": 1640,
-      "boundsMm": {
-        "min": [
-          -104.677,
-          -134.8744,
-          1311.3984
-        ],
-        "max": [
-          -34.288,
-          -74.0712,
-          1342.8928
-        ]
-      }
-    },
-    {
-      "id": "bp3d:FJ1478",
-      "label": "Long head of right biceps brachii",
-      "system": "muscle",
-      "derivedClass": "muscle",
-      "presentationSystemClassification": "machine_derived",
-      "ontologyFmaVerification": "pending_human_review",
-      "reviewStatus": "machine-derived",
-      "fma": "FMA37686",
-      "bp": "BP5566",
-      "triangles": 1426,
-      "boundsMm": {
-        "min": [
-          -229.86,
-          -109.5556,
-          994.0718
-        ],
-        "max": [
-          -135.2676,
-          -67.8089,
-          1339.5753
-        ]
-      }
-    },
-    {
-      "id": "bp3d:FJ1512",
-      "label": "Short head of right biceps brachii",
-      "system": "muscle",
-      "derivedClass": "muscle",
-      "presentationSystemClassification": "machine_derived",
-      "ontologyFmaVerification": "pending_human_review",
-      "reviewStatus": "machine-derived",
-      "fma": "FMA37684",
-      "bp": "BP5558",
-      "triangles": 1856,
-      "boundsMm": {
-        "min": [
-          -212.4365,
-          -109.1433,
-          1065.2196
-        ],
-        "max": [
-          -135.2369,
-          -75.8709,
-          1327.7644
-        ]
-      }
-    },
-    {
-      "id": "bp3d:FJ1479",
-      "label": "Long head of right triceps brachii",
-      "system": "muscle",
-      "derivedClass": "muscle",
-      "presentationSystemClassification": "machine_derived",
-      "ontologyFmaVerification": "pending_human_review",
-      "reviewStatus": "machine-derived",
-      "fma": "FMA37699",
-      "bp": "BP5564",
-      "triangles": 1588,
-      "boundsMm": {
-        "min": [
-          -216.4615,
-          -64.1021,
-          1035.2449
-        ],
-        "max": [
-          -134.1845,
-          -18.5477,
-          1300.7478
-        ]
-      }
-    },
-    {
-      "id": "bp3d:FJ1477",
-      "label": "Lateral head of right triceps brachii",
-      "system": "muscle",
-      "derivedClass": "muscle",
-      "presentationSystemClassification": "machine_derived",
-      "ontologyFmaVerification": "pending_human_review",
-      "reviewStatus": "machine-derived",
-      "fma": "FMA37697",
-      "bp": "BP5550",
-      "triangles": 2606,
-      "boundsMm": {
-        "min": [
-          -228.3113,
-          -69.01,
-          1035.9373
-        ],
-        "max": [
-          -174.4556,
-          -20.0473,
-          1292.2262
-        ]
-      }
-    },
-    {
-      "id": "bp3d:FJ1480",
-      "label": "Medial head of right triceps brachii",
-      "system": "muscle",
-      "derivedClass": "muscle",
-      "presentationSystemClassification": "machine_derived",
-      "ontologyFmaVerification": "pending_human_review",
-      "reviewStatus": "machine-derived",
-      "fma": "FMA37695",
-      "bp": "BP5562",
-      "triangles": 832,
-      "boundsMm": {
-        "min": [
-          -226.9635,
-          -71.8799,
-          1029.3177
-        ],
-        "max": [
-          -167.0341,
-          -46.1893,
-          1256.036
-        ]
-      }
-    },
-    {
-      "id": "bp3d:FJ2268",
-      "label": "Right axillary artery",
-      "system": "artery",
-      "derivedClass": "artery",
-      "presentationSystemClassification": "machine_derived",
-      "ontologyFmaVerification": "pending_human_review",
-      "reviewStatus": "machine-derived",
-      "fma": "FMA22655",
-      "bp": "BP6023",
-      "triangles": 1826,
-      "boundsMm": {
-        "min": [
-          -151.4588,
-          -106.4423,
-          1258.1034
-        ],
-        "max": [
-          -76.9194,
-          -80.0397,
-          1339.8672
-        ]
-      }
-    },
-    {
-      "id": "bp3d:FJ2303",
-      "label": "Right suprascapular artery",
-      "system": "artery",
-      "derivedClass": "artery",
-      "presentationSystemClassification": "machine_derived",
-      "ontologyFmaVerification": "pending_human_review",
-      "reviewStatus": "machine-derived",
-      "fma": "FMA10698",
-      "bp": "BP6201",
-      "triangles": 1912,
-      "boundsMm": {
-        "min": [
-          -138.1301,
-          -102.3225,
-          1291.483
-        ],
-        "max": [
-          -41.026,
-          -36.829,
-          1354.8397
-        ]
-      }
-    },
-    {
-      "id": "bp3d:FJ2273",
-      "label": "Right circumflex scapular artery",
-      "system": "artery",
-      "derivedClass": "artery",
-      "presentationSystemClassification": "machine_derived",
-      "ontologyFmaVerification": "pending_human_review",
-      "reviewStatus": "machine-derived",
-      "fma": "FMA23180",
-      "bp": "BP6244",
-      "triangles": 778,
-      "boundsMm": {
-        "min": [
-          -144.2471,
-          -86.7248,
-          1280.5399
-        ],
-        "max": [
-          -134.1089,
-          -51.1035,
-          1293.9376
-        ]
-      }
-    },
-    {
-      "id": "bp3d:FJ2284",
-      "label": "Right dorsal scapular artery",
-      "system": "artery",
-      "derivedClass": "artery",
-      "presentationSystemClassification": "machine_derived",
-      "ontologyFmaVerification": "pending_human_review",
-      "reviewStatus": "machine-derived",
-      "fma": "FMA4057",
-      "bp": "BP6211",
-      "triangles": 4446,
-      "boundsMm": {
-        "min": [
-          -106.676,
-          -97.9098,
-          1183.1539
-        ],
-        "max": [
-          -55.4433,
-          3.227,
-          1361.3301
-        ]
-      }
-    },
-    {
-      "id": "bp3d:FJ2298",
-      "label": "Right subscapular artery",
-      "system": "artery",
-      "derivedClass": "artery",
-      "presentationSystemClassification": "machine_derived",
-      "ontologyFmaVerification": "pending_human_review",
-      "reviewStatus": "machine-derived",
-      "fma": "FMA22678",
-      "bp": "BP6290",
-      "triangles": 786,
-      "boundsMm": {
-        "min": [
-          -141.9951,
-          -92.2421,
-          1279.3969
-        ],
-        "max": [
-          -128.9403,
-          -83.64,
-          1294.9031
-        ]
-      }
-    },
-    {
-      "id": "bp3d:FJ2305",
-      "label": "Right thoracodorsal artery",
-      "system": "artery",
-      "derivedClass": "artery",
-      "presentationSystemClassification": "machine_derived",
-      "ontologyFmaVerification": "pending_human_review",
-      "reviewStatus": "machine-derived",
-      "fma": "FMA66321",
-      "bp": "BP6241",
-      "triangles": 2108,
-      "boundsMm": {
-        "min": [
-          -138.9454,
-          -91.4928,
-          1200.6425
-        ],
-        "max": [
-          -128.3526,
-          -63.691,
-          1280.5452
-        ]
-      }
-    },
-    {
-      "id": "bp3d:FJ2304",
-      "label": "Trunk of right thoraco-acromial artery",
-      "system": "artery",
-      "derivedClass": "artery",
-      "presentationSystemClassification": "machine_derived",
-      "ontologyFmaVerification": "pending_human_review",
-      "reviewStatus": "machine-derived",
-      "fma": "FMA66563",
-      "bp": "BP6424",
-      "triangles": 472,
-      "boundsMm": {
-        "min": [
-          -96.5318,
-          -102.8795,
-          1318.3218
-        ],
-        "max": [
-          -91.5979,
-          -97.787,
-          1330.9282
-        ]
-      }
-    },
-    {
-      "id": "bp3d:FJ2269",
-      "label": "Right axillary vein",
-      "system": "vein",
-      "derivedClass": "vein",
-      "presentationSystemClassification": "machine_derived",
-      "ontologyFmaVerification": "pending_human_review",
-      "reviewStatus": "machine-derived",
-      "fma": "FMA13330",
-      "bp": "BP5956",
-      "triangles": 2146,
-      "boundsMm": {
-        "min": [
-          -157.2051,
-          -115.1991,
-          1232.8201
-        ],
-        "max": [
-          -74.9073,
-          -91.3449,
-          1335.1542
-        ]
-      }
-    },
-    {
-      "id": "bp3d:FJ2302",
-      "label": "Right suprascapular vein",
-      "system": "vein",
-      "derivedClass": "vein",
-      "presentationSystemClassification": "machine_derived",
-      "ontologyFmaVerification": "pending_human_review",
-      "reviewStatus": "machine-derived",
-      "fma": "FMA50859",
-      "bp": "BP5909",
-      "triangles": 1986,
-      "boundsMm": {
-        "min": [
-          -139.6572,
-          -113.8914,
-          1283.1211
-        ],
-        "max": [
-          -63.5084,
-          -51.6675,
-          1343.9717
-        ]
-      }
-    },
-    {
-      "id": "bp3d:FJ2274",
-      "label": "Right circumflex scapular vein",
-      "system": "vein",
-      "derivedClass": "vein",
-      "presentationSystemClassification": "machine_derived",
-      "ontologyFmaVerification": "pending_human_review",
-      "reviewStatus": "machine-derived",
-      "fma": "FMA77949",
-      "bp": "BP5940",
-      "triangles": 960,
-      "boundsMm": {
-        "min": [
-          -151.8714,
-          -103.0869,
-          1282.7806
-        ],
-        "max": [
-          -127.8594,
-          -52.2022,
-          1295.4214
-        ]
-      }
-    },
-    {
-      "id": "bp3d:FJ2299",
-      "label": "Right subscapular vein",
-      "system": "vein",
-      "derivedClass": "vein",
-      "presentationSystemClassification": "machine_derived",
-      "ontologyFmaVerification": "pending_human_review",
-      "reviewStatus": "machine-derived",
-      "fma": "FMA23114",
-      "bp": "BP5913",
-      "triangles": 526,
-      "boundsMm": {
-        "min": [
-          -129.8448,
-          -106.6951,
-          1292.179
-        ],
-        "max": [
-          -126.2508,
-          -100.3948,
-          1312.3151
-        ]
-      }
-    },
-    {
-      "id": "bp3d:FJ2306",
-      "label": "Right thoracodorsal vein",
-      "system": "vein",
-      "derivedClass": "vein",
-      "presentationSystemClassification": "machine_derived",
-      "ontologyFmaVerification": "pending_human_review",
-      "reviewStatus": "machine-derived",
-      "fma": "FMA71214",
-      "bp": "BP5937",
-      "triangles": 1692,
-      "boundsMm": {
-        "min": [
-          -136.0974,
-          -118.9025,
-          1193.615
-        ],
-        "max": [
-          -124.5065,
-          -100.3948,
-          1295.1746
-        ]
-      }
+      },
+      "file": "shoulder/asi-shoulder-biceps-long-head-tendon.glb"
     }
-  ],
-  "unavailableInSource": [
-    {
-      "system": "nerve",
-      "reason": "BodyParts3D 4.0 has 42 nerve meshes in the whole body and none in the shoulder: no brachial plexus, no axillary or suprascapular nerve."
-    },
-    {
-      "system": "tendon",
-      "reason": "BodyParts3D 4.0 models 8 tendons, none in the shoulder: the rotator cuff tendons are absent."
-    },
-    {
-      "system": "ligament",
-      "reason": "BodyParts3D 4.0 models 20 ligaments, none in the shoulder: the glenohumeral and coracohumeral ligaments are absent."
-    },
-    {
-      "system": "cartilage",
-      "reason": "BodyParts3D 4.0 models 51 cartilages, none in the shoulder."
-    }
-  ],
-  "provenance": {
-    "dataset": "BodyParts3D",
-    "release": "4.0 (mesh archive 2013/05, 99% polygon reduction)",
-    "archive": "isa_BP3D_4.0_obj_99.zip",
-    "archiveSha256": "40665852c49f218326590e204db91064a1ecfc3c6f8cbd7bbbcaac62c7cd409e",
-    "doi": "10.18908/lsdba.nbdc00837-000",
-    "licence": "CC-BY-4.0",
-    "licenceUrl": "https://dbarchive.biosciencedb.jp/en/bodyparts3d/lic.html",
-    "attribution": "BodyParts3D, (c) The Database Center for Life Science licensed under CC Attribution 4.0 International",
-    "retrievedAt": "2026-10-01",
-    "officialLicenseLastUpdated": "2025-02-27",
-    "ourLicenseEvidenceCheckedAt": "2026-10-05",
-    "modified": true,
-    "modification": "geometry unmodified; per-system presentation applied in the viewer; GLB re-encoded by Blender",
-    "codeLicence": "MIT (this repository's code)",
-    "assetLicence": "CC BY 4.0 (the geometry). The two are separate and must not be conflated.",
-    "fidelity": "99% polygon reduction. Approved for regional localisation, layer exploration, selection and contextual viewing. NOT approved for surgical-grade, microscopic or high-magnification insertion/origin inspection; close zoom exposes visible polygon reduction and torn boundaries."
-  }
+  ]
 }

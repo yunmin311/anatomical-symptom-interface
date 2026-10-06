@@ -11,6 +11,7 @@ export * from './provenance.ts';
 export * from './answers.ts';
 export * from './anatomy.ts';
 export * from './anatomy-manifest.ts';
+export * from './anatomy-atlas-manifest.ts';
 export * from './anatomy-representation.ts';
 export * from './anatomy-mapping.ts';
 export * from './anatomy-mapping-neck.ts';

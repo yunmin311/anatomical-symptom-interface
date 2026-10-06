@@ -1,0 +1,24 @@
+{
+  "schemaVersion": 1,
+  "purpose": "Why a system the whole-body source does carry is absent from this region. Prose, not data: the counts are derived from anatomy-system-map.json by scripts/build-atlas-manifest.mjs, so a number here would be a second source of truth. Recovered from the atlas manifest written by the viewer spike, which is the only place these gaps were ever stated.",
+  "region": "shoulder",
+  "side": "right",
+  "gaps": [
+    {
+      "system": "nerve",
+      "reason": "BodyParts3D 4.0 has 42 nerve meshes in the whole body and none in the shoulder: no brachial plexus, no axillary or suprascapular nerve."
+    },
+    {
+      "system": "tendon",
+      "reason": "BodyParts3D 4.0 models 8 tendons, none in the shoulder: the rotator cuff tendons are absent."
+    },
+    {
+      "system": "ligament",
+      "reason": "BodyParts3D 4.0 models 20 ligaments, none in the shoulder: the glenohumeral and coracohumeral ligaments are absent."
+    },
+    {
+      "system": "cartilage",
+      "reason": "BodyParts3D 4.0 models 51 cartilages, none in the shoulder."
+    }
+  ]
+}
