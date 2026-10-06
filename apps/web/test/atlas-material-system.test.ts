@@ -159,7 +159,7 @@ describe('selection is a separate state, never an anatomical colour', () => {
 
 describe('presentation record carries both review axes separately', () => {
   test('a derived structure reports machine_derived and pending verification', () => {
-    const p = presentationFor({ id: 'bp3d:FJ3368', label: 'Right humerus', system: 'bone' });
+    const p = presentationFor({ id: 'bp3d:FJ3368', label: 'Right humerus', presentationSystem: 'bone' });
     assert.equal(p.presentationSystemClassification, 'machine_derived');
     assert.equal(p.ontologyFmaVerification, 'pending_human_review');
     assert.equal(p.classificationOverridden, false);
@@ -171,7 +171,7 @@ describe('presentation record carries both review axes separately', () => {
     const p = presentationFor({
       id: 'bp3d:FJ1520',
       label: 'Ascending part of right trapezius',
-      system: 'muscle',
+      presentationSystem: 'muscle',
       derivedClass: 'UNKNOWN',
       presentationSystemClassification: 'evidence_supported',
       ontologyFmaVerification: 'pending_human_review',
@@ -188,7 +188,7 @@ describe('presentation record carries both review axes separately', () => {
   });
 
   test('UNKNOWN stays UNKNOWN rather than defaulting to a tissue', () => {
-    const p = presentationFor({ id: 'x', label: 'unknown thing', system: 'UNKNOWN' as System });
+    const p = presentationFor({ id: 'x', label: 'unknown thing', presentationSystem: 'UNKNOWN' as System });
     assert.equal(p.presentationSystemClassification, 'unknown');
   });
 });

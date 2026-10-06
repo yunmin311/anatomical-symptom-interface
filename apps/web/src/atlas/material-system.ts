@@ -264,21 +264,26 @@ export function presentationFor(
      * UNKNOWN is a real state, not a type error: a structure whose ontology
      * states no tissue keeps it, and must be drawn as unclassified rather than
      * quietly promoted into some system's material.
+     *
+     * Named `presentationSystem` in the atlas manifest because the field decides
+     * how a structure is PRESENTED, not what it is. Collapsing those two is how a
+     * presentation classification ends up being read as an ontology claim.
      */
-    system: System | 'UNKNOWN';
-    derivedClass?: string | null;
+    presentationSystem: System | 'UNKNOWN';
+    /** The machine-derived class, when a review override changed it. */
     presentationSystemClassification?: string | null;
     ontologyFmaVerification?: string | null;
   },
 ): StructurePresentation {
-  const unknown = s.system === 'UNKNOWN';
+  const unknown = s.presentationSystem === 'UNKNOWN';
   return {
     id: s.id,
     // Kept as UNKNOWN so downstream code cannot mistake it for a real system.
-    system: s.system as System,
+    system: s.presentationSystem as System,
     label: s.label,
-    colour: unknown ? UNKNOWN_COLOUR : structureColour(s.id, s.system as System),
-    classificationOverridden: Boolean(s.derivedClass && s.derivedClass !== s.system),
+    colour: unknown ? UNKNOWN_COLOUR : structureColour(s.id, s.presentationSystem as System),
+    classificationOverridden:
+      (s.presentationSystemClassification ?? 'machine_derived') !== 'machine_derived',
     presentationSystemClassification:
       s.presentationSystemClassification ?? (unknown ? 'unknown' : 'machine_derived'),
     ontologyFmaVerification: s.ontologyFmaVerification ?? 'pending_human_review',

@@ -16,6 +16,24 @@
  * A structure is whatever node the manifest names. Colour comes from the
  * manifest's `system`, which came from the reviewed anatomy-system-map. Nothing
  * is matched by name pattern, by colour, or by position.
+ *
+ * ## THIS READS THE ATLAS MANIFEST, NOT THE CANONICAL ONE
+ *
+ * The viewer loads `atlas-manifest.json`, never `generated/<region>/<side>/manifest.json`.
+ * The two are different contracts:
+ *
+ *   - the CANONICAL manifest is the domain/evidence product. One entry per `asi:*`
+ *     structure, the source mesh bound to it, its laterality, the geometry budget.
+ *     It is what the product's anatomy claims rest on, and the laterality tests
+ *     read real builds of it as evidence.
+ *   - the ATLAS manifest is the presentation product. It carries every mesh the
+ *     viewer can draw, including the 33 that have no `asi:*` id at all.
+ *
+ * An earlier version of this viewer wrote its own manifest over the canonical
+ * path, which destroyed the canonical file and broke those tests. The split is
+ * now enforced by `scripts/build-atlas-manifest.mjs`, which refuses to write into
+ * the canonical tree, and by a test that checks this file never fetches the
+ * canonical path.
  */
 
 import * as THREE from 'three';
@@ -33,26 +51,62 @@ import { CAMERA_PRESETS, normalize, type PresetName } from './camera-presets.ts'
 import type { AtlasState } from './atlas-state.ts';
 import { deriveContext, type ContextClass, type ContextInput } from './context.ts';
 
+/** The atlas manifest's per-structure shape, as far as the renderer uses it. */
 export interface ManifestStructure {
   id: string;
   label: string;
-  system: System;
-  derivedClass?: string | null;
+  sourceMeshName: string;
+  laterality: 'left' | 'right' | 'midline';
+  /** The system the viewer colours and layers by. */
+  presentationSystem: System;
   presentationSystemClassification?: string | null;
   ontologyFmaVerification?: string | null;
-  fma?: string | null;
+  fma?: { conceptId: string | null; status: string } | null;
   bp?: string | null;
   triangles?: number;
-  boundsMm?: { min: [number, number, number]; max: [number, number, number] } | null;
+  /**
+   * The crosswalk. A structure with `canonicalAsiId: null` may be displayed,
+   * searched, hovered, isolated and hidden, but it is NOT legal to write into a
+   * SymptomRecord. The renderer never persists anything, so it only needs to know
+   * the id for display; the flag is what any future selection-to-record path must
+   * check.
+   */
+  canonicalAsiId?: string | null;
+  symptomRecordSelectable?: boolean;
+  /**
+   * Source-space bounds, in millimetres, plus the same box in render metres.
+   *
+   * `boundsMm` is gone rather than kept alongside: the Atlas contract states its
+   * units explicitly in `coordinateSystem`, and a field named `boundsMm` beside a
+   * document that also declares `renderUnits` is how two unit systems get mixed up
+   * in the first place. The selective-context code below reads this instead, which
+   * is the correct direction -- the consumer adapts to the contract, not the other
+   * way round. Relative-neighbour classification only needs relative distances, and
+   * millimetres are perfectly good at that.
+   */
+  sourceBounds?: {
+    min: [number, number, number];
+    max: [number, number, number];
+    renderMin: [number, number, number];
+    renderMax: [number, number, number];
+  } | null;
 }
 
 export interface AtlasManifest {
   schemaVersion: number;
-  units: string;
-  shoulder: { file: string; objects: number; triangles: number; bytes: number };
+  region: string;
+  side: string;
+  coordinateSystem: {
+    sourceUnits: string;
+    renderUnits: string;
+    sourceToRenderScale: number;
+    glTFYUp: boolean;
+    sourceAxes: Record<string, string>;
+  };
+  atlas: { file: string; objects: number; triangles: number; bytes: number };
   bodyContext: { file: string; objects: number; triangles: number; bytes: number };
   structures: ManifestStructure[];
-  unavailableInSource: Array<{ system: string; reason: string }>;
+  unavailableInSource: Array<{ system: string; reason: string; wholeBodySourceCount: number }>;
   provenance: Record<string, string>;
 }
 
@@ -166,17 +220,30 @@ export class AtlasScene {
 
   async load(): Promise<void> {
     const loader = new GLTFLoader();
-    const manifest = (await fetch(`${this.opts.assetRoot}manifest.json`).then((r) => {
-      if (!r.ok) throw new Error(`manifest ${r.status}`);
+
+    // The ATLAS manifest, by name. Never `manifest.json`: that filename in this
+    // directory is the canonical asset contract and the viewer has no business
+    // reading it.
+    const manifest = (await fetch(`${this.opts.assetRoot}atlas-manifest.json`).then((r) => {
+      if (!r.ok) throw new Error(`atlas manifest ${r.status}`);
       return r.json();
     })) as AtlasManifest;
+
+    // The axis convention is provenance, not decoration. An importer once rotated
+    // the body silently and every camera preset became confidently wrong, so a
+    // manifest that does not declare the convention it was exported under is
+    // rejected rather than guessed at.
+    if (manifest.coordinateSystem?.glTFYUp !== true) {
+      throw new Error('atlas manifest does not declare glTFYUp; refusing to guess the orientation');
+    }
+
     this.manifest = manifest;
 
     for (const s of manifest.structures) {
       this.presentations.set(s.id, presentationFor(s as never));
     }
 
-    const atlas = await loader.loadAsync(`${this.opts.assetRoot}${manifest.shoulder.file}`);
+    const atlas = await loader.loadAsync(`${this.opts.assetRoot}${manifest.atlas.file}`);
     this.adopt(atlas.scene);
 
     // The body context is optional. If it fails to load the shoulder is still
@@ -314,7 +381,11 @@ export class AtlasScene {
     const contextInputs: ContextInput[] = [...this.nodes.keys()].map((id) => {
       const p = this.presentations.get(id);
       const s = this.manifest?.structures.find((m) => m.id === id);
-      const b = s?.boundsMm;
+      // `sourceBounds`, not the old `boundsMm`. Same millimetre numbers, same tuple
+      // shape, so the conversion below is unchanged -- but the name now matches the
+      // Atlas contract, and a context shell with no bounds still yields null so it
+      // falls back to system-class context rather than a bogus zero-sized box.
+      const b = s?.sourceBounds;
       return {
         id,
         system: (p?.system ?? 'organ') as System,

@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs';
 
-const p = 'E:/1project/asi-atlas-v2/apps/web/public/anatomy/shoulder/right/shoulder-atlas.glb';
+const p = 'E:/1project/asi-atlas-v2/apps/web/public/anatomy/atlas/shoulder/right/shoulder-atlas.glb';
 const buf = readFileSync(p);
 if (buf.subarray(0, 4).toString() !== 'glTF') {
   console.log('not a glb');
