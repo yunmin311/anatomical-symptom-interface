@@ -305,11 +305,66 @@ const overflow = (page) =>
   await snap(page, '1440-front');
 
   /* --- whole body context -------------------------------------------- */
+  //
+  // STATE RESET FIRST, AND THIS IS THE WHOLE FIX.
+  //
+  // This check used to inherit the supraspinatus selection from the search step
+  // twenty-odd checks earlier, because nothing between them ever cleared it. That
+  // is correct VIEWER behaviour and a broken TEST: a selected structure drives the
+  // whole-body shell down to 0.035 so it stops competing with the thing being
+  // looked at. So the check was measuring a deliberately subdued shell and then
+  // reporting 1358 lit pixels against a `> 3000` threshold written for the default.
+  //
+  // The threshold was never wrong. The state was. Measured clean, the shell sits at
+  // 0.30 and this passes on the existing `> 3000` -- unchanged, on purpose.
+  //
+  // Reset to what a person lands in when they open the viewer: nothing selected,
+  // Explore mode, every system on, full opacity.
+  const allLayerBoxes = page.locator('.atlas__layers:not(.atlas__layers--absent) li input[type=checkbox]');
+  await page.locator('.atlas__selected').getByRole('button', { name: 'Clear' }).click().catch(() => {});
+  await page.locator('.atlas__row--modes .atlas__btn', { hasText: 'Explore' }).click();
+  for (let i = await allLayerBoxes.count(); i--; ) {
+    if (!(await allLayerBoxes.nth(i).isChecked())) await allLayerBoxes.nth(i).check();
+  }
+  await page.getByLabel('Opacity').fill('100');
+  await page.waitForTimeout(1400);
+
+  // Assert the reset actually took, so a future UI change cannot make this check
+  // quietly measure something else again.
+  const selectedBeforeBody = await page.locator('.atlas__selected').count();
+  check('whole body: the measurement state is clean (nothing selected)', selectedBeforeBody === 0,
+    `${selectedBeforeBody} selection panel(s) still present`);
+  check('whole body: the measurement state is Explore mode',
+    /explore/i.test(await page.locator('.atlas__row--modes .atlas__btn.is-on').innerText()),
+    `mode=${await page.locator('.atlas__row--modes .atlas__btn.is-on').innerText()}`);
+
   await page.getByRole('button', { name: 'Whole body' }).click();
   await page.waitForTimeout(2600);
   const sBody = await frameStats(page);
   check('whole body: context is drawn', sBody.lit > 3000, `${sBody.lit} lit pixels`);
   await snap(page, '1440-whole-body');
+
+  /* --- selected + whole body: present but subdued -------------------- */
+  //
+  // The half of the behaviour that actually regressed, and the half a single
+  // default-state check cannot see. With something selected the shell must still be
+  // THERE -- a future change that deleted it, or faded it to nothing, would sail
+  // past the check above as long as the unselected state stayed loud.
+  //
+  // So: present, and quieter than the default. Both halves matter.
+  await page.getByLabel('Search anatomical structures').fill('supraspinatus');
+  await page.waitForSelector('.atlas__result', { timeout: 10000 });
+  await page.locator('.atlas__result').first().click();
+  await page.waitForTimeout(1800);
+  const sBodySel = await frameStats(page);
+  check('whole body with a selection: the context shell is still present', sBodySel.lit > 300,
+    `${sBodySel.lit} lit pixels`);
+  check('whole body with a selection: it is intentionally quieter than the default',
+    sBodySel.lit < sBody.lit,
+    `selected ${sBodySel.lit} vs default ${sBody.lit}`);
+  await snap(page, '1440-whole-body-selected');
+
+  await page.locator('.atlas__selected').getByRole('button', { name: 'Clear' }).click().catch(() => {});
   await page.getByRole('button', { name: 'Shoulder', exact: true }).click();
   await page.waitForTimeout(2200);
 

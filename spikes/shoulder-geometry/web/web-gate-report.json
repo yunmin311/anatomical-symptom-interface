@@ -1,28 +1,28 @@
 {
   "url": "http://localhost:5199/atlas.html",
-  "when": "2026-10-06T02:29:13.858Z",
-  "total": 50,
+  "when": "2026-10-06T06:03:17.087Z",
+  "total": 54,
   "failed": 0,
   "results": [
     {
       "name": "1440: model is drawn on the canvas",
       "ok": true,
-      "detail": "19712 lit pixels, 92 colour buckets"
+      "detail": "6912 lit pixels, 100 colour buckets"
     },
     {
       "name": "1440: more than one colour present (not a grey blob)",
       "ok": true,
-      "detail": "92 buckets"
+      "detail": "100 buckets"
     },
     {
       "name": "1440: FIRST untouched frame already carries the muscle material",
       "ok": true,
-      "detail": "2801 muscle-family pixels before any interaction"
+      "detail": "2641 muscle-family pixels before any interaction"
     },
     {
       "name": "1440: FIRST untouched frame is not the glTF default white",
       "ok": true,
-      "detail": "signature 1039518089"
+      "detail": "signature 2276753463"
     },
     {
       "name": "1440: no console errors on load",
@@ -72,42 +72,42 @@
     {
       "name": "isolate: the model is still drawn",
       "ok": true,
-      "detail": "33622 lit pixels"
+      "detail": "20351 lit pixels"
     },
     {
       "name": "solo: draws fewer pixels than isolate (context removed)",
       "ok": true,
-      "detail": "solo 33574 vs isolate 33622"
+      "detail": "solo 2771 vs isolate 20351"
     },
     {
       "name": "hide: hiding the selected structure changes the render",
       "ok": true,
-      "detail": "sig 2946996578 -> 4093489047, lit 33641 -> 33641"
+      "detail": "sig 3220757370 -> 125340755, lit 31189 -> 31198"
     },
     {
       "name": "layers: switching bone off visibly changes the anatomy",
       "ok": true,
-      "detail": "sig 2946996578 -> 2474559792, lit 33641"
+      "detail": "sig 3220757370 -> 69195459, lit 31140"
     },
     {
       "name": "layers: switching muscle off visibly changes the anatomy",
       "ok": true,
-      "detail": "sig 1392988156 -> 58712785"
+      "detail": "sig 2138842269 -> 547374114"
     },
     {
       "name": "layers: muscle-coloured pixels disappear when muscle is off",
       "ok": true,
-      "detail": "muscle pixels 18603 -> 73"
+      "detail": "muscle pixels 20543 -> 20"
     },
     {
       "name": "opacity: the slider changes the render",
       "ok": true,
-      "detail": "at 30% the canvas still reports 33632 lit pixels"
+      "detail": "at 30% the canvas still reports 31075 lit pixels"
     },
     {
       "name": "vascular: artery+vein only still renders",
       "ok": true,
-      "detail": "33574 lit pixels"
+      "detail": "5082 lit pixels"
     },
     {
       "name": "camera: Front reports the anterior direction",
@@ -135,14 +135,34 @@
       "detail": "{\"Front\":\"A / level / level\",\"Back\":\"P / level / level\",\"Left\":\"L / L / level\",\"Right\":\"R / R / level\"}"
     },
     {
+      "name": "whole body: the measurement state is clean (nothing selected)",
+      "ok": true,
+      "detail": "0 selection panel(s) still present"
+    },
+    {
+      "name": "whole body: the measurement state is Explore mode",
+      "ok": true,
+      "detail": "mode=Explore"
+    },
+    {
       "name": "whole body: context is drawn",
       "ok": true,
-      "detail": "6741 lit pixels"
+      "detail": "7377 lit pixels"
+    },
+    {
+      "name": "whole body with a selection: the context shell is still present",
+      "ok": true,
+      "detail": "2755 lit pixels"
+    },
+    {
+      "name": "whole body with a selection: it is intentionally quieter than the default",
+      "ok": true,
+      "detail": "selected 2755 vs default 7377"
     },
     {
       "name": "section: clipping changes the render",
       "ok": true,
-      "detail": "section lit pixels 4501"
+      "detail": "section lit pixels 1160"
     },
     {
       "name": "section: it is not described as a CT or MRI slice",
@@ -177,12 +197,12 @@
     {
       "name": "768: model is drawn",
       "ok": true,
-      "detail": "23238 lit pixels"
+      "detail": "8326 lit pixels"
     },
     {
       "name": "768: FIRST untouched frame already carries the muscle material",
       "ok": true,
-      "detail": "3377 muscle-family pixels before any interaction"
+      "detail": "3217 muscle-family pixels before any interaction"
     },
     {
       "name": "768: no horizontal overflow",
@@ -217,12 +237,12 @@
     {
       "name": "375: model is drawn",
       "ok": true,
-      "detail": "46886 lit pixels"
+      "detail": "21459 lit pixels"
     },
     {
       "name": "375: FIRST untouched frame already carries the muscle material",
       "ok": true,
-      "detail": "9020 muscle-family pixels before any interaction"
+      "detail": "8615 muscle-family pixels before any interaction"
     },
     {
       "name": "375: no horizontal overflow",

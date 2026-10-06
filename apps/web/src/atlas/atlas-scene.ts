@@ -426,6 +426,8 @@ export class AtlasScene {
       std.emissiveIntensity = cls === 'selected' ? 0.55 : 0;
     }
 
+    this.lastState = state;
+    this.lastContextClasses = classes;
     this.bodyOpacity = this.bodyOpacityFor(state, classes.get(state.selectedId ?? ''));
     this.applyBodyOpacity();
     this.applyClipping(this.section);
@@ -450,8 +452,44 @@ export class AtlasScene {
   private bodyOpacity = 0.16;
   private framing: 'body' | 'region' = 'region';
 
+  /**
+   * The last state pushed in, so the shell can be re-evaluated when something
+   * OTHER than state changes.
+   *
+   * This exists because of a real bug. The shell's opacity depends on the framing,
+   * and the framing is changed by `frameBody` / `frameRegion` rather than by
+   * `applyState`. React ran the two effects in the wrong order relative to each
+   * other, so clicking "Whole body" moved the camera and set the framing but never
+   * re-ran `applyState` -- leaving the shell at the SHOULDER opacity of 0.055 while
+   * the body filled the frame. The atlas gate caught it as "whole body: context is
+   * drawn, 1393 lit pixels" against a threshold of 3000.
+   *
+   * The tempting fix is to lower that threshold. It would have made the gate green
+   * while leaving the shell six times too faint in the one framing where it is the
+   * subject, so the shell would have been effectively invisible to a person opening
+   * the viewer.
+   *
+   * The scene is now self-consistent instead: anything that changes the framing
+   * re-applies the shell itself, and no longer depends on a React effect happening
+   * to run in the right order.
+   */
+  private lastState: AtlasState | null = null;
+
+  /** Re-derive the shell opacity from the current framing and last known state. */
+  private refreshBodyOpacity(): void {
+    if (!this.lastState) return;
+    const selectedId = this.lastState.selectedId;
+    const selectedClass =
+      selectedId && this.lastContextClasses ? this.lastContextClasses.get(selectedId) : undefined;
+    this.bodyOpacity = this.bodyOpacityFor(this.lastState, selectedClass);
+    this.applyBodyOpacity();
+  }
+
+  private lastContextClasses: Map<string, ContextClass> | null = null;
+
   setFraming(framing: 'body' | 'region'): void {
     this.framing = framing;
+    this.refreshBodyOpacity();
   }
 
   private applyBodyOpacity(): void {
@@ -507,13 +545,13 @@ export class AtlasScene {
 
   /** Frame the whole body. The viewer must never open on a floating shoulder. */
   frameBody(): void {
-    this.framing = 'body';
+    this.setFraming('body');
     this.flyTo(new THREE.Vector3(0, 0, 0), this.bodyRadius * 2.1, 'front');
   }
 
   /** Frame the shoulder region. */
   frameRegion(preset: PresetName = 'front'): void {
-    this.framing = 'region';
+    this.setFraming('region');
     this.flyTo(this.regionCentre.clone(), this.regionRadius * 2.6, preset);
   }
 
