@@ -57,7 +57,10 @@ describe('a raw BodyParts3D id is never a persistable structure id', () => {
 
   it('accepts a canonical asi id that resolves', () => {
     const scapula = structures.find((s) => s.canonicalAsiId === 'asi:shoulder.scapula');
-    assert.ok(scapula, 'expected the scapula to be in the atlas manifest');
+    // Narrowed with the optional chain, not just asserted. `assert.ok(scapula)` tells
+    // the reader the fixture is right; it does not narrow `scapula.canonicalAsiId`,
+    // which is `string | null`, so the call on the next line stayed a type error.
+    assert.ok(scapula?.canonicalAsiId, 'expected the scapula to be in the atlas manifest');
     assert.equal(assertCanonicalStructureId(scapula.canonicalAsiId), 'asi:shoulder.scapula');
   });
 
