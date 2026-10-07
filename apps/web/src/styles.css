@@ -577,6 +577,49 @@ details > p {
   justify-content: center;
   align-items: center;
 }
+
+/*
+  The derived anatomy map takes over the stage, where the silhouette is contained
+  within it.
+
+  It is given the full canvas box and lets the image size itself inside that,
+  rather than being centred as a fixed-width figure. Containing a square render
+  inside a wide stage leaves it at the stage's HEIGHT, which on a 1440 viewport is
+  a small figure marooned in empty grey -- the exact problem the bounded bench
+  exists to avoid, reappearing inside the panel.
+
+  `--canvas-min-height` keeps the same floor the silhouette had, so switching
+  surfaces never collapses the stage.
+*/
+.viewer-canvas:has(.derived2d) {
+  display: block;
+  overflow: hidden;
+  /*
+    Both a floor and a ceiling, on the viewport.
+
+    The floor is the silhouette's. The ceiling is new: an unclamped stage grew to
+    fill the grid row, which put the bottom third of the shoulder below the fold at
+    1440x1000 -- so the map was nominally the largest thing on screen while the part
+    a person is looking at needed a scroll. Bounded by the viewport, the render is
+    as large as it can be while staying visible.
+  */
+  min-height: clamp(300px, 38vh, 460px);
+  /*
+    The ceiling leaves room for what is ABOVE the map on this screen: the
+    orientation band, the breadcrumb and the page heading together put the top of
+    the stage near the middle of a 1000px viewport. Bounding the stage alone still
+    put its bottom edge below the fold, so the cap is on the space the stage may
+    occupy rather than on its height -- which is what actually decides whether the
+    anatomy is visible without scrolling.
+  */
+  max-height: min(46vh, 460px);
+}
+
+.viewer-canvas:has(.derived2d) > .derived2d {
+  position: absolute;
+  inset: 0;
+  height: 100%;
+}
 .bodymap__svg {
   /* The body scales with the stage instead of a fixed 440px, so the silhouette
      reads as the dominant object. The 100/186 ratio matches the viewBox. */
@@ -645,6 +688,137 @@ details > p {
   font-size: 12px;
   max-width: 440px;
 }
+/* ------------------------------------------------------------------ *
+ * The derived anatomy map.
+ *
+ * The first 2D surface in the product that can indicate a STRUCTURE.
+ * ------------------------------------------------------------------ */
+
+.derived2d {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  height: 100%;
+  min-height: 0;
+}
+
+.derived2d__controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.derived2d__layer {
+  flex: 1 1 auto;
+  /*
+    WCAG 2.5.5 target size. These are the only controls on a phone for changing
+    what tissue is on screen, and a denser row would have fitted four across and
+    left the outer two under the thumb.
+  */
+  min-height: var(--touch-target);
+  padding: var(--space-2) var(--space-3);
+  font: var(--type-label);
+  color: var(--ink);
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  cursor: pointer;
+}
+
+.derived2d__layer.is-on {
+  color: var(--surface);
+  background: var(--accent);
+  border-color: var(--accent);
+}
+
+.derived2d__stage {
+  flex: 1 1 auto;
+  min-height: 0;
+  position: relative;
+  background: var(--canvas);
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+
+.derived2d__image {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  cursor: crosshair;
+}
+
+.derived2d__image img {
+  /*
+    The largest square that fits the stage.
+
+    Bounded in VIEWPORT units on the height axis, not in `max-height: 100%`. A
+    percentage height needs a definite ancestor height, and this one resolves
+    through an absolutely-positioned stage inside a flex row inside a capped grid
+    cell -- so `100%` silently resolved against nothing and the image laid out at
+    its natural 640px, overflowing a 520px stage and putting the bottom of the
+    shoulder below the fold. Viewport units have no such dependency.
+  */
+  width: auto;
+  height: auto;
+  max-width: 100%;
+  max-height: min(46vh, 460px);
+  object-fit: contain;
+  /* The renders are on transparent, so they sit on the dark stage rather than on
+     a white plate inside it, which would break the read that this is a model
+     being looked at rather than a diagram. */
+  background: transparent;
+}
+
+/*
+  The hover marker is a caption following the pointer, not a ring drawn over the
+  structure. A pixel-exact ring would be a claim about precision the data does not
+  support: the grid is 160x200 over a whole-body silhouette cropped to a shoulder,
+  so a hit map resolves a cell, not a point. Naming the structure is the honest
+  version and it is the more useful one.
+*/
+.derived2d__hovercaption {
+  position: absolute;
+  left: var(--space-3);
+  bottom: var(--space-3);
+  padding: var(--space-1) var(--space-2);
+  font: var(--type-meta);
+  color: var(--canvas-ink);
+  background: rgb(14 15 17 / 82%);
+  border-radius: var(--radius);
+  pointer-events: none;
+  line-height: 1.4;
+}
+
+.derived2d__truth,
+.derived2d__fallback {
+  margin: 0;
+  color: var(--muted);
+}
+
+.derived2d__detail {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-3);
+  background: var(--accent-soft);
+  border-radius: var(--radius);
+  /*
+    Scrolls rather than being clipped when its explanation is longer than the space
+    left for it. The view-only wording is deliberately full -- it is the sentence
+    that stops a person wondering why a real structure cannot be saved -- so it
+    must never be the thing that gets cut off.
+  */
+  max-height: 9rem;
+  overflow-y: auto;
+  flex: 0 1 auto;
+}
+
+.derived2d__name {
+  margin: 0;
+  font: var(--type-group);
+}
+
 .map-legend {
   display: flex;
   gap: 20px;

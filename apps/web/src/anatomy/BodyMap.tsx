@@ -1,9 +1,17 @@
 import { useMemo, useState } from 'react';
-import { getStructure, REGIONS, TISSUE_LAYER_ORDER } from '@asi/shared';
-import type { Depth, Side, TissueLayer } from '@asi/shared';
+import {
+  getStructure,
+  REGIONS,
+  showcaseNote,
+  TISSUE_LAYER_ORDER,
+  isShowcaseRegion,
+} from '@asi/shared';
+import type { BodyRegion, Depth, Side, TissueLayer } from '@asi/shared';
+import type { DerivedViewName } from '@asi/shared';
 import { anatomy, useSession } from '../state/session.ts';
 import { intentFromPick, reducePickToDraft } from './pick-intent.ts';
 import type { MapPoint, PickResult } from './types.ts';
+import { Derived2dShoulderMap } from './Derived2dShoulderMap.tsx';
 import {
   VIEW_H,
   VIEW_W,
@@ -22,7 +30,32 @@ import type { ViewName } from './types.ts';
 import { ChoiceGroup } from '../ui/primitives.tsx';
 
 type Inspector = 'area' | 'structures';
-type Surface = '3d' | '2d';
+type Surface = '3d' | '2d' | 'anatomy2d';
+
+/**
+ * Which product surface the workspace is showing.
+ *
+ * `2d` is the hand-authored body silhouette. `anatomy2d` is the derived
+ * orthographic shoulder map. They are separate because they answer different
+ * questions and neither replaces the other:
+ *
+ *   2d        where on the BODY -- an area, on a whole figure
+ *   anatomy2d what STRUCTURE -- the shoulder itself, with tissue layers
+ *
+ * `anatomy2d` is only offered for the showcase region, because derived views only
+ * exist where geometry was derived. Offering a body silhouette and calling it the
+ * anatomy view would be the dishonest version of this, and it is what the product
+ * used to do.
+ */
+const ANATOMY2D_REGION: BodyRegion = 'shoulder';
+
+/** Map the product's view vocabulary onto the derived renderer's. */
+const DERIVED_VIEW: Partial<Record<ViewName, DerivedViewName>> = {
+  anterior: 'front',
+  posterior: 'back',
+  lateral_left: 'left',
+  lateral_right: 'right',
+};
 
 const VIEW_OPTIONS: { value: ViewName; label: string }[] = [
   { value: 'anterior', label: 'Front' },
@@ -125,8 +158,22 @@ export function BodyMap() {
    * for 3D is exactly how both surfaces end up hidden at once.
    */
   const [threeDReady, setThreeDReady] = useState(false);
-  const showThreeD = surface === '3d' && threeDReady;
   const [announced, setAnnounced] = useState('');
+  /**
+   * Whether the showcase region's derived anatomy map is available at all.
+   *
+   * Checked from the region rather than the viewport, so it is a property of what
+   * was built instead of a screen-size guess. A frozen region simply has no
+   * derived views, and the toggle is not offered rather than offered and failing.
+   */
+  const hasDerivedViews = location.region === ANATOMY2D_REGION;
+  const derivedView: DerivedViewName = DERIVED_VIEW[view] ?? 'front';
+
+  const showThreeD = surface === '3d' && threeDReady;
+  /** The derived anatomy map, when it is the requested surface and has views. */
+  const showDerived = surface === 'anatomy2d' && hasDerivedViews;
+  /** The hand-authored body silhouette: the area picker, and every fallback. */
+  const showSchematic = !showThreeD && !showDerived;
 
   const candidates = record.consideredStructures;
   const selected = location.userSelectedStructureIds;
@@ -310,14 +357,22 @@ export function BodyMap() {
                 value={surface}
                 options={[
                   { value: '3d', label: '3D' },
-                  { value: '2d', label: '2D map' },
+                  // The derived anatomy map is offered only where it exists. A
+                  // toggle that is present and then fails is worse than one that
+                  // is not there.
+                  ...(hasDerivedViews
+                    ? [{ value: 'anatomy2d' as const, label: 'Anatomy maps' }]
+                    : []),
+                  { value: '2d', label: 'Body map' },
                 ]}
                 onChange={(next) => {
                   setSurface(next);
                   setAnnounced(
                     next === '3d'
-                      ? 'Showing the 3D viewer. The 2D map is always available.'
-                      : 'Showing the 2D body map.',
+                      ? 'Showing the 3D viewer. The other maps are always available.'
+                      : next === 'anatomy2d'
+                        ? 'Showing the anatomy maps. You can switch layers and tap a structure.'
+                        : 'Showing the body map, for choosing an area.',
                   );
                 }}
               />
@@ -333,11 +388,11 @@ export function BodyMap() {
               which is the one thing the product's strongest asset is not.
             */}
             <p className="viewer-toolbar__label" data-testid="surface-label">
-              {showThreeD ? 'Real 3D anatomy' : 'Schematic 2D map'}
+              {showThreeD ? 'Real 3D anatomy' : showDerived ? 'Anatomy maps · BodyParts3D' : 'Body map'}
             </p>
           </div>
           <div className="viewer-canvas">
-            <div className="viewer-caption" hidden={showThreeD}>
+            <div className="viewer-caption" hidden={showThreeD || showDerived}>
               <span className="eyebrow">Schematic</span>
               <strong>{region.label}</strong>
               <span>{VIEW_LABEL[view]}</span>
@@ -361,13 +416,29 @@ export function BodyMap() {
               }}
             />
             {/*
-              The 2D map stays mounted even when 3D has the surface, so a context
-              loss has something to fall back to and the region controls never
-              depend on a canvas being alive.
+              THE DERIVED ANATOMY MAP. Real BodyParts3D orthographic renders with a
+              hit grid, so a tap in 2D resolves to the same structure a click in 3D
+              does. This is the first 2D surface in the product that can indicate a
+              STRUCTURE; the schematic below can only indicate an area.
+            */}
+            {showDerived && (
+              <Derived2dShoulderMap
+                view={derivedView}
+                selectedCanonicalIds={selected}
+                onAnnounce={setAnnounced}
+                onSelect={({ canonicalAsiId }) => {
+                  if (canonicalAsiId) select(canonicalAsiId);
+                }}
+              />
+            )}
+            {/*
+              The body map stays mounted even when another surface has it, so a
+              context loss has something to fall back to and the region controls
+              never depend on a canvas being alive.
             */}
             <svg
               viewBox={`0 0 ${VIEW_W} ${VIEW_H}`}
-              className={`bodymap__svg${showThreeD ? ' is-hidden' : ''}`}
+              className={`bodymap__svg${showThreeD || showDerived ? ' is-hidden' : ''}`}
               data-testid="bodymap-2d"
               role="img"
               aria-hidden={showThreeD ? 'true' : undefined}
@@ -422,11 +493,18 @@ export function BodyMap() {
               up — the one surface where a tap on real geometry is how a structure
               is chosen, and where there is no zone to tap near.
             */}
-            <span className="canvas-instruction">
-              {showThreeD
-                ? 'Tap a structure to indicate where you mean. The area buttons below always work.'
-                : 'Tap near an area, or use the buttons. A pin marks an approximate point.'}
-            </span>
+            {/*
+              Hidden on the derived map, which carries its own truth line. Both
+              would sit at the bottom of the same stage and overlap, and the
+              derived map's version is the one that names what it actually is.
+            */}
+            {!showDerived && (
+              <span className="canvas-instruction">
+                {showThreeD
+                  ? 'Tap a structure to indicate where you mean. The area buttons below always work.'
+                  : 'Tap near an area, or use the buttons. A pin marks an approximate point.'}
+              </span>
+            )}
           </div>
           <p className="sr-only" role="status">
             {announced}
@@ -436,7 +514,7 @@ export function BodyMap() {
               The legend describes the 2D map's marks. Above a 3D viewer it was
               describing marks that are not on screen, so it is 2D-only now.
             */}
-            {!showThreeD && (
+            {!showThreeD && !showDerived && (
               <ul className="map-legend" aria-label="Map legend">
                 <li>
                   <span className="legend-mark legend-mark--candidate" />
@@ -470,6 +548,12 @@ export function BodyMap() {
                 <>
                   Real anatomy geometry, shown for orientation. Indicating a
                   structure says where you mean — never what is involved.
+                </>
+              ) : showDerived ? (
+                <>
+                  Real anatomy, rendered from BodyParts3D and labelled in plain
+                  language. Indicating a structure says where you mean — never
+                  what is involved.
                 </>
               ) : (
                 <>
