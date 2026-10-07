@@ -1,6 +1,6 @@
 import { z } from 'zod';
 
-import { getStructure, REGIONS, type BodyRegion } from './anatomy.ts';
+import { getStructure, type BodyRegion } from './anatomy.ts';
 
 /**
  * THE ATLAS -> DOMAIN CROSSWALK.
@@ -28,6 +28,13 @@ import { getStructure, REGIONS, type BodyRegion } from './anatomy.ts';
  * atlas structure into something the record can hold. If a future code path
  * needs that conversion, it calls this, and a view-only structure simply has no
  * result. There is no second place to get it wrong.
+ *
+ * WHAT THIS MODULE DOES NOT DO
+ *
+ * It is translation, not admission control. Whether a canonical id may be written
+ * to a particular record is a domain question answered by `resolveStructureIdForWrite`
+ * and `canonicalIdentityForWrite` in `anatomy.ts`, and this module does not restate
+ * either. It once did -- see the note further down.
  */
 
 /** The view-only case, made explicit rather than returned as null. */
@@ -141,53 +148,44 @@ export function buildSelectableIndex(
   return { all, writable, toCanonical };
 }
 
-/**
- * A guard for write paths that receive an id of unknown provenance.
+/* ------------------------------------------------------------------ *
+ * NO WRITE GUARD LIVES HERE.                                          *
+ * ------------------------------------------------------------------ *
  *
- * `location.userSelectedStructureIds` is a set of canonical ids. If a raw
- * BodyParts3D id ever reaches a mutation -- a copy-paste, a bad bridge, a
- * regression in the viewer -- this is the function that refuses it, and it
- * refuses on the PREFIX as well as on resolution, so a well-formed-looking id
- * that happens not to resolve cannot slip through either.
- */
-/**
- * Which region owns a canonical structure.
+ * There used to be an `assertCanonicalStructureId` in this file, documented as the
+ * thing that refuses a raw `bp3d:` id on the way into a mutation. It is deleted, and
+ * the deletion is the interesting part.
  *
- * A `Structure` carries no region of its own -- it belongs to whichever
- * `SubRegion` holds it -- so this is a lookup rather than a field read. Asking for
- * the region instead of inferring it from the id prefix is deliberate: the two
- * spellings differ for some regions, and a structure that is not in any region
- * must report that rather than have a region guessed from its own name.
+ * IT WAS NOT THE GUARD. `resolveStructureIdForWrite` and `canonicalIdentityForWrite`
+ * in `anatomy.ts` are, and they already refuse every raw BodyParts3D id -- not by
+ * checking the prefix, but because `bp3d:FJ1506` is not in the ontology and the
+ * domain refuses anything it does not know. A better mechanism by accident: the
+ * guard the product actually has does not know what BodyParts3D is, so it cannot
+ * drift out of step with a new foreign id scheme. Verified before removing anything.
+ *
+ * IT WAS ALSO WRONG. It took an optional `region` and, when given one, refused a
+ * canonical id belonging to another region -- computed by `regionOfStructure`, which
+ * scanned the regions and returned the FIRST one containing the id. But a structure
+ * may legitimately belong to two: `asi:shoulder.trapezius-upper` is in both the
+ * shoulder and the neck ontology, which `regionsForStructure` reports and which
+ * `structureBelongsToRegion` answers. So the guard threw
+ *
+ *   "asi:shoulder.trapezius-upper" belongs to shoulder, not neck; a neck record
+ *   cannot hold it
+ *
+ * for a structure that a neck record CAN hold, and which grounding is specifically
+ * built to propose for a neck complaint. It was one region short of the domain's own
+ * rule, and nothing caught it because nothing called it in production -- the tests
+ * exercised the function directly, which is precisely how a wrong function stays
+ * wrong.
+ *
+ * The rule it was half-implementing is not lost. Region membership is a domain
+ * question with a domain answer, `structureBelongsToRegion`, and it is enforced where
+ * a region is actually known: grounding candidates, the orchestrator's region filter,
+ * and the interview engine. This module is presentation translation. It maps an Atlas
+ * id to a canonical id or says view-only, and it has no opinion about which record
+ * an id may end up in.
  */
-export function regionOfStructure(id: string): BodyRegion | undefined {
-  for (const [region, definition] of Object.entries(REGIONS) as [BodyRegion, (typeof REGIONS)[BodyRegion]][]) {
-    if (definition.subRegions.some((sub) => sub.structures.some((s) => s.id === id))) return region;
-  }
-  return undefined;
-}
-
-export function assertCanonicalStructureId(id: string, region?: BodyRegion): string {
-  if (id.startsWith('bp3d:')) {
-    throw new Error(
-      `refusing to persist a raw BodyParts3D id ("${id}") as a SymptomRecord structure id. ` +
-        'Atlas structures are view-only unless the crosswalk maps them to a canonical asi:* id; ' +
-        'use resolveAtlasSelection.',
-    );
-  }
-  const structure = getStructure(id);
-  if (!structure) {
-    throw new Error(`"${id}" is not a structure the domain knows, so it cannot be recorded`);
-  }
-  if (region) {
-    const owner = regionOfStructure(id);
-    if (owner !== region) {
-      throw new Error(
-        `"${id}" belongs to ${owner ?? 'no region'}, not ${region}; a ${region} record cannot hold it`,
-      );
-    }
-  }
-  return id;
-}
 
 /* ------------------------------------------------------------------ */
 /* Reading a run-length grid. Shared so the viewer and the tests agree.  */

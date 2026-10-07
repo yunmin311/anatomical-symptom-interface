@@ -4,7 +4,6 @@ import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 import {
-  assertCanonicalStructureId,
   buildSelectableIndex,
   resolveAtlasSelection,
   VIEW_ONLY_REASON,
@@ -12,7 +11,12 @@ import {
   type DerivedViewGrid,
 } from '../src/anatomy-atlas-crosswalk.ts';
 import { AtlasManifestSchema } from '../src/anatomy-atlas-manifest.ts';
-import { getStructure } from '../src/anatomy.ts';
+import {
+  canonicalIdentityForWrite,
+  getStructure,
+  resolveStructureIdForWrite,
+  structureBelongsToRegion,
+} from '../src/anatomy.ts';
 
 /**
  * THE RULE THIS FILE EXISTS TO ENFORCE
@@ -29,6 +33,14 @@ import { getStructure } from '../src/anatomy.ts';
  *
  * The Atlas is a presentation product. It may show more anatomy than the record
  * can name. It may not widen the record to match.
+ *
+ * These assertions go through `canonicalIdentityForWrite` and
+ * `resolveStructureIdForWrite`, which is the boundary the write path actually
+ * crosses. They used to go through an `assertCanonicalStructureId` helper that
+ * lived in the crosswalk; that helper was a second, non-authoritative answer to a
+ * question the domain already answered, and it was wrong -- see the note in
+ * `anatomy-atlas-crosswalk.ts`. Testing a guard that no write path calls is how a
+ * wrong guard stays wrong, so the tests now exercise the real one.
  */
 
 const repoRoot = join(import.meta.dirname, '..', '..', '..');
@@ -37,22 +49,40 @@ const ATLAS_MANIFEST = join(repoRoot, 'assets', 'anatomy', 'atlas', 'shoulder', 
 const atlas = AtlasManifestSchema.parse(JSON.parse(readFileSync(ATLAS_MANIFEST, 'utf8')));
 const structures = atlas.structures;
 
+/** The boundary every identity value crosses on its way into the record. */
+const writeSelection = (ids: string[]) =>
+  canonicalIdentityForWrite('location.userSelectedStructureIds', ids);
+
 describe('a raw BodyParts3D id is never a persistable structure id', () => {
-  it('rejects the bp3d prefix outright, even for a structure that maps', () => {
+  it('rejects a raw id even for a structure the crosswalk maps', () => {
     // FJ3384 IS the scapula and DOES map to asi:shoulder.scapula. The raw id is
     // still refused: the canonical id is the only thing allowed in the record, and
     // a bridge that passed the raw id through would be relying on the domain
     // happening to understand a foreign id scheme.
+    //
+    // Refused as "not a structure" rather than by a prefix check, which is the
+    // better mechanism: the domain guard does not know what BodyParts3D is, so it
+    // cannot fall out of step with a new foreign id scheme.
     assert.throws(
-      () => assertCanonicalStructureId('bp3d:FJ3384'),
-      /refusing to persist a raw BodyParts3D id/,
+      () => writeSelection(['bp3d:FJ3384']),
+      /is not a structure/,
     );
   });
 
   it('rejects any bp3d id, view-only or not', () => {
     for (const s of structures) {
-      assert.throws(() => assertCanonicalStructureId(s.id), /raw BodyParts3D id/, `${s.id} was accepted`);
+      assert.throws(() => writeSelection([s.id]), /is not a structure/, `${s.id} was accepted`);
     }
+  });
+
+  it('refuses a whole batch rather than storing the good half', () => {
+    // One valid id does not make the batch valid. Storing the canonical entry and
+    // dropping the raw one would lose the user's actual order of pointing, and the
+    // write is a transaction precisely so a partial write cannot happen.
+    assert.throws(
+      () => writeSelection(['asi:shoulder.scapula', 'bp3d:FJ3384']),
+      /is not a structure/,
+    );
   });
 
   it('accepts a canonical asi id that resolves', () => {
@@ -61,21 +91,32 @@ describe('a raw BodyParts3D id is never a persistable structure id', () => {
     // the reader the fixture is right; it does not narrow `scapula.canonicalAsiId`,
     // which is `string | null`, so the call on the next line stayed a type error.
     assert.ok(scapula?.canonicalAsiId, 'expected the scapula to be in the atlas manifest');
-    assert.equal(assertCanonicalStructureId(scapula.canonicalAsiId), 'asi:shoulder.scapula');
+    assert.equal(resolveStructureIdForWrite(scapula.canonicalAsiId), 'asi:shoulder.scapula');
+    assert.deepEqual(writeSelection([scapula.canonicalAsiId]), ['asi:shoulder.scapula']);
   });
 
   it('rejects a well-formed id the domain does not know', () => {
     assert.throws(
-      () => assertCanonicalStructureId('asi:shoulder.not-a-real-structure'),
-      /not a structure the domain knows/,
+      () => writeSelection(['asi:shoulder.not-a-real-structure']),
+      /is not a structure/,
     );
   });
 
-  it('rejects a canonical id from the wrong region', () => {
-    assert.throws(
-      () => assertCanonicalStructureId('asi:shoulder.scapula', 'knee' as never),
-      /belongs to shoulder, not knee/,
+  it('rejects a canonical id from the wrong region only when it really is one', () => {
+    // The deleted crosswalk guard refused a shoulder-prefixed id for a neck record
+    // by returning the first region that contained it. That is wrong for every
+    // structure with two memberships, and the upper trapezius is the standing
+    // example: it is in the shoulder AND the neck ontology, and grounding proposes
+    // it for neck complaints precisely for that reason.
+    assert.ok(
+      structureBelongsToRegion('asi:shoulder.trapezius-upper', 'neck'),
+      'the upper trapezius must remain a member of the neck ontology',
     );
+    // The domain accepts it for a neck record; the old guard did not.
+    assert.doesNotThrow(() => resolveStructureIdForWrite('asi:shoulder.trapezius-upper'));
+
+    // A knee structure genuinely is not in the neck, and that is the domain's call.
+    assert.equal(structureBelongsToRegion('asi:knee.patella', 'neck'), false);
   });
 
   it('no atlas structure id is ever mistaken for an asi id', () => {
@@ -140,20 +181,31 @@ describe('resolving an atlas selection', () => {
     assert.equal(outcome.writable, false);
   });
 
-  it('refuses a writable id from the wrong region', () => {
+  it('resolves a writable id whose structure belongs to another region', () => {
     const outcome = resolveAtlasSelection({
       id: 'bp3d:FJ9997',
       label: 'A knee structure in a shoulder atlas',
       canonicalAsiId: 'asi:knee.patella',
       symptomRecordSelectable: true,
     });
-    // Resolvable, so technically writable by resolveAtlasSelection -- which is why
-    // the region guard lives in assertCanonicalStructureId. Asserted here so the
-    // split of responsibility stays deliberate rather than accidental.
+    /*
+      Writable, and deliberately so.
+
+      The crosswalk answers one question: does this Atlas id have a canonical
+      identity the domain knows? `asi:knee.patella` does, so the mapping is honest
+      and this module has no basis for refusing it -- it does not know which region
+      the record will be for, and guessing would be the bug.
+
+      Region membership is answered by `structureBelongsToRegion` and enforced
+      where a region is actually known: grounding candidates, the orchestrator's
+      region filter, the interview engine. The deleted `assertCanonicalStructureId`
+      tried to answer it here and got it wrong for every two-region structure.
+    */
     assert.equal(outcome.writable, true);
-    assert.throws(
-      () => assertCanonicalStructureId('asi:knee.patella', 'shoulder' as never),
-      /belongs to knee, not shoulder/,
+    assert.equal(
+      structureBelongsToRegion('asi:knee.patella', 'shoulder'),
+      false,
+      'the domain still records that a knee structure is not in the shoulder',
     );
   });
 });
@@ -205,6 +257,40 @@ describe('the atlas offers strictly more than the record can name, and no less',
     for (const s of structures) {
       assert.ok(index.all.includes(s.id), `${s.id} must remain viewable`);
       assert.ok(s.label.length > 0, `${s.id} needs a name to be searchable by`);
+    }
+  });
+});
+
+describe('the crosswalk exports no write guard, so there is only one authority', () => {
+  /*
+    A removal is only durable if something notices it being undone.
+
+    `assertCanonicalStructureId` looked like the product's guard against a raw
+    `bp3d:` id reaching the record, and its own doc comment said so. It was not --
+    `resolveStructureIdForWrite` already refused every one -- and it was wrong about
+    region membership. It stayed in the tree because a helper with a reassuring name
+    and a test of its own reads as load-bearing, and nothing ever asked who the real
+    authority was.
+
+    So this asserts the absence, not just the presence of the working guard above.
+    A guard here could only be a second opinion about a decision the domain has
+    already made, and the second one is the one that was wrong.
+  */
+  it('the crosswalk module does not export any assertion helper', async () => {
+    const exported = Object.keys(await import('../src/anatomy-atlas-crosswalk.ts')).filter((k) =>
+      /^assert|^guard|^validate.*Id$/.test(k),
+    );
+    assert.deepEqual(exported, [], `the crosswalk exports guard-shaped helpers: ${exported.join(', ')}`);
+  });
+
+  it('and none of its exports claims to be the write authority in its own name', async () => {
+    const module = (await import('../src/anatomy-atlas-crosswalk.ts')) as Record<string, unknown>;
+    for (const [name, value] of Object.entries(module)) {
+      if (typeof value !== 'function') continue;
+      assert.ok(
+        !/ForWrite$/.test(name),
+        `${name} looks like a write-path guard; admission control belongs to anatomy.ts`,
+      );
     }
   });
 });
