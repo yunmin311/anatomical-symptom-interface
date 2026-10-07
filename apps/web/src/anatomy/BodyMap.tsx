@@ -4,7 +4,7 @@ import {
   REGIONS,
   showcaseNote,
   TISSUE_LAYER_ORDER,
-  isShowcaseRegion,
+  isActiveShowcaseRegion,
 } from '@asi/shared';
 import type { BodyRegion, Depth, Side, TissueLayer } from '@asi/shared';
 import type { DerivedViewName } from '@asi/shared';
@@ -166,7 +166,17 @@ export function BodyMap() {
    * was built instead of a screen-size guess. A frozen region simply has no
    * derived views, and the toggle is not offered rather than offered and failing.
    */
-  const hasDerivedViews = location.region === ANATOMY2D_REGION;
+  /*
+    Derived views exist for the region this build is being worked on, so the gate is
+    read from `showcase-scope` rather than restated here.
+
+    It was a hardcoded `'shoulder'` in this file while `showcase-scope.ts` held the
+    authoritative list -- two answers to one question, and the component's copy was
+    the one that would have been edited first when a region was added. A toggle that
+    is present and then fails is worse than one that is not there, so the condition
+    that hides it has to be the single declared one.
+  */
+  const hasDerivedViews = location.region === ANATOMY2D_REGION && isActiveShowcaseRegion(location.region);
   const derivedView: DerivedViewName = DERIVED_VIEW[view] ?? 'front';
 
   const showThreeD = surface === '3d' && threeDReady;
