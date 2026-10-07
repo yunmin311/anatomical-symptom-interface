@@ -274,6 +274,25 @@ export function Derived2dShoulderMap({
         )}
       </div>
 
+      {/*
+        ONE truth line for the map, not two.
+
+        The viewer foot already states what this surface is, so a second one here
+        said the same thing twice on every surface. Worse, the two were stacked:
+        at 375 the map ran from y=519 to y=772 and its truth line to y=772, and
+        the foot's copy started at exactly y=772 and ran past the fold. Two
+        identical claims about provenance is worse than one, because it makes the
+        copy look like emphasis when it is duplication.
+
+        So this line only carries what the foot cannot: whether THIS layer is
+        tappable. The map's identity is stated once, below.
+      */}
+      <p className="derived2d__truth small" data-testid="derived2d-layer-truth">
+        {status === 'no-selection'
+          ? `The ${LAYER_LABEL[layer].toLowerCase()} layer shows the body surface, which is context rather than a structure you can indicate.`
+          : `The ${LAYER_LABEL[layer].toLowerCase()} layer is rendered from BodyParts3D geometry. Tap a structure to see whether it can be recorded; indicating one says where you mean, never what is involved.`}
+      </p>
+
       {cursor && (
         <div className="derived2d__detail" data-testid="derived2d-detail" hidden={!detailOpen}>
           <p className="derived2d__name">
@@ -304,20 +323,6 @@ export function Derived2dShoulderMap({
           )}
         </div>
       )}
-
-      {/*
-        The provenance line comes LAST, after whatever the person just read.
-
-        It was above the tap result, where the long sentence about vocabulary
-        pushed a second paragraph of provenance up through the bottom of the panel
-        and the two overlapped. Order is the whole fix: the answer to the tap, then
-        what the map is, then the standing truth.
-      */}
-      <p className="derived2d__truth small">
-        {status === 'no-selection'
-          ? `The ${LAYER_LABEL[layer].toLowerCase()} layer shows the body surface, which is context rather than a structure you can indicate.`
-          : 'Rendered from BodyParts3D geometry. Tapping shows a structure; it never says what is involved.'}
-      </p>
     </div>
   );
 }

@@ -297,14 +297,309 @@ check('the area buttons still work with the anatomy map broken',
 await page.screenshot({ path: `${OUT}/1440-derived2d-failed.png` });
 await context.unroute('**/views/shoulder/right/*.grid.json');
 
-/* --- responsive ------------------------------------------------- */
+/* ------------------------------------------------------------------ *
+ * RESPONSIVE, ON THE SUCCESS PATH.                                     *
+ *                                                                     *
+ * This used to run straight after the fallback test with nothing more  *
+ * than a viewport change, and the captures came out showing "This     *
+ * view could not be loaded" at 375 and 768. Two things were wrong with *
+ * that, and neither was the screenshot's fault:                       *
+ *                                                                     *
+ *   - the component refetches only when view or layer changes, so     *
+ *     resizing could not clear a failed state and the failed panel   *
+ *     persisted into the captures.                                    *
+ *   - a failure-state screenshot at 375 is EVIDENCE OF THE FALLBACK, *
+ *     not evidence that 375 works. Presenting it as the latter is    *
+ *     exactly the "rename the screenshot instead of fixing it"       *
+ *     failure this project forbids.                                   *
+ *                                                                     *
+ * So each width is now driven from a FRESH page through the real      *
+ * journey, and the success path is asserted before anything is       *
+ * captured. Failure states get their own separate captures.          *
+ * ------------------------------------------------------------------ */
 
-for (const [w, h, label] of [[375, 812, '375'], [768, 1024, '768'], [1440, 1000, '1440']]) {
-  await page.setViewportSize({ width: w, height: h });
-  await page.waitForTimeout(900);
-  const overflow = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
+const SUCCESS_WIDTHS = [
+  { w: 375, h: 812, label: '375' },
+  { w: 768, h: 1024, label: '768' },
+  { w: 1440, h: 1000, label: '1440' },
+];
+
+for (const { w, h, label } of SUCCESS_WIDTHS) {
+  const vp = await context.newPage();
+  const vpErrors = [];
+  vp.on('pageerror', (e) => vpErrors.push(String(e)));
+  await vp.setViewportSize({ width: w, height: h });
+  await vp.goto(URL_, { waitUntil: 'load' });
+  await vp.waitForSelector('#root *', { timeout: 30000 });
+  await vp.getByLabel('What has been bothering you?').fill('my right shoulder hurts when I raise my arm');
+  await vp.getByRole('button', { name: 'Locate on body map' }).click();
+  await vp.locator('.location-workbench, .empty-state').first().waitFor({ timeout: 25000 });
+  const vpMap = vp.getByRole('button', { name: 'Show me the body map' });
+  if (await vpMap.isVisible().catch(() => false)) await vpMap.click();
+  await vp.locator('.location-workbench').waitFor({ timeout: 20000 });
+
+  await vp.getByText('Anatomy maps', { exact: true }).click();
+  await vp.waitForSelector('[data-testid="derived2d"]', { timeout: 15000 });
+  await vp.waitForTimeout(1200);
+
+  // 1. The image actually loaded, and it is not a broken-image box.
+  const imgOk = await vp.evaluate(() => {
+    const el = document.querySelector('[data-testid="derived2d-img"]');
+    return Boolean(el) && el.naturalWidth > 0 && el.complete;
+  });
+  check(`${label}: the derived image actually loaded`, imgOk);
+
+  // 2. The grid loaded: no fallback panel, and the hit map resolved structures.
+  const gridOk = await vp.evaluate(async () => {
+    const grid = { w: 160, h: 200 };
+    const r = await fetch('/anatomy/views/shoulder/right/shoulder-front-muscle.grid.json');
+    if (!r.ok) return false;
+    const g = await r.json();
+    return Array.isArray(g.rows) && g.rows.flat().length > 0 && g.selectable === true;
+  });
+  check(`${label}: the hit grid loaded and resolves structures`, gridOk);
+  check(`${label}: no failure panel is showing`,
+    (await vp.locator('[data-testid="derived2d-failed"]').count()) === 0);
+
+  /*
+    2b. The image is actually SIZE-PRESENT IN THE STAGE.
+
+    This check did not exist, and its absence is why a real bug passed 71/71 twice:
+    at 375 the map was a 68px thumbnail with the image overflowing a 157px stage,
+    every image-loaded assertion was true, every tap landed correctly on a 68px
+    square, and the captures looked plausible. "The image loaded" and "the image is
+    legible" are different claims and only one of them was being tested.
+
+    Two assertions, because the two faults were different:
+      - the image is inside the stage (not clipped by it), and
+      - it occupies a real share of the viewport, so it is not a postage stamp.
+  */
+  const fit = await vp.evaluate(() => {
+    const img = document.querySelector('[data-testid="derived2d-img"]');
+    const stage = document.querySelector('.derived2d__stage');
+    if (!img || !stage) return null;
+    const i = img.getBoundingClientRect();
+    const s = stage.getBoundingClientRect();
+    return {
+      iw: i.width, ih: i.height, sw: s.width, sh: s.height,
+      inside: i.top >= s.top - 1 && i.bottom <= s.bottom + 1,
+      vw: window.innerWidth, vh: window.innerHeight,
+    };
+  });
+  check(`${label}: the image fits inside its stage rather than overflowing it`,
+    fit !== null && fit.inside,
+    fit ? `img ${Math.round(fit.iw)}x${Math.round(fit.ih)} in stage ${Math.round(fit.sw)}x${Math.round(fit.sh)}` : 'no image');
+  check(`${label}: the image is legible, not a thumbnail`,
+    fit !== null && Math.min(fit.iw, fit.ih) >= 240,
+    fit ? `${Math.round(Math.min(fit.iw, fit.ih))}px in a ${fit.vw}x${fit.vh} viewport` : 'no image');
+
+  // 3. Layer switching works.
+  const beforeLayer = await vp.locator('[data-testid="derived2d-img"]').getAttribute('src');
+  await vp.locator('[data-testid="derived2d-layer-bone"]').click();
+  await vp.waitForTimeout(1000);
+  const afterLayer = await vp.locator('[data-testid="derived2d-img"]').getAttribute('src');
+  check(`${label}: switching layer changes the render`,
+    Boolean(beforeLayer) && Boolean(afterLayer) && beforeLayer !== afterLayer,
+    `${beforeLayer} -> ${afterLayer}`);
+  await vp.locator('[data-testid="derived2d-layer-muscle"]').click();
+  await vp.waitForTimeout(1000);
+
+  // 4. A writable structure can be tapped AND selected.
+  const writablePoint = await pointOnStructure(muscleGrid, writableId);
+  if (writablePoint) {
+    const box = await vp.locator('[data-testid="derived2d-img"]').boundingBox();
+    await vp.mouse.click(box.x + box.width * writablePoint.x, box.y + box.height * writablePoint.y);
+    await vp.waitForTimeout(500);
+    const canRecord = await vp.locator('[data-testid="derived2d-indicate"]').count();
+    check(`${label}: a writable structure offers the record action`, canRecord === 1);
+    if (canRecord === 1) {
+      /*
+        Re-read the image box AFTER clicking "indicate" before computing the next
+        tap point.
+
+        Indicating a structure adds the receipt, which grows the panel and pushes the
+        map UP: at 375 the image moved from y=519 to y=187, a 332px shift. The
+        view-only tap then landed on the supraspinatus that was already selected, so
+        the check reported "a view-only structure explains itself" as failing on a
+        screen where the view-only path works perfectly well.
+
+        A captured bounding box is only valid while the layout is still. Anything
+        that changes the layout has to invalidate it.
+      */
+      await vp.locator('[data-testid="derived2d-indicate"]').click();
+      await vp.waitForTimeout(900);
+      const receipt = await vp.locator('.location-workbench').innerText();
+      check(`${label}: selecting it records a structure`, /1 structure indicated/i.test(receipt),
+        receipt.replace(/\s+/g, ' ').slice(0, 110));
+      /*
+        Read `location.userSelectedStructureIds` itself.
+
+        The previous version of this check scanned `.candidate-item--selected`, which
+        only ever renders TOOL SUGGESTIONS. A structure indicated from the anatomy
+        map goes straight into `userSelectedStructureIds` and appears in no candidate
+        list, so the scan found nothing and `[].every(...)` was true -- the check
+        passed on an empty array and would have passed just as happily with a raw
+        `bp3d:FJ1506` in the record.
+
+        So: assert there IS something recorded, that it is canonical, and that it is
+        the specific structure the crosswalk named for the point we tapped. All
+        three, or it is not a proof.
+      */
+      const ids = await vp.evaluate(() =>
+        Array.from(document.querySelectorAll('[data-testid="selected-structure-ids"] li'))
+          .map((n) => (n.textContent || '').trim()),
+      );
+      check(`${label}: the tap actually recorded something`, ids.length > 0,
+        ids.join(', ') || 'NOTHING RECORDED');
+      check(`${label}: what was recorded is canonical, never bp3d`,
+        ids.length > 0 && ids.every((id) => id.startsWith('asi:') && !id.includes('bp3d')),
+        ids.join(', ') || 'none');
+    }
+  }
+
+  // 5. A view-only structure explains itself and offers nothing.
+  //
+  // On its OWN PAGE, and after scrolling the map back into view.
+  //
+  // Two things were wrong with doing this straight after the writable tap on the
+  // same page. Indicating a structure grows the panel and pushes the map up 332px at
+  // 375, so a stale box lands the tap on a different structure. And with a record
+  // now in hand the receipt sits directly under the map, which pushes the tap target
+  // off a 812px screen entirely -- so the click was landing on the page, not the map.
+  //
+  // Testing the view-only path in isolation is not a weakening: it is the only way to
+  // test it on a 375 screen without a selection in the way, which is itself the state
+  // a person is in when they first look at a structure.
+  const voPage = await context.newPage();
+  const voErrors = [];
+  voPage.on('pageerror', (e) => voErrors.push(String(e)));
+  await voPage.setViewportSize({ width: w, height: h });
+  await voPage.goto(URL_, { waitUntil: 'load' });
+  await voPage.waitForSelector('#root *', { timeout: 30000 });
+  await voPage.locator('#description').fill('my right shoulder hurts when I raise my arm');
+  await voPage.getByRole('button', { name: 'Locate on body map' }).click();
+  await voPage.locator('.location-workbench, .empty-state').first().waitFor({ timeout: 25000 });
+  const voMap = voPage.getByRole('button', { name: 'Show me the body map' });
+  if (await voMap.isVisible().catch(() => false)) await voMap.click();
+  await voPage.locator('.location-workbench').waitFor({ timeout: 20000 });
+  await voPage.getByText('Anatomy maps', { exact: true }).click();
+  await voPage.waitForSelector('[data-testid="derived2d"]', { timeout: 15000 });
+  await voPage.waitForTimeout(1200);
+
+  if (viewOnlyId) {
+    const voPoint = await pointOnStructure(muscleGrid, viewOnlyId);
+    if (voPoint) {
+      /*
+        Scroll so the TAP POINT is on screen, not the whole image.
+
+        `scrollIntoViewIfNeeded()` on the image only scrolls the image into view, and
+        the image is 349px tall in a 1024px viewport that already has ~700px of
+        orientation and toolbar above it -- so it reports "visible", scrolls almost
+        nothing, and leaves the point at y=716 well below the fold. Asserting on the
+        image's whole box then fails while the tap itself works, because Playwright
+        dispatches at the point's own coordinates.
+
+        So: assert on the point, and scroll until the point is actually in the
+        viewport.
+      */
+      await voPage.evaluate((fy) => {
+        const img = document.querySelector('[data-testid="derived2d-img"]');
+        if (!img) return;
+        const r = img.getBoundingClientRect();
+        // Where the point sits inside the image, and therefore where on the page.
+        const pointY = r.top + r.height * fy;
+        const centre = window.innerHeight / 2;
+        window.scrollBy({ top: pointY - centre, behavior: 'instant' });
+      }, voPoint.y);
+      await voPage.waitForTimeout(400);
+      const fresh = await voPage.locator('[data-testid="derived2d-img"]').boundingBox();
+      const vh = await voPage.evaluate(() => window.innerHeight);
+      const pointScreenY = fresh.y + fresh.height * voPoint.y;
+      check(
+        `${label}: the view-only tap point is actually on screen`,
+        pointScreenY >= 0 && pointScreenY <= vh,
+        `point at y=${Math.round(pointScreenY)}, viewport ${vh}`,
+      );
+      await voPage.mouse.click(fresh.x + fresh.width * voPoint.x, fresh.y + fresh.height * voPoint.y);
+      await voPage.waitForTimeout(600);
+      check(`${label}: a view-only structure explains itself and cannot be recorded`,
+        (await voPage.locator('[data-testid="derived2d-viewonly"]').count()) === 1 &&
+          (await voPage.locator('[data-testid="derived2d-indicate"]').count()) === 0,
+        (await voPage.locator('[data-testid="derived2d-viewonly"]').innerText().catch(() => ''))
+          .replace(/\s+/g, ' ').slice(0, 90));
+      await voPage.screenshot({ path: `${OUT}/${label}-derived2d-viewonly.png` });
+      check(`${label}: no page errors on the view-only path`, voErrors.length === 0,
+        voErrors.slice(0, 2).join(' | '));
+    }
+    await voPage.close();
+  }
+
+  // 6. Area selection and the continue action still work at this width.
+  //
+  // The area buttons live inside the "Area & pin" inspector panel, so the panel is
+  // opened rather than assumed mounted. Reaching into `.location-controls` found
+  // only the side and depth radios, which is why this read as "no area buttons at
+  // all" and then reported the continue action as permanently disabled.
+  await vp.getByRole('button', { name: 'Area & pin', exact: true }).click();
+  const continueBtn = vp.getByRole('button', { name: /Use this location/i }).first();
+  // Assert the guard BEFORE choosing: "Use this location" is meant to be
+  // disabled with no area, and a gate that only checks the enabled state after
+  // choosing cannot tell a working guard from a missing one.
+  check(`${label}: continue is disabled until an area is chosen`,
+    await continueBtn.isDisabled());
+  // NOT `exact: true`. The area button's accessible name is the label PLUS the
+  // "on this view" affordance ("Front of shoulderon this view"), so an exact match
+  // times out on an element that is plainly present and clickable -- which reads as
+  // "the area step never happened" rather than as a selector problem.
+  await vp.getByRole('button', { name: 'Front of shoulder' }).click();
+  await vp.waitForTimeout(500);
+  check(`${label}: the continue action becomes available after choosing an area`,
+    await continueBtn.isEnabled());
+
+  // 7. No horizontal overflow.
+  const overflow = await vp.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
   check(`${label}: no horizontal overflow`, overflow <= 1, `${overflow}px`);
-  await page.screenshot({ path: `${OUT}/${label}-derived2d.png`, fullPage: false });
+
+  // 8. No control compression.
+  //
+  // Measured on the TAP TARGET, not on the raw input. A radio/checkbox renders as a
+  // 14x14 box and is normally wrapped in a label that is far larger; measuring the
+  // input itself reported every ChoiceGroup in the product as compressed, which
+  // made the check unfalsifiable in the other direction. The label is what a thumb
+  // actually hits, so the label is what is measured -- falling back to the input
+  // only when it is genuinely unlabelled.
+  const cramped = await vp.evaluate(() => {
+    const out = [];
+    for (const el of document.querySelectorAll('input[type=radio], input[type=checkbox]')) {
+      const input = el.getBoundingClientRect();
+      if (input.width === 0 || input.height === 0) continue; // not visible
+      const label = el.closest('label');
+      const target = label ? label.getBoundingClientRect() : input;
+      // WCAG 2.5.5 is 44px; 2.5.8 (AA) is 24px. 32 is a deliberate middle:
+      // enough to catch a row that has been squeezed, without failing a
+      // legitimately dense inline control that is still comfortably tappable.
+      if (Math.min(target.width, target.height) < 32) {
+        const name = (label?.textContent || el.getAttribute('aria-label') || el.type).trim().slice(0, 24);
+        out.push(`${name} ${Math.round(target.width)}x${Math.round(target.height)}`);
+      }
+    }
+    for (const el of document.querySelectorAll('button')) {
+      const r = el.getBoundingClientRect();
+      if (r.width === 0 || r.height === 0) continue;
+      if (Math.min(r.width, r.height) < 32) {
+        out.push(`button:${(el.textContent || el.getAttribute('aria-label') || '?').trim().slice(0, 20)} ${Math.round(r.width)}x${Math.round(r.height)}`);
+      }
+    }
+    return out;
+  });
+  check(`${label}: no control is compressed below a usable size`, cramped.length === 0,
+    cramped.slice(0, 5).join(' | '));
+
+  check(`${label}: no page errors on the success path`, vpErrors.length === 0,
+    vpErrors.slice(0, 2).join(' | '));
+
+  await vp.screenshot({ path: `${OUT}/${label}-derived2d.png`, fullPage: false });
+  await vp.close();
 }
 
 const realErrors = consoleErrors.filter((e) => !inducingFailure || !/Failed to load resource/i.test(e));

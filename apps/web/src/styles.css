@@ -591,34 +591,60 @@ details > p {
   `--canvas-min-height` keeps the same floor the silhouette had, so switching
   surfaces never collapses the stage.
 */
-.viewer-canvas:has(.derived2d) {
-  display: block;
-  overflow: hidden;
-  /*
-    Both a floor and a ceiling, on the viewport.
+/*
+  THE 375px PROBLEM.
+  ================
 
-    The floor is the silhouette's. The ceiling is new: an unclamped stage grew to
-    fill the grid row, which put the bottom third of the shoulder below the fold at
-    1440x1000 -- so the map was nominally the largest thing on screen while the part
-    a person is looking at needed a scroll. Bounded by the viewport, the render is
-    as large as it can be while staying visible.
-  */
-  min-height: clamp(300px, 38vh, 460px);
-  /*
-    The ceiling leaves room for what is ABOVE the map on this screen: the
-    orientation band, the breadcrumb and the page heading together put the top of
-    the stage near the middle of a 1000px viewport. Bounding the stage alone still
-    put its bottom edge below the fold, so the cap is on the space the stage may
-    occupy rather than on its height -- which is what actually decides whether the
-    anatomy is visible without scrolling.
-  */
-  max-height: min(46vh, 460px);
+  The derived map collapsed to a 157px-tall strip with a 335px image overflowing it
+  at 2x, so the shoulder was a black sliver and the layout scrolled its own image
+  out of view. Two separate faults, and the screenshot only showed the first:
+
+    1. `max-height` on the image was in VIEWPORT units (46vh = 374px at 812) while
+       the stage it had to fit inside was only 157px. The image was told it could be
+       374px tall and believed it, then overflowed a container a third of that
+       height. A viewport cap cannot bound a container whose own height is decided
+       by the page.
+
+    2. The stage had no height of its own -- `flex: 1` inside an absolutely
+       positioned parent with no intrinsic content -- so it collapsed to whatever
+       the other children left behind.
+
+  The fix is to stop bounding the image against the viewport at all, and instead give
+  the stage a real height per breakpoint and let the image fit INSIDE it. One source
+  of truth for the stage height; the image obeys it.
+
+  Mobile gets a tall stage because the phone has width to spare and no height, and
+  the anatomy is the point of the screen.
+*/
+/*
+  Two faults, one fix, and the fix is to stop fighting the existing layout.
+
+  The 375px map collapsed to a 157px strip with a 335px image overflowing it, and
+  the anatomy scrolled out of its own panel. The cause was this rule itself: it
+  reset `min-height` and `display` on `.viewer-canvas`, which already owns a
+  responsive stage height (`clamp(360px, 46vh, 560px)`, and 470px under the phone
+  breakpoint). Overriding it here dropped the canvas to 30px -- the height of
+  nothing -- and then the image was measured against a container smaller than
+  itself.
+
+  So: DO NOT bound the image against the viewport, and DO NOT give the stage a
+  second, competing height. `.viewer-canvas` keeps the height it always had, the
+  stage fills it, and the image fits inside the stage. One owner of the height.
+
+  `overflow: hidden` stays: the render is on transparent, so its box is square and
+  the stage is not, and without clipping the square's corners spill onto the page.
+*/
+.viewer-canvas:has(.derived2d) {
+  overflow: hidden;
 }
 
 .viewer-canvas:has(.derived2d) > .derived2d {
-  position: absolute;
-  inset: 0;
   height: 100%;
+}
+
+.derived2d__stage {
+  flex: 1 1 auto;
+  min-height: 0;
 }
 .bodymap__svg {
   /* The body scales with the stage instead of a fixed 440px, so the silhouette
@@ -732,8 +758,6 @@ details > p {
 }
 
 .derived2d__stage {
-  flex: 1 1 auto;
-  min-height: 0;
   position: relative;
   background: var(--canvas);
   border-radius: var(--radius);
@@ -743,26 +767,40 @@ details > p {
 .derived2d__image {
   position: absolute;
   inset: 0;
-  display: grid;
-  place-items: center;
+  /*
+    Flex, not grid.
+
+    `place-items: center` in a grid sized the image by `max-height: 100%` resolving
+    against a grid AREA whose track was `auto` -- and a percentage against an
+    auto-sized track is indefinite, so the browser treated it as no cap at all. The
+    image laid out at its natural 640px inside a 440px stage and the bottom of the
+    shoulder was clipped away. The wrapper here is absolutely positioned with
+    `inset: 0`, so its height is definite and a flex item's percentage resolves
+    against it properly.
+  */
+  display: flex;
+  align-items: center;
+  justify-content: center;
   cursor: crosshair;
 }
 
 .derived2d__image img {
   /*
-    The largest square that fits the stage.
+    Fit INSIDE the stage, which now has a real height.
 
-    Bounded in VIEWPORT units on the height axis, not in `max-height: 100%`. A
-    percentage height needs a definite ancestor height, and this one resolves
-    through an absolutely-positioned stage inside a flex row inside a capped grid
-    cell -- so `100%` silently resolved against nothing and the image laid out at
-    its natural 640px, overflowing a 520px stage and putting the bottom of the
-    shoulder below the fold. Viewport units have no such dependency.
+    `max-height: 100%` is correct here and only here, because the stage's height
+    is set explicitly rather than inherited from a flex chain. The image is square
+    and the stage is not, so the smaller of the two constraints binds, and the
+    render sits centred in the dark stage.
+
+    No viewport units. A viewport cap and the container's own height are two
+    different quantities; when the container is the smaller one, the viewport cap
+    simply does not apply and the image overflows. That is what happened at 375.
   */
   width: auto;
   height: auto;
   max-width: 100%;
-  max-height: min(46vh, 460px);
+  max-height: 100%;
   object-fit: contain;
   /* The renders are on transparent, so they sit on the dark stage rather than on
      a white plate inside it, which would break the read that this is a model
@@ -1835,6 +1873,31 @@ details > p {
 }
   .viewer-canvas {
     min-height: 250px;
+  }
+  /*
+    ...but 250px was sized for the silhouette, which is only 134px wide on a phone
+    and so leaves the canvas mostly empty. A square render fills the width, and at
+    250px the controls and the truth line took what was left, leaving a 68px stage
+    and a 68px thumbnail.
+
+    The floor is raised for this surface only, and the image still fits inside the
+    stage rather than being capped separately -- so this raises the floor without
+    reintroducing the overflow.
+  */
+  .viewer-canvas:has(.derived2d) {
+    min-height: 430px;
+  }
+  /*
+    On the narrowest phones the render is driven by its WIDTH, not by leftover
+    height. The square fills the column instead of sitting in a 248px well with 87px
+    of dead space beside it, which is what a height-bound square does when the
+    column is 335px wide. `aspect-ratio` states the shape directly; the canvas
+    min-height above stays a floor, so the panel grows to fit rather than clipping.
+  */
+  .viewer-canvas:has(.derived2d) .derived2d__stage {
+    flex: 0 0 auto;
+    width: 100%;
+    aspect-ratio: 1;
   }
   .bodymap__svg {
     height: 250px;

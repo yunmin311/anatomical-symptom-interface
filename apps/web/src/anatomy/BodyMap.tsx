@@ -853,6 +853,27 @@ export function BodyMap() {
           ? `${region.subRegions.find((s) => s.id === pendingSub)?.label ?? pendingSub} · ${selected.length} visual structure selection${selected.length === 1 ? '' : 's'} · ${pendingPoint ? 'pin placed' : 'no pin'}`
           : `No area chosen yet · ${selected.length} visual structure selection${selected.length === 1 ? '' : 's'} · ${pendingPoint ? 'pin placed' : 'no pin'}`}
       </p>
+      {/*
+        The ids themselves, not the count.
+
+        This exists because the browser gate had no way to read what a 2D tap
+        actually recorded. It looked for `.candidate-item--selected`, which only
+        renders for TOOL SUGGESTIONS -- a structure the user indicates from the
+        anatomy map goes straight into `location.userSelectedStructureIds` and
+        appears in no list. So the gate's "what was recorded is canonical, never
+        bp3d" check ran over an empty array, and `[].every(...)` is true. A real
+        raw `bp3d:` id reaching the record would have passed.
+
+        sr-only, so it adds nothing visible, and it is the same array the record is
+        written from rather than a second copy maintained for the test.
+      */}
+      <ul className="sr-only" data-testid="selected-structure-ids">
+        {selected.map((id) => (
+          <li key={id} data-testid={`selected-id-${id}`}>
+            {id}
+          </li>
+        ))}
+      </ul>
     </section>
   );
 }
