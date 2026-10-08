@@ -87,6 +87,17 @@ const q = (question: InterviewQuestion): InterviewQuestion => question;
 const add = <T,>(arr: readonly T[], ...items: T[]): T[] => [...new Set([...arr, ...items])];
 
 /**
+ * Are two lists equal, element for element?
+ *
+ * Used to decide whether an `applyTo` actually moved a field, so that `wroteFields`
+ * reports only real mutations. `JSON.stringify` would do, but only by accident of key
+ * order, and these lists are short enough that the comparison should be obviously
+ * correct rather than incidentally correct.
+ */
+const sameValues = (a: readonly unknown[], b: readonly unknown[]): boolean =>
+  a.length === b.length && a.every((value, i) => value === b[i]);
+
+/**
  * Remove items, preserving order.
  *
  * Needed because an answer can WITHDRAW something. A user who corrects "yes, it wakes me
@@ -131,6 +142,66 @@ export const uncertain = (a: QuestionAnswer): boolean => a.triState === 'unknown
 /* SHOULDER                                                            */
 /* ================================================================== */
 
+/**
+ * The onset values that are an actual mechanism.
+ *
+ * `injury_context` also offers `unknown`, and that option is NOT a mechanism -- it is
+ * the absence of one. Listing the recordable values explicitly rather than blacklisting
+ * `unknown` means a future option cannot be written by accident: adding an option to the
+ * question no longer silently adds a domain fact.
+ */
+const SHOULDER_MECHANISM_VALUES: readonly string[] = ['injury', 'activity', 'nothing'];
+
+/**
+ * How the weakness options map onto the record.
+ *
+ * The record field is `function.activitiesAffected`, a list of what the person cannot
+ * do. Each weakness option contributes its own label, and nothing else: no shared
+ * "quality" token is invented for it.
+ *
+ * WHY NOT `quality`
+ *
+ * The first version added `quality: ['instability']` for overhead weakness. `instability`
+ * renders in the pre-visit summary as "Giving way / unstable", so a patient who said
+ * "I am weak reaching overhead" had that recorded as the shoulder giving way. Those are
+ * different complaints, and this is a label a clinician reads literally rather than as
+ * a hint.
+ *
+ * Declared as a table rather than as an `if` chain because the previous chain had
+ * exactly the bug this shape prevents: three weakness options, one guarded. The two
+ * un-guarded ones recorded nothing at all, so the user answered the question and the
+ * record was silent.
+ */
+const SHOULDER_WEAKNESS_ACTIVITIES: Readonly<Record<string, string>> = {
+  weak_above_head: 'weak reaching overhead',
+  weak_external_rotation: 'weak turning out to the side',
+  weak_internal_rotation: 'weak turning in behind my back',
+};
+
+/** The option that says strength is normal. It withdraws the weakness activities. */
+const SHOULDER_WEAKNESS_NONE = 'pain_only';
+
+/** Every activity string this question can own, so a correction can withdraw exactly its own. */
+const SHOULDER_WEAKNESS_ALL: readonly string[] = [
+  ...Object.values(SHOULDER_WEAKNESS_ACTIVITIES),
+];
+
+/**
+ * The radiation values that may be recorded, taken from the question's own options.
+ *
+ * An allowlist, so anything else -- the option LABEL rather than its value, a value from
+ * an older build, a value from a different surface -- records nothing instead of being
+ * stored. `radiation` is a list of strings with no enum behind it, so nothing downstream
+ * was ever going to object.
+ */
+const SHOULDER_RADIATION_VALUES: readonly string[] = [
+  'none',
+  'lateral_arm',
+  'front_arm',
+  'hand_tingle',
+  'neck_related',
+];
+
 const SHOULDER_QUESTIONS: InterviewQuestion[] = [
   q({
     id: 'shoulder.injury_context',
@@ -148,7 +219,33 @@ const SHOULDER_QUESTIONS: InterviewQuestion[] = [
     ],
     showIf: () => true,
     applyTo: (record, a) => {
-      record.context.recentInjury = String(a.raw);
+      const v = String(a.raw);
+      /*
+        UNCERTAINTY IS NOT A MECHANISM.
+        ================================
+
+        This used to be `record.context.recentInjury = String(a.raw)`, which stored
+        the string "unknown" as the mechanism. The pre-visit summary then printed
+
+          Recent injury or mechanism: I am not sure
+
+        under a heading its coverage map marked as answered -- so a clinician reading
+        the record could not tell "the patient could not recall a mechanism" from
+        "the mechanism was nothing in particular", which is the same field holding
+        two opposite clinical statements.
+
+        `context.recentInjury` is a free string rather than an enum, so nothing
+        downstream rejected the value. That is what made this survivable: the schema
+        had no opinion, and the only place that could have an opinion -- this line --
+        did not ask.
+
+        The refusal is now explicit rather than incidental. An unrecognised value
+        writes NOTHING, which means the answer is still recorded (it is a real
+        answer, and `questionProgress` counts it as outstanding rather than
+        unanswered) but contributes no domain fact.
+      */
+      if (!SHOULDER_MECHANISM_VALUES.includes(v)) return [];
+      record.context.recentInjury = v;
       return ['context.recentInjury'];
     },
   }),
@@ -218,19 +315,47 @@ const SHOULDER_QUESTIONS: InterviewQuestion[] = [
     highlightStructureIds: ['asi:shoulder.supraspinatus-tendon', 'asi:shoulder.infraspinatus', 'asi:shoulder.subscapularis'],
     applyTo: (record, a) => {
       const picked = Array.isArray(a.raw) ? (a.raw as string[]) : [String(a.raw)];
-      const wrote: string[] = [];
-      if (picked.includes('weak_above_head')) {
-        record.quality = add(record.quality, 'instability');
-        record.function.activitiesAffected = add(record.function.activitiesAffected, 'weak reaching overhead');
-        wrote.push('quality', 'function.activitiesAffected');
+      /*
+        Every weakness option records, and the answer that denies weakness WITHDRAWS.
+
+        This replaces a chain where only `weak_above_head` was guarded. Consequences of
+        that, all confirmed against the engine rather than inferred:
+
+          - `weak_external_rotation` and `weak_internal_rotation` recorded NOTHING.
+            The user answered, the UI moved on, and the record held no weakness at all.
+          - `pain_only` filtered the string 'leg feels weak' -- a LOWER BACK value no
+            shoulder option can ever have written. It withdrew something that was never
+            there, and it did so only when it was the sole selection.
+          - The one thing it did manage to do, filter a non-existent value, it reported
+            as a write to `function.activitiesAffected`. `wroteFields` is what the
+            mutation payload and the provenance are built from, so claiming a write
+            that did not happen fabricates provenance for a field the answer never
+            touched.
+
+        Now: the selected weakness options contribute their own activities; anything this
+        question wrote and is no longer selected is withdrawn, so option A -> B replaces
+        rather than accumulating; and `pain_only` withdraws all of them. Only its OWN
+        strings are ever removed, so a value another question wrote survives a correction
+        here.
+      */
+      const claimed = picked
+        .map((value) => SHOULDER_WEAKNESS_ACTIVITIES[value])
+        .filter((activity): activity is string => Boolean(activity));
+      // A denial of weakness withdraws the whole set; it is not one more activity.
+      const next = picked.includes(SHOULDER_WEAKNESS_NONE) ? [] : claimed;
+      const current = record.function.activitiesAffected ?? [];
+      const updated = add(
+        without(current, ...SHOULDER_WEAKNESS_ALL),
+        ...next,
+      );
+      if (updated.length === current.length && updated.every((v, i) => v === current[i])) {
+        // Nothing actually moved. Reporting a write here would put a provenance row on a
+        // field this answer did not change, and `derivedCases()` in answer-withdrawal
+        // already treats a path claim with no change as a defect.
+        return [];
       }
-      if (picked.length === 1 && picked[0] === 'pain_only') {
-        record.function.activitiesAffected = record.function.activitiesAffected.filter(
-          (x) => x !== 'leg feels weak',
-        );
-        wrote.push('function.activitiesAffected');
-      }
-      return wrote;
+      record.function.activitiesAffected = updated;
+      return ['function.activitiesAffected'];
     },
   }),
   q({
@@ -246,15 +371,87 @@ const SHOULDER_QUESTIONS: InterviewQuestion[] = [
       { value: 'lateral_arm', label: 'Down the outside of my arm', impliesStructureIds: ['asi:shoulder.supraspinatus-tendon'] },
       { value: 'front_arm', label: 'Down the front of my arm', impliesStructureIds: ['asi:shoulder.biceps-long-head-tendon'] },
       { value: 'hand_tingle', label: 'Into my hand with tingling or numbness' },
-      { value: 'neck_related', label: 'It comes from my neck', impliesStructureIds: ['asi:neck.brachial-plexus'] },
+      /*
+        "It comes from my neck" carries NO structure id, and that is deliberate.
+
+        It declared `impliesStructureIds: ['asi:neck.brachial-plexus']`, and
+        `impliedStructures()` filters candidates by `structureBelongsToRegion(id, region)`
+        -- so for a shoulder episode the neck id was dropped and the option silently
+        offered nothing. An option that promises a candidate and yields none reads to
+        the user as "this answer was not understood", which is the opposite of what
+        happened: the answer was recorded perfectly, the implied structure simply is not
+        a shoulder structure.
+
+        So the answer stays and the dead mapping goes. Nothing is lost -- the record
+        already carries `radiation: ['neck_related']`, which is the honest form of
+        "this may be coming from the neck". Choosing a mapping that resolves would have
+        meant inventing a shoulder structure for a neck symptom, which is exactly the
+        disease vocabulary this product refuses to add.
+      */
+      { value: 'neck_related', label: 'It comes from my neck' },
+      /*
+        The explicit unsure path.
+
+        Without this, "I am not sure" could only arrive as a free-text raw with no option
+        behind it, and the previous mapping wrote `radiation: ['I am not sure']`. The
+        field is a list of strings, so the schema accepted it and the summary printed
+
+          Radiation: I Am Not Sure
+
+        as a reported distribution. A clinician cannot read that as "asked, and the
+        patient did not know"; it reads as a location.
+
+        An option makes the unsure state a real answer the UI can offer, so the mapping
+        can recognise it and decline to record. That is the whole fix -- no new medical
+        content, only a place for an existing four-state answer to land.
+      */
+      { value: 'unsure', label: 'I am not sure' },
     ],
     applyTo: (record, a) => {
       const v = String(a.raw);
-      // 'none' is a real negative: record it as an explicitly empty radiation
-      // rather than leaving the field looking unasked.
-      record.radiation = v === 'none' ? [] : [v];
-      if (v === 'hand_tingle') record.quality = add(record.quality, 'numbness');
-      return ['radiation', 'quality'];
+      /*
+        `'none'` is a real negative and is recorded as an explicitly empty radiation
+        rather than left looking unasked. `'unsure'` is not a radiation at all, and
+        writes nothing -- the answer is stored in the answer map, where
+        `questionProgress` counts it as outstanding, and no domain field is invented for
+        it.
+      */
+      if (v === 'unsure') return [];
+      /*
+        Only a DECLARED option records.
+
+        Recognising just the option value `unsure` was not enough, and the test caught it:
+        the UI sends option values, but the label itself, the MCP tool, and every answer
+        already stored before this change can all arrive carrying the literal string
+        "I am not sure". Matching one spelling fixed the new path and left the old data
+        reporting "Radiation: I Am Not Sure" exactly as before.
+
+        So the rule is an allowlist of the question's own options, which is the same shape
+        used for `injury_context`: an unrecognised value writes nothing rather than being
+        stored, so a value that is not a radiation can never be recorded as one.
+      */
+      if (!SHOULDER_RADIATION_VALUES.includes(v)) return [];
+      const next = v === 'none' ? [] : [v];
+      const wrote: string[] = [];
+      /*
+        Only report what moved.
+
+        `none` writes an explicitly empty radiation, which is the right record -- it is a
+        real negative, not an unasked field. But on a fresh record the field is ALREADY
+        empty, so setting it to `[]` changes nothing, and claiming `radiation` as written
+        would put a provenance row on a field this answer did not touch. Same reason the
+        `wroteFields` test for this project compares the record before and after, and
+        treats a path claim with no change as a defect.
+      */
+      if (!sameValues(record.radiation, next)) {
+        record.radiation = next;
+        wrote.push('radiation');
+      }
+      if (v === 'hand_tingle' && !record.quality.includes('numbness')) {
+        record.quality = add(record.quality, 'numbness');
+        wrote.push('quality');
+      }
+      return wrote;
     },
   }),
   q({
