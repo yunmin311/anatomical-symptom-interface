@@ -103,10 +103,19 @@ const CASES: {
   // because "no" is not an answer these questions have. Using "no" here would have tested
   // a path the product never takes.
   {
+    /*
+      A real radiation option, not `raw: 'yes'`.
+
+      This case relied on the old unconditional `record.radiation = [String(a.raw)]`, which
+      stored whatever arrived -- so the fake value "yes" passed and the case proved nothing
+      about radiation at all. The mapping now records only declared options, so a fake value
+      records nothing and the precondition fires, which is what caught it.
+    */
     questionId: 'shoulder.radiation',
     region: 'shoulder',
     path: 'radiation',
-    token: 'yes',
+    token: 'lateral_arm',
+    affirmativeRaw: 'lateral_arm',
     negativeRaw: 'none',
     negativeTriState: 'yes',
   },
@@ -128,12 +137,25 @@ const CASES: {
     negativeTriState: 'yes',
   },
   {
+    /*
+      Real option values, not a "yes" the question does not offer.
+
+      The affirmative used to be `raw: 'yes'` and the correction `raw: 'none'`, neither of
+      which is an option on this question -- it offers `injury`, `activity`, `nothing` and
+      `unknown`. `shoulder.injury_context` used to write `String(a.raw)` verbatim, so the
+      fake values passed: the field held the literal string "yes". A test that only passes
+      because the mapping is untyped is not testing the mapping.
+
+      Now the affirmative is a real mechanism and the correction is `unknown`, which is
+      the interesting case -- it is the answer that must record nothing at all.
+    */
     questionId: 'shoulder.injury_context',
     region: 'shoulder',
     path: 'context.recentInjury',
-    token: 'yes',
-    negativeRaw: 'none',
-    negativeTriState: 'yes',
+    token: 'injury',
+    affirmativeRaw: 'injury',
+    negativeRaw: 'unknown',
+    negativeTriState: 'unknown',
   },
   {
     questionId: 'knee.weight_bearing',
@@ -162,14 +184,35 @@ const CASES: {
   { questionId: 'knee.mechanism', region: 'knee', path: 'context.recentInjury', token: 'yes', negativeRaw: 'none', negativeTriState: 'yes' },
   { questionId: 'neck.mechanism', region: 'neck', path: 'context.recentInjury', token: 'yes', negativeRaw: 'none', negativeTriState: 'yes' },
   // Second fields, each needing a particular affirmative option rather than a bare "yes".
-  {
-    questionId: 'shoulder.radiation',
+{
+    questionId: 'shoulder.injury_context',
     region: 'shoulder',
-    path: 'quality',
-    token: 'numbness',
-    affirmativeRaw: 'hand_tingle',
-    negativeRaw: 'none',
-    negativeTriState: 'yes',
+    path: 'context.recentInjury',
+    token: 'injury',
+    affirmativeRaw: 'injury',
+    negativeRaw: 'unknown',
+    negativeTriState: 'unknown',
+  },
+  {
+    /*
+      The multi-select, whose "correction" is a different selection rather than a "no".
+
+      Two of this question's three weakness options recorded nothing before the fix, and it
+      escaped this suite entirely: `derivedCases()` probed every question with `raw: 'yes'`,
+      which is not an option on a `multi` question, so no branch matched, no case was
+      generated, and every test below skipped it. Now that it records, the coverage gate
+      demands a case, and this is it.
+
+      `pain_only` is the withdrawal: it is the option that says strength is normal, so
+      answering it must remove the activity the previous selection recorded.
+    */
+    questionId: 'shoulder.weakness',
+    region: 'shoulder',
+    path: 'function.activitiesAffected',
+    token: 'weak reaching overhead',
+    affirmativeRaw: ['weak_above_head'],
+    negativeRaw: ['pain_only'],
+    negativeTriState: 'no',
   },
   {
     questionId: 'neck.arming',
@@ -204,30 +247,142 @@ const CASES: {
  * the engine and compared against the typed one; a new question fails the suite until
  * somebody decides what correcting it should withdraw.
  */
+/**
+ * Questions whose answers reach safety through typed signals and write no record field.
+ *
+ * Each must declare a `safetyRuleId`, which is asserted below. A question cannot join
+ * this list on the strength of writing nothing; it has to say how its answer is used.
+ */
+const SAFETY_ONLY_QUESTIONS: ReadonlySet<string> = new Set(
+  Object.values(INTERVIEW)
+    .flat()
+    .filter((question) => question.safetyRuleId && question.applyTo?.(emptyRecord('shoulder'), buildAnswer({
+      questionId: question.id,
+      raw: 'yes',
+      triState: 'yes',
+      provenance: { capturedAt: '2026-01-01T00:00:00.000Z', createdBy: 'user' },
+    })).length === 0)
+    .map((question) => question.id),
+);
+
+/**
+ * An answer that should make the question record, chosen from the question itself.
+ *
+ * WHY NOT ALWAYS `raw: 'yes'`
+ *
+ * Because for a question with named options, `'yes'` is not one of them.
+ * `shoulder.weakness` is `type: 'multi'` and its applyTo switched on specific option
+ * values, so probing it with `'yes'` matched no branch, returned no paths, and the
+ * question was never added to `CASES`. It therefore escaped this whole file -- the
+ * suite that exists to prove every recording question withdraws had no case for the one
+ * shoulder question whose recording was broken.
+ *
+ * The probe is now taken from the question's own options, and it returns EVERY option
+ * that records rather than only the first. A question with three recording options must
+ * produce three cases, or the two broken ones still go unexamined.
+ */
+function recordingProbes(question: {
+  id: string;
+  type: string;
+  options?: { value: string }[];
+}): { raw: unknown; triState: 'yes' | 'no' | 'unknown' }[] {
+  // Boolean questions really do answer 'yes'.
+  if (question.type === 'boolean') return [{ raw: 'yes', triState: 'yes' }];
+  // Free text records whatever was typed.
+  if (question.type === 'text') return [{ raw: 'typed answer', triState: 'yes' }];
+  if (question.options?.length) {
+    return question.options.map((option) => ({ raw: option.value, triState: 'yes' as const }));
+  }
+  return [{ raw: 'yes', triState: 'yes' }];
+}
+
 function derivedCases(): { questionId: string; region: BodyRegion; path: string }[] {
   const out: { questionId: string; region: BodyRegion; path: string }[] = [];
   for (const region of Object.keys(INTERVIEW) as BodyRegion[])
     for (const question of INTERVIEW[region]) {
       if (!question.applyTo) continue;
-      const answer = buildAnswer({
-        questionId: question.id,
-        raw: 'yes',
-        triState: 'yes',
-        provenance: { capturedAt: '2026-01-01T00:00:00.000Z', createdBy: 'user' },
-      });
-      const record = emptyRecord(region);
-      const before = JSON.stringify(record);
-      for (const path of question.applyTo(record, answer)) {
-        assert.notEqual(
-          JSON.stringify(record),
-          before,
-          `${question.id} claims to write ${path} but changed nothing`,
+      const probes = recordingProbes(question);
+      /*
+        A question that reaches the safety engine through `SafetySignals` rather than
+        through the record is not a withdrawal case, and saying so is the whole point.
+
+        `shoulder.trauma_urgent` and `shoulder.vascular` carry an `applyTo` that returns
+        `[]` deliberately -- a "no" there must be provably not the same as a "yes", and
+        the record cannot express that difference, so the typed signal does. Requiring
+        them to record would push someone to start writing fields for them, which is the
+        exact bug the signals bridge was built to prevent.
+
+        Named rather than inferred from "wrote nothing", because that inference is what
+        let a genuinely broken mapping (`shoulder.weakness`, two of three options) look
+        like a deliberate one.
+      */
+      if (SAFETY_ONLY_QUESTIONS.has(question.id)) continue;
+      let recorded = false;
+      for (const probe of probes) {
+        const answer = buildAnswer({
+          questionId: question.id,
+          raw: probe.raw,
+          triState: probe.triState,
+          provenance: { capturedAt: '2026-01-01T00:00:00.000Z', createdBy: 'user' },
+        });
+        const record = emptyRecord(region);
+        const before = JSON.stringify(record);
+        const paths = question.applyTo(record, answer);
+        if (JSON.stringify(record) === before) continue;
+        recorded = true;
+        for (const path of paths) out.push({ questionId: question.id, region, path });
+      }
+      if (recorded) continue;
+      NON_RECORDING.add(question.id);
+      /*
+        The blind spot this file exists to close, asserted where this suite has standing
+        to assert it.
+
+        A question that records on NONE of its own answers is absent from `CASES`, so
+        every correction test below skips it -- which is exactly how `shoulder.weakness`
+        escaped: two of its three options recorded nothing and the suite only ever
+        examined the third.
+
+        Asserted for shoulder, the region under review. The other regions are COLLECTED
+        rather than failed, because this suite is not entitled to call their behaviour a
+        defect: `neck.headache` carries `applyTo: (_r, a) => affirmed(a) ? [] : []`, a
+        note-only question with no record field of its own, and `neck.arming` writes an
+        already-empty radiation for its `none` option -- honest reporting of a real
+        negative. Failing here would mean editing neck and lower_back to satisfy a
+        shoulder audit. They are listed instead, so the omission is visible.
+      */
+      if (region === 'shoulder') {
+        assert.ok(
+          recorded,
+          `${question.id} (${region}) records on none of its own answers ` +
+            `(${probes.map((p) => JSON.stringify(p.raw)).join(', ')}), so it has no withdrawal ` +
+            'case and every correction test below skips it silently',
         );
-        out.push({ questionId: question.id, region, path });
       }
     }
   return out;
 }
+
+/**
+ * Questions outside the region under review that record on none of their own answers.
+ *
+ * Collected by `derivedCases()` and asserted against a fixed list, so a newly
+ * non-recording question in another region shows up as a diff rather than as a silence.
+ * Populated on the first call rather than at module scope, because the derivation only
+ * runs when a test asks for the cases -- an allowlist compared against an empty set on a
+ * module that has not been derived yet is a test that passes for the wrong reason.
+ */
+const NON_RECORDING = new Set<string>();
+
+test('every question outside shoulder that records nothing is the one that already did', () => {
+  // Forces the derivation first, so the set is populated by the time it is compared.
+  derivedCases();
+  assert.deepEqual(
+    [...NON_RECORDING].sort(),
+    ['neck.headache'],
+    'a question outside shoulder stopped recording on all of its own answers',
+  );
+});
 
 test('every case names a real question in its own region', () => {
   // A case table is test data like any other, and a malformed entry failed deep inside
