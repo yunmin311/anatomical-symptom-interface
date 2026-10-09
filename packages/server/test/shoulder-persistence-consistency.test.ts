@@ -113,7 +113,7 @@ function journey(steps: { questionId: string; raw: unknown }[]) {
       diverged -- which was the original failure.
     */
     store.applyMutations(ep.id, {
-      answerMutations: [answer(step.questionId, step.raw)],
+      answerMutations: [{ ...answer(step.questionId, step.raw), wroteFields: result.wroteFields }],
       fieldMutations: mutationsForAnswer(result.record, result.answer, result.wroteFields),
     });
   }
@@ -296,6 +296,133 @@ describe('an explicit negative is not the same as never asked', () => {
     assert.ok(
       j.reopen.progress.outstanding.includes('shoulder.radiation'),
       'uncertainty is reported as resolved',
+    );
+  });
+});
+
+describe('coverage follows recorded facts, not question metadata', () => {
+  test('a vascular denial does not establish systemic symptoms', () => {
+    // The vascular question declares `context.systemicSymptoms` as its field, but its
+    // mapping deliberately writes nothing. Coverage must follow the mapping, not the label.
+    const j = journey([{ questionId: 'shoulder.vascular', raw: 'no' }]);
+    const coverage = store.coverageFor(j.id);
+    const { summary, text } = summarized(j.id);
+    const systemic = summary.history.find((h) => h.label === 'Systemic symptoms');
+    assert.equal(
+      coverage['context.systemicSymptoms'],
+      false,
+      'an unrelated safety answer marked systemic symptoms as asked',
+    );
+    assert.equal(
+      Object.hasOwn(store.fieldStoreFor(j.id), 'context.systemicSymptoms'),
+      false,
+      'an unrelated safety answer created a systemic-symptom value row',
+    );
+    assert.equal(systemic?.value, NOT_ASKED_LABEL, 'silence about systemic symptoms became a negative');
+    assert.match(text, /Systemic symptoms: not asked/, 'the copied summary reports an unasked negative');
+  });
+
+  test('a trauma denial does not establish a mechanism', () => {
+    // The trauma question also declares `context.recentInjury` while writing nothing. Its
+    // denial is a safety answer, not an onset history.
+    const j = journey([{ questionId: 'shoulder.trauma_urgent', raw: 'no' }]);
+    const coverage = store.coverageFor(j.id);
+    const { summary } = summarized(j.id);
+    assert.equal(
+      coverage['context.recentInjury'],
+      false,
+      'a trauma denial marked the mechanism as asked',
+    );
+    assert.equal(
+      Object.hasOwn(store.fieldStoreFor(j.id), 'context.recentInjury'),
+      false,
+      'a trauma denial created a mechanism value row',
+    );
+    assert.equal(
+      summary.history.some((h) => h.label === 'Recent injury or mechanism'),
+      false,
+      'an unasked mechanism appeared in the summary',
+    );
+  });
+
+  test('an uncertain answer does not hide another answer’s established fact', () => {
+    // `night_pain` declares `quality` but writes `triggers`; radiation writes `quality`.
+    // Coverage must keep the numbness that radiation actually recorded, even though night
+    // pain is unresolved.
+    const j = journey([
+      { questionId: 'shoulder.night_pain', raw: 'unknown' },
+      { questionId: 'shoulder.radiation', raw: 'hand_tingle' },
+    ]);
+    const coverage = store.coverageFor(j.id);
+    const { summary } = summarized(j.id);
+    const quality = summary.history.find((h) => h.label === 'Quality');
+    assert.equal(coverage['quality'], true, 'an unresolved answer hid an established fact');
+    assert.ok(
+      quality && quality.value !== NOT_ASKED_LABEL,
+      'an established symptom is reported as never asked',
+    );
+    assert.ok(!summary.outstandingFields.includes('quality'), 'an established fact is still outstanding');
+    assert.ok(
+      j.reopen.progress.outstanding.includes('shoulder.night_pain'),
+      'the genuinely uncertain question stopped being outstanding',
+    );
+    assert.ok(
+      !j.reopen.progress.outstanding.includes('shoulder.radiation'),
+      'the definite answer is reported as outstanding',
+    );
+  });
+});
+
+describe('a definite movement description is recorded, covered, and summarised', () => {
+  test('non-empty elevation text leaves outstanding, enters coverage, and reaches the summary', () => {
+    const j = journey([{ questionId: 'shoulder.elevation', raw: 'reaching overhead' }]);
+    const coverage = store.coverageFor(j.id);
+    const { summary, text } = summarized(j.id);
+    const detail = summary.history.find((h) => h.label === 'Trigger detail');
+    assert.equal(coverage['triggerDetail'], true, 'a definite description did not mark its field asked');
+    assert.equal(detail?.value, 'reaching overhead', 'the recorded description did not reach the summary');
+    assert.match(text, /Trigger detail: reaching overhead/, 'the copied summary lost the recorded description');
+    assert.ok(
+      !j.reopen.progress.outstanding.includes('shoulder.elevation'),
+      'a definite description is reported as outstanding',
+    );
+  });
+
+  test('blank elevation text establishes no fact and stays outstanding', () => {
+    // Blankness is the absence of an answer, not a finding that no movement provokes pain.
+    const j = journey([{ questionId: 'shoulder.elevation', raw: '   ' }]);
+    const coverage = store.coverageFor(j.id);
+    const { summary } = summarized(j.id);
+    assert.equal(
+      Object.hasOwn(store.fieldStoreFor(j.id), 'triggerDetail'),
+      false,
+      'blank text created a trigger-detail value row',
+    );
+    assert.equal(coverage['triggerDetail'], false, 'blank text marked its field asked');
+    assert.equal(
+      summary.history.some((h) => h.label === 'Trigger detail'),
+      false,
+      'blank text appeared in the summary',
+    );
+    assert.ok(
+      j.reopen.progress.outstanding.includes('shoulder.elevation'),
+      'blank text is being treated as a resolved answer',
+    );
+  });
+
+  test('explicit elevation uncertainty stays outstanding without inventing a movement', () => {
+    const j = journey([{ questionId: 'shoulder.elevation', raw: "I don't know" }]);
+    const coverage = store.coverageFor(j.id);
+    const { summary } = summarized(j.id);
+    assert.equal(coverage['triggerDetail'], false, 'uncertainty marked its field asked');
+    assert.equal(
+      summary.history.some((h) => h.label === 'Trigger detail'),
+      false,
+      'uncertainty invented a movement description',
+    );
+    assert.ok(
+      j.reopen.progress.outstanding.includes('shoulder.elevation'),
+      'explicit uncertainty stopped being outstanding',
     );
   });
 });

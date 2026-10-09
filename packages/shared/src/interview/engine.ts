@@ -15,7 +15,7 @@ import { getStructure, structureBelongsToRegion } from '../anatomy.ts';
 import type { SymptomRecord } from '../symptom.ts';
 import { emptyRecord } from '../symptom.ts';
 import type { QuestionAnswer, AnswerMap } from '../answers.ts';
-import { isUncertain } from '../answers.ts';
+import { isUncertain, isUncertainFreeText } from '../answers.ts';
 
 export const QuestionTypeSchema = z.enum(['single', 'multi', 'scale', 'boolean', 'text']);
 export type QuestionType = z.infer<typeof QuestionTypeSchema>;
@@ -292,7 +292,16 @@ const SHOULDER_QUESTIONS: InterviewQuestion[] = [
     highlightStructureIds: ['asi:shoulder.supraspinatus-tendon', 'asi:shoulder.biceps-long-head-tendon', 'asi:shoulder.glenohumeral-joint'],
     applyTo: (record, a) => {
       const text = typeof a.raw === 'string' ? a.raw.trim() : '';
-      if (!text) return [];
+      /*
+        Explicit uncertainty is not a movement description.
+
+        Without this guard, typing "I don't know" would be stored verbatim as
+        `triggerDetail` and would add a `movement` trigger. The progress layer can call
+        that answer outstanding, but the record itself would already claim a movement the
+        patient explicitly declined to assert. Blank and uncertain text therefore share
+        one refusal: the answer remains in the answer map, while no domain fact is made.
+      */
+      if (!text || isUncertainFreeText(text)) return [];
       record.triggerDetail = text;
       record.triggers = add(record.triggers, 'movement');
       return ['triggerDetail', 'triggers'];
@@ -1078,6 +1087,11 @@ const NON_BOOLEAN_UNKNOWN_VALUES: ReadonlySet<unknown> = new Set(['unknown', 'un
 export function isGenuinelyUncertain(question: InterviewQuestion, answer: QuestionAnswer | undefined): boolean {
   if (!answer) return false;
   if (question.type === 'boolean') return isUncertain({ [question.id]: answer }, question.id);
+  // Free text carries no declared options, so tri-state alone cannot distinguish a movement
+  // description from "I don't know". Test the wording itself; anything else is an answer.
+  if (question.type === 'text') {
+    return typeof answer.raw !== 'string' || isUncertainFreeText(answer.raw);
+  }
   const values = Array.isArray(answer.raw) ? answer.raw : [answer.raw];
   const definiteOptions = new Set((question.options ?? []).map((option) => option.value));
   return values.some((value) => {
@@ -1085,6 +1099,53 @@ export function isGenuinelyUncertain(question: InterviewQuestion, answer: Questi
     if (typeof value === 'string' && definiteOptions.has(value)) return false;
     return answer.triState === 'unknown';
   });
+}
+
+/** A probe value that no real answer can produce, so explicit empties are visible. */
+const FACT_PROBE_VALUE = '__answer_fact_probe__';
+
+/*
+  Coverage must follow the mapping, not the question's declared `field`.
+
+  Two declarations disagree with their mappings: safety-only shoulder questions name a
+  related field while writing nothing, and `shoulder.night_pain` names `quality` while
+  writing `triggers`. Treating the declaration as coverage would turn an unrelated safety
+  denial into an established fact, and could hide a fact another question actually wrote.
+  Probing each mapping against sentinel values shows which fields the answer itself moves,
+  including an explicit empty that equals a fresh record's default.
+*/
+export function answerFactPaths(questionId: string, answer: QuestionAnswer): string[] {
+  const region = questionId.split('.')[0] as BodyRegion;
+  const question = INTERVIEW[region]?.find((candidate) => candidate.id === questionId);
+  if (!question?.applyTo || isGenuinelyUncertain(question, answer)) return [];
+
+  const probe = structuredClone(emptyRecord(question.region));
+  for (const path of ANSWER_DERIVED_FIELD_PATHS) {
+    const segments = path.split('.');
+    let container: unknown = probe;
+    for (const segment of segments.slice(0, -1)) {
+      if (typeof container !== 'object' || container === null) break;
+      const holder = container as Record<string, unknown>;
+      const next = holder[segment];
+      if (typeof next !== 'object' || next === null) holder[segment] = {};
+      container = holder[segment];
+    }
+    if (typeof container !== 'object' || container === null) continue;
+    const leaf = segments[segments.length - 1];
+    if (typeof leaf !== 'string') continue;
+    const holder = container as Record<string, unknown>;
+    holder[leaf] = Array.isArray(holder[leaf]) ? [FACT_PROBE_VALUE] : FACT_PROBE_VALUE;
+  }
+
+  const before = new Map(
+    ANSWER_DERIVED_FIELD_PATHS.map((path) => [path, JSON.stringify(readPath(probe, path))] as const),
+  );
+  question.applyTo(probe, answer);
+  const addressed: string[] = [];
+  for (const path of ANSWER_DERIVED_FIELD_PATHS) {
+    if (JSON.stringify(readPath(probe, path)) !== before.get(path)) addressed.push(path);
+  }
+  return addressed;
 }
 
 export function questionProgress(ctx: InterviewContext): QuestionProgress {
