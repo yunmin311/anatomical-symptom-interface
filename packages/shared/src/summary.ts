@@ -26,7 +26,7 @@
 import { REGIONS, getStructure } from './anatomy.ts';
 import type { BodyRegion } from './anatomy.ts';
 import { QUALITY_LABELS, projectUserSelection } from './symptom.ts';
-import { INTERVIEW, isGenuinelyUncertain } from './interview/engine.ts';
+import { INTERVIEW, isGenuinelyUncertain, optionLabel } from './interview/engine.ts';
 import type { Episode, Quality, SymptomRecord, Trigger } from './symptom.ts';
 import type { SafetyFlag, WithheldFlag } from './rules/redflags.ts';
 import type { AnswerMap } from './answers.ts';
@@ -251,7 +251,13 @@ export function buildPreVisitSummary(episode: Episode, opts: SummaryOptions = {}
     label: 'Radiation',
     value:
       record.radiation.length > 0
-        ? record.radiation.map(titleCase).join(', ')
+        ? record.radiation
+            .map((value) =>
+              record.location.region === 'shoulder'
+                ? (optionLabel('shoulder.radiation', value) ?? titleCase(value))
+                : titleCase(value),
+            )
+            .join(', ')
         : radiationUnresolved
           ? UNKNOWN_LABEL
           : coverage['radiation']
@@ -310,7 +316,12 @@ export function buildPreVisitSummary(episode: Episode, opts: SummaryOptions = {}
     value: render(coverage, 'context.systemicSymptoms', joinOr(systemic, 'none reported'), { negativeLooking: true }),
   });
   if (coverage['context.recentInjury'] && record.context.recentInjury) {
-    history.push({ label: 'Recent injury or mechanism', value: record.context.recentInjury });
+    const mechanism =
+      record.location.region === 'shoulder'
+        ? (optionLabel('shoulder.injury_context', record.context.recentInjury) ??
+          record.context.recentInjury)
+        : record.context.recentInjury;
+    history.push({ label: 'Recent injury or mechanism', value: mechanism });
   }
   if (coverage['context.recentActivity'] && record.context.recentActivity) {
     history.push({ label: 'Recent activity', value: record.context.recentActivity });

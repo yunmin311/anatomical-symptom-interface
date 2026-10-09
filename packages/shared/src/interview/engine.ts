@@ -29,6 +29,8 @@ export interface AnswerOption {
   impliesStructureIds?: string[];
   /** Free-form follow-up the LLM should ask if this option is chosen. */
   followUpHint?: string;
+  /** Multi-select only: choosing this option replaces every other selection. */
+  exclusive?: boolean;
 }
 
 export interface InterviewQuestion {
@@ -46,6 +48,12 @@ export interface InterviewQuestion {
   showIf?: (record: SymptomRecord, asked: ReadonlySet<string>) => boolean;
   /** Structures to highlight on the model while this question is on screen. */
   highlightStructureIds?: string[];
+  /**
+   * Explicit uncertainty response for a question with no unsure option.
+   * The UI submits this value directly, so uncertainty does not depend on
+   * matching another English phrase in free text.
+   */
+  uncertainty?: { value: unknown; label: string };
   /** Safety gating: answering this feeds a rule. See safety-signals.ts. */
   safetyRuleId?: string;
   /**
@@ -181,6 +189,9 @@ const SHOULDER_WEAKNESS_ACTIVITIES: Readonly<Record<string, string>> = {
 /** The option that says strength is normal. It withdraws the weakness activities. */
 const SHOULDER_WEAKNESS_NONE = 'pain_only';
 
+/** Explicit uncertainty cannot coexist with a weakness report or its denial. */
+const SHOULDER_WEAKNESS_UNKNOWN = 'unknown';
+
 /** Every activity string this question can own, so a correction can withdraw exactly its own. */
 const SHOULDER_WEAKNESS_ALL: readonly string[] = [
   ...Object.values(SHOULDER_WEAKNESS_ACTIVITIES),
@@ -253,7 +264,7 @@ const SHOULDER_QUESTIONS: InterviewQuestion[] = [
     id: 'shoulder.night_pain',
     region: 'shoulder',
     field: 'quality',
-    rationale: 'Night pain is the single most discriminating shoulder question clinicians ask.',
+    rationale: 'Night pain is asked because it can disturb sleep and affect what someone can do.',
     type: 'boolean',
     prompt: 'Does it wake you from sleep, or stop you falling asleep?',
     required: true,
@@ -285,10 +296,11 @@ const SHOULDER_QUESTIONS: InterviewQuestion[] = [
     id: 'shoulder.elevation',
     region: 'shoulder',
     field: 'triggerDetail',
-    rationale: 'Shoulder pain is almost always described by the movement that provokes it.',
+    rationale: 'The movements that bring pain on help describe when the symptom occurs.',
     type: 'text',
     prompt: 'Which arm movements set it off? Try to be specific about the point where it starts.',
     required: true,
+    uncertainty: { value: 'unsure', label: 'I am not sure' },
     highlightStructureIds: ['asi:shoulder.supraspinatus-tendon', 'asi:shoulder.biceps-long-head-tendon', 'asi:shoulder.glenohumeral-joint'],
     applyTo: (record, a) => {
       const text = typeof a.raw === 'string' ? a.raw.trim() : '';
@@ -311,7 +323,7 @@ const SHOULDER_QUESTIONS: InterviewQuestion[] = [
     id: 'shoulder.weakness',
     region: 'shoulder',
     field: 'function.activitiesAffected',
-    rationale: 'Weakness points at the tendon or cuff; pain alone points at the bursa or joint.',
+    rationale: 'Weakness and pain without weakness are recorded as different functional descriptions.',
     type: 'multi',
     prompt: 'Is it weakness, or only pain? Select everything that applies.',
     required: true,
@@ -320,10 +332,14 @@ const SHOULDER_QUESTIONS: InterviewQuestion[] = [
       { value: 'weak_external_rotation', label: 'Weak turning out to the side', impliesStructureIds: ['asi:shoulder.infraspinatus', 'asi:shoulder.teres-minor'] },
       { value: 'weak_internal_rotation', label: 'Weak turning in behind my back', impliesStructureIds: ['asi:shoulder.subscapularis'] },
       { value: 'pain_only', label: 'Just pain, strength feels normal' },
+      { value: 'unknown', label: 'I am not sure', exclusive: true },
     ],
     highlightStructureIds: ['asi:shoulder.supraspinatus-tendon', 'asi:shoulder.infraspinatus', 'asi:shoulder.subscapularis'],
     applyTo: (record, a) => {
       const picked = Array.isArray(a.raw) ? (a.raw as string[]) : [String(a.raw)];
+      // An explicit unknown response records no activity, even if it arrives with
+      // another value. Uncertainty is not a weaker form of one of the options.
+      if (picked.includes(SHOULDER_WEAKNESS_UNKNOWN)) return [];
       /*
         Every weakness option records, and the answer that denies weakness WITHDRAWS.
 
@@ -467,7 +483,7 @@ const SHOULDER_QUESTIONS: InterviewQuestion[] = [
     id: 'shoulder.tenderness',
     region: 'shoulder',
     field: 'tendernessOnPalpation',
-    rationale: 'Tenderness on the bony shelf is a different structure from tenderness in the muscle.',
+    rationale: "Tenderness is recorded using the person's own severity description; it does not identify a structure.",
     type: 'single',
     prompt: 'If you press on the sore spot, how does it feel?',
     required: false,
@@ -477,9 +493,14 @@ const SHOULDER_QUESTIONS: InterviewQuestion[] = [
       { value: 'moderate', label: 'Quite tender' },
       { value: 'severe', label: 'Very tender, I flinch' },
       { value: 'not_tested', label: 'I have not tried' },
+      { value: 'unknown', label: 'I am not sure' },
     ],
     applyTo: (record, a) => {
-      record.tendernessOnPalpation = String(a.raw) as SymptomRecord['tendernessOnPalpation'];
+      const v = String(a.raw);
+      // `not_tested` means the sore spot was not pressed. `unknown` means it was
+      // considered but could not be judged. Only the first is a tenderness report.
+      if (v === 'unknown') return [];
+      record.tendernessOnPalpation = v as SymptomRecord['tendernessOnPalpation'];
       return ['tendernessOnPalpation'];
     },
   }),
@@ -487,7 +508,7 @@ const SHOULDER_QUESTIONS: InterviewQuestion[] = [
     id: 'shoulder.trauma_urgent',
     region: 'shoulder',
     field: 'context.recentInjury',
-    rationale: 'A deformed joint after trauma needs same-day assessment.',
+    rationale: 'This asks about injury with deformity or inability to lift so those responses are available for safety review.',
     type: 'boolean',
     prompt: 'Do you have a fall or injury where the shoulder looks deformed, or you cannot lift the arm at all?',
     required: true,
@@ -500,7 +521,7 @@ const SHOULDER_QUESTIONS: InterviewQuestion[] = [
     id: 'shoulder.vascular',
     region: 'shoulder',
     field: 'context.systemicSymptoms',
-    rationale: 'A cold or pale hand suggests a circulation problem, not a tendon problem.',
+    rationale: 'A cold, pale, or numb hand is asked about as a safety screen; the answer does not identify its cause.',
     type: 'boolean',
     prompt: 'Is the hand on that side cold, pale, or numb compared with the other?',
     required: true,
@@ -1035,6 +1056,20 @@ export const INTERVIEW: Record<BodyRegion, InterviewQuestion[]> = {
 
 export function getQuestion(region: BodyRegion, id: string): InterviewQuestion | undefined {
   return INTERVIEW[region]?.find((x) => x.id === id);
+}
+
+/**
+ * Patient-readable label for a stored option value.
+ *
+ * Summaries must not expose storage tokens such as `lateral_arm` as clinical
+ * prose. The registry is the only source of display wording, so a renamed or
+ * removed option cannot silently keep an old label alive.
+ */
+export function optionLabel(questionId: string, value: unknown): string | undefined {
+  const region = questionId.split('.')[0] as BodyRegion;
+  return INTERVIEW[region]
+    ?.find((question) => question.id === questionId)
+    ?.options?.find((option) => option.value === value)?.label;
 }
 
 /**

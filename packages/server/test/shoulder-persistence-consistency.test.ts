@@ -573,3 +573,213 @@ describe('the recompute is what the store would have said anyway', () => {
     );
   });
 });
+
+describe('explicit shoulder uncertainty survives persistence and reopen', () => {
+  test('elevation uncertainty invents no movement on either surface', () => {
+    const j = journey([{ questionId: 'shoulder.elevation', raw: 'unsure' }]);
+    const persisted = j.reopen.episode.record;
+    const storedAnswer = store.answersFor(j.id)['shoulder.elevation'];
+
+    assert.equal(persisted.triggerDetail, null, 'uncertainty invented a movement description');
+    assert.deepEqual(persisted.triggers, [], 'uncertainty invented a movement trigger');
+    assert.equal(
+      Object.hasOwn(store.fieldStoreFor(j.id), 'triggerDetail'),
+      false,
+      'uncertainty created a trigger-detail value row',
+    );
+    assert.equal(store.coverageFor(j.id)['triggerDetail'], false, 'uncertainty marked its field asked');
+    assert.equal(storedAnswer?.raw, 'unsure', 'the standardized uncertainty value was not retained');
+    assert.equal(storedAnswer?.triState, 'unknown', 'uncertainty was not retained as unknown');
+    assert.ok(
+      j.reopen.progress.outstanding.includes('shoulder.elevation'),
+      'uncertainty stopped being outstanding after reopen',
+    );
+  });
+
+  test('weakness uncertainty invents no activity on either surface', () => {
+    const j = journey([{ questionId: 'shoulder.weakness', raw: ['unknown'] }]);
+    const persisted = j.reopen.episode.record;
+    const storedAnswer = store.answersFor(j.id)['shoulder.weakness'];
+
+    assert.deepEqual(persisted.function.activitiesAffected, [], 'uncertainty invented a weakness activity');
+    assert.equal(
+      Object.hasOwn(store.fieldStoreFor(j.id), 'function.activitiesAffected'),
+      false,
+      'uncertainty created an activity value row',
+    );
+    assert.equal(
+      store.coverageFor(j.id)['function.activitiesAffected'],
+      false,
+      'uncertainty marked its field asked',
+    );
+    assert.deepEqual(storedAnswer?.raw, ['unknown'], 'the exclusive uncertainty value was not retained');
+    assert.equal(storedAnswer?.triState, 'unknown', 'uncertainty was not retained as unknown');
+    assert.ok(
+      j.reopen.progress.outstanding.includes('shoulder.weakness'),
+      'uncertainty stopped being outstanding after reopen',
+    );
+  });
+
+  test('an unknown mixed with a weakness option still writes nothing', () => {
+    // The browser prevents this combination. Persistence must also refuse to turn a
+    // malformed mixed answer into a weakness report.
+    const j = journey([{ questionId: 'shoulder.weakness', raw: ['unknown', 'weak_above_head'] }]);
+    assert.deepEqual(j.server.activities, [], 'mixed uncertainty recorded a weakness activity');
+    assert.deepEqual(j.client.activities, [], 'the screen recorded a weakness activity from mixed uncertainty');
+    assert.ok(
+      j.reopen.progress.outstanding.includes('shoulder.weakness'),
+      'mixed uncertainty stopped being outstanding',
+    );
+  });
+
+  test('tenderness uncertainty is not the same as not having pressed the spot', () => {
+    const unknownJourney = journey([{ questionId: 'shoulder.tenderness', raw: 'unknown' }]);
+    const unknownRecord = unknownJourney.reopen.episode.record;
+    assert.equal(unknownRecord.tendernessOnPalpation, 'unknown', 'uncertainty became a tenderness report');
+    assert.equal(
+      Object.hasOwn(store.fieldStoreFor(unknownJourney.id), 'tendernessOnPalpation'),
+      false,
+      'uncertainty created a tenderness value row',
+    );
+    assert.equal(
+      store.coverageFor(unknownJourney.id)['tendernessOnPalpation'],
+      false,
+      'uncertainty marked tenderness asked',
+    );
+    assert.ok(
+      unknownJourney.reopen.progress.outstanding.includes('shoulder.tenderness'),
+      'uncertainty stopped being outstanding after reopen',
+    );
+
+    const untestedJourney = journey([{ questionId: 'shoulder.tenderness', raw: 'not_tested' }]);
+    const untestedRecord = untestedJourney.reopen.episode.record;
+    assert.equal(untestedRecord.tendernessOnPalpation, 'not_tested', 'not tried was lost');
+    assert.equal(
+      store.coverageFor(untestedJourney.id)['tendernessOnPalpation'],
+      true,
+      'a real untested report was left uncovered',
+    );
+    assert.ok(
+      !untestedJourney.reopen.progress.outstanding.includes('shoulder.tenderness'),
+      'a real untested report is reported as outstanding',
+    );
+  });
+});
+
+describe('uncertainty corrections agree on the browser, store, and reopen', () => {
+  test('elevation moves between a description and uncertainty without residue', () => {
+    const toUnknown = journey([
+      { questionId: 'shoulder.elevation', raw: 'reaching overhead' },
+      { questionId: 'shoulder.elevation', raw: 'unsure' },
+    ]);
+    assert.deepEqual(toUnknown.server.triggers, [], 'the movement survived correction to uncertainty');
+    assert.equal(toUnknown.reopen.episode.record.triggerDetail, null, 'reopen resurrected the movement');
+
+    const toDefinite = journey([
+      { questionId: 'shoulder.elevation', raw: 'unsure' },
+      { questionId: 'shoulder.elevation', raw: 'reaching overhead' },
+    ]);
+    assert.equal(toDefinite.server.triggers.join(','), 'movement', 'uncertainty blocked the new description');
+    assert.equal(
+      toDefinite.reopen.episode.record.triggerDetail,
+      'reaching overhead',
+      'reopen lost the new description',
+    );
+  });
+
+  test('weakness moves between an activity and exclusive uncertainty without residue', () => {
+    const toUnknown = journey([
+      { questionId: 'shoulder.weakness', raw: ['weak_above_head'] },
+      { questionId: 'shoulder.weakness', raw: ['unknown'] },
+    ]);
+    assert.deepEqual(toUnknown.server.activities, [], 'the activity survived correction to uncertainty');
+    assert.deepEqual(
+      toUnknown.reopen.episode.record.function.activitiesAffected,
+      [],
+      'reopen resurrected the activity',
+    );
+
+    const toDefinite = journey([
+      { questionId: 'shoulder.weakness', raw: ['unknown'] },
+      { questionId: 'shoulder.weakness', raw: ['weak_external_rotation'] },
+    ]);
+    assert.deepEqual(toDefinite.server.activities, ['weak turning out to the side']);
+    assert.ok(
+      !toDefinite.reopen.progress.outstanding.includes('shoulder.weakness'),
+      'the new definite answer is reported as outstanding',
+    );
+  });
+
+  test('tenderness moves between severity, untested, and uncertainty without residue', () => {
+    const toUnknown = journey([
+      { questionId: 'shoulder.tenderness', raw: 'moderate' },
+      { questionId: 'shoulder.tenderness', raw: 'unknown' },
+    ]);
+    assert.equal(
+      toUnknown.reopen.episode.record.tendernessOnPalpation,
+      'unknown',
+      'the severity survived correction to uncertainty',
+    );
+
+    const toDefinite = journey([
+      { questionId: 'shoulder.tenderness', raw: 'unknown' },
+      { questionId: 'shoulder.tenderness', raw: 'not_tested' },
+    ]);
+    assert.equal(
+      toDefinite.reopen.episode.record.tendernessOnPalpation,
+      'not_tested',
+      'reopen lost the untested report',
+    );
+    assert.ok(
+      !toDefinite.reopen.progress.outstanding.includes('shoulder.tenderness'),
+      'the new definite answer is reported as outstanding',
+    );
+  });
+});
+
+describe('persisted shoulder labels stay patient-readable without changing storage', () => {
+  test('mechanism and radiation use option labels in prose and copy text', () => {
+    const j = journey([
+      { questionId: 'shoulder.injury_context', raw: 'activity' },
+      { questionId: 'shoulder.radiation', raw: 'neck_related' },
+    ]);
+    const { summary, text } = summarized(j.id);
+    const mechanism = summary.history.find((row) => row.label === 'Recent injury or mechanism');
+    const radiation = summary.history.find((row) => row.label === 'Radiation');
+
+    assert.equal(mechanism?.value, 'After physical activity', 'the stored mechanism token reached the prose');
+    assert.equal(radiation?.value, 'It comes from my neck', 'the stored radiation token reached the prose');
+    assert.equal(
+      (summary.structured as { context: { recentInjury: unknown } }).context.recentInjury,
+      'activity',
+      'display wording changed the stored mechanism',
+    );
+    assert.deepEqual(
+      (summary.structured as { radiation: unknown }).radiation,
+      ['neck_related'],
+      'display wording changed stored radiation',
+    );
+    assert.match(text, /Recent injury or mechanism: After physical activity/);
+    assert.match(text, /Radiation: It comes from my neck/);
+    assert.doesNotMatch(text, /\bactivity\b.*\bneck_related\b/);
+  });
+
+  test('an uncertain mechanism remains open rather than becoming a token', () => {
+    const j = journey([{ questionId: 'shoulder.injury_context', raw: 'unknown' }]);
+    const { summary } = summarized(j.id);
+    const storedAnswer = store.answersFor(j.id)['shoulder.injury_context'];
+
+    assert.equal(storedAnswer?.triState, 'unknown', 'uncertainty was not retained as unknown');
+    assert.equal(j.server.mechanism ?? null, null, 'uncertainty invented a mechanism');
+    assert.equal(store.coverageFor(j.id)['context.recentInjury'], false, 'uncertainty marked its field asked');
+    assert.equal(
+      summary.history.some((row) => row.label === 'Recent injury or mechanism'),
+      false,
+      'uncertainty appeared as a mechanism',
+    );
+    assert.ok(
+      j.reopen.progress.outstanding.includes('shoulder.injury_context'),
+      'uncertainty stopped being outstanding after reopen',
+    );
+  });
+});
