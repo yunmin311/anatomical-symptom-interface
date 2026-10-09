@@ -26,6 +26,7 @@
 import { REGIONS, getStructure } from './anatomy.ts';
 import type { BodyRegion } from './anatomy.ts';
 import { QUALITY_LABELS, projectUserSelection } from './symptom.ts';
+import { INTERVIEW, isGenuinelyUncertain } from './interview/engine.ts';
 import type { Episode, Quality, SymptomRecord, Trigger } from './symptom.ts';
 import type { SafetyFlag, WithheldFlag } from './rules/redflags.ts';
 import type { AnswerMap } from './answers.ts';
@@ -242,9 +243,20 @@ export function buildPreVisitSummary(episode: Episode, opts: SummaryOptions = {}
   if (coverage['triggerDetail'] && record.triggerDetail) {
     history.push({ label: 'Trigger detail', value: record.triggerDetail });
   }
+  const radiationAnswer = opts.answers?.['shoulder.radiation'];
+  const radiationQuestion = INTERVIEW.shoulder.find((question) => question.id === 'shoulder.radiation');
+  const radiationUnresolved =
+    radiationQuestion && radiationAnswer && isGenuinelyUncertain(radiationQuestion, radiationAnswer);
   history.push({
     label: 'Radiation',
-    value: render(coverage, 'radiation', joinOr(record.radiation.map(titleCase), NOT_ASKED_LABEL)),
+    value:
+      record.radiation.length > 0
+        ? record.radiation.map(titleCase).join(', ')
+        : radiationUnresolved
+          ? UNKNOWN_LABEL
+          : coverage['radiation']
+            ? 'none'
+            : NOT_ASKED_LABEL,
   });
   history.push({
     label: 'Tenderness on palpation',

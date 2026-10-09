@@ -32,6 +32,10 @@ import {
   answerDerivedMutations,
   canonicalIdentityForWrite,
 } from '@asi/shared';
+import {
+  INTERVIEW,
+  isGenuinelyUncertain,
+} from '@asi/shared';
 import type {
   AnswerMap,
   Attributed,
@@ -128,11 +132,58 @@ export function provenanceFor(episodeId: string): Record<string, Provenance> {
   return out;
 }
 
-/** Which registry fields have a stored value. The honest basis for the summary. */
+/**
+ * Which registry fields were actually asked about. The honest basis for the summary.
+ *
+ * ## Why a field row is not sufficient evidence
+ *
+ * A field row exists when the stored value DIFFERS from what the episode already held.
+ * `shoulder.radiation` answers "no, it stays in the shoulder" by recording `[]`, which is
+ * also what a fresh record holds -- so no row is written, and coverage said the question
+ * was never put. The patient had explicitly denied referred pain and the pre-visit summary
+ * printed "Radiation: not asked".
+ *
+ * That is the wrong way round for this product: "asked, and the answer was no" and "never
+ * asked" are different facts, and the summary is supposed to keep them apart.
+ *
+ * ## The second source, which is not a fabricated write
+ *
+* A field is also covered when an ANSWER to the question that derives it exists and
+  * resolves that question. This reads the answer map -- which is already stored, already the patient's,
+  * and already the authority on what they said -- rather than inventing a mutation or a
+  * provenance row to make coverage come out right.
+  *
+  * An uncertain answer is excluded deliberately. "I am not sure" is a real answer and it must still
+  * count as outstanding; letting it mark a field covered would turn an unanswered question
+  * into a reported negative, which is the exact inversion this product forbids.
+ *
+ * Note this is a coverage statement only. It does NOT write the field, and the summary's
+ * value still comes from the record -- so a covered-but-empty field is rendered as an
+ * explicit negative rather than as a value.
+ */
 export function coverageFor(episodeId: string): Record<string, boolean> {
   const paths = new Set(fieldRows(episodeId).map((r) => r.field_path));
+  const answers = answersFor(episodeId);
+  const addressedPaths = new Set<string>();
+  const unresolvedPaths = new Set<string>();
+  for (const answer of Object.values(answers)) {
+    for (const region of Object.keys(INTERVIEW) as BodyRegion[]) {
+      const question = INTERVIEW[region]?.find((q) => q.id === answer.questionId);
+      if (!question?.field) continue;
+      /*
+        Uncertainty is question-specific: a definite non-boolean option and an explicit
+        "I don't know" can arrive with the same `unknown` tri-state. Only an answer that
+        resolves its question can mark the derived field asked. Remaining unresolved is
+        conservative when several questions share one field.
+      */
+      if (isGenuinelyUncertain(question, answer)) unresolvedPaths.add(question.field);
+      else addressedPaths.add(question.field);
+    }
+  }
   const out: Record<string, boolean> = {};
-  for (const p of writablePaths()) out[p] = paths.has(p);
+  for (const p of writablePaths()) {
+    out[p] = !unresolvedPaths.has(p) && (paths.has(p) || addressedPaths.has(p));
+  }
   return out;
 }
 

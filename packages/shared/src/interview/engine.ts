@@ -1063,6 +1063,30 @@ export interface QuestionProgress {
   outstanding: string[];
 }
 
+/** Option values that explicitly report uncertainty, not a finding. */
+const NON_BOOLEAN_UNKNOWN_VALUES: ReadonlySet<unknown> = new Set(['unknown', 'unsure']);
+
+/*
+  Genuine uncertainty is option-specific, not a side effect of normalisation.
+
+  `normaliseYesNo` recognises only yes/no wording, so a definite option such as
+  `lateral_arm` also arrives with `triState: 'unknown'`. Treating every such answer as
+  uncertain would leave single and multi questions permanently outstanding. Boolean
+  safety answers remain tri-state meaningful, and free text that cannot be recognised
+  stays conservative, so neither path is weakened to accommodate the other.
+*/
+export function isGenuinelyUncertain(question: InterviewQuestion, answer: QuestionAnswer | undefined): boolean {
+  if (!answer) return false;
+  if (question.type === 'boolean') return isUncertain({ [question.id]: answer }, question.id);
+  const values = Array.isArray(answer.raw) ? answer.raw : [answer.raw];
+  const definiteOptions = new Set((question.options ?? []).map((option) => option.value));
+  return values.some((value) => {
+    if (NON_BOOLEAN_UNKNOWN_VALUES.has(value)) return true;
+    if (typeof value === 'string' && definiteOptions.has(value)) return false;
+    return answer.triState === 'unknown';
+  });
+}
+
 export function questionProgress(ctx: InterviewContext): QuestionProgress {
   const list = INTERVIEW[ctx.record.location.region] ?? [];
   const asked = askedIds(ctx.answers);
@@ -1071,10 +1095,8 @@ export function questionProgress(ctx: InterviewContext): QuestionProgress {
     answered: applicable.filter((question) => asked.has(question.id)).length,
     total: applicable.length,
     requiredLeft: applicable.filter((question) => question.required && !asked.has(question.id)).length,
-    // Outstanding means asked-and-uncertain OR never asked. An answer of
-    // "don't know" leaves the question genuinely open, so it belongs here.
     outstanding: applicable
-      .filter((question) => !asked.has(question.id) || isUncertain(ctx.answers, question.id))
+      .filter((question) => !asked.has(question.id) || isGenuinelyUncertain(question, ctx.answers[question.id]))
       .map((question) => question.id),
   };
 }
