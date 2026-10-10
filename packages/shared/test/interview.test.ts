@@ -52,6 +52,58 @@ test('a "don\'t know" answer is not re-asked but is still reported outstanding',
   assert.ok(progress.outstanding.includes(first.id), 'it must still be reported as outstanding');
 });
 
+test('a definite free-text answer is answered, not outstanding', () => {
+  // Free text has no yes/no tokens, so `normaliseYesNo` returns `unknown` even for an
+  // unambiguous description. That normalisation is for safety booleans only; treating it
+  // as uncertainty here would leave every text answer permanently outstanding.
+  const elevation = INTERVIEW.shoulder.find((question) => question.id === 'shoulder.elevation');
+  assert.ok(elevation, 'the shoulder elevation question is missing');
+  const answers = putAnswer({}, buildAnswer({
+    questionId: elevation.id,
+    raw: 'reaching overhead',
+    provenance: { capturedAt: '2026-01-01T00:00:00.000Z', createdBy: 'user' },
+  }));
+  const progress = questionProgress(ctxFor('shoulder', answers));
+  assert.ok(
+    !progress.outstanding.includes(elevation.id),
+    `a definite description is still reported as outstanding: ${progress.outstanding.join(', ')}`,
+  );
+});
+
+test('blank free text establishes no answer fact but remains outstanding', () => {
+  // A blank submission is not "the patient said nothing happened"; it is the absence of an
+  // answer. It must change nothing while still counting as open.
+  const record = emptyRecord('shoulder');
+  const answer = buildAnswer({
+    questionId: 'shoulder.elevation',
+    raw: '   ',
+    provenance: { capturedAt: '2026-01-01T00:00:00.000Z', createdBy: 'user' },
+  });
+  const before = JSON.stringify(record);
+  assert.deepEqual(applyAnswer(record, answer.questionId, answer), []);
+  assert.equal(JSON.stringify(record), before, 'blank text changed the record');
+  const progress = questionProgress(ctxFor('shoulder', putAnswer({}, answer)));
+  assert.ok(
+    progress.outstanding.includes('shoulder.elevation'),
+    'blank text is being treated as a resolved answer',
+  );
+});
+
+test('explicit free-text uncertainty stays outstanding', () => {
+  // The phrase is a genuine "I don't know", even though free text has no declared unknown
+  // option. Classifying it as answered would settle the patient's own uncertainty for them.
+  const answers = putAnswer({}, buildAnswer({
+    questionId: 'shoulder.elevation',
+    raw: "I don't know",
+    provenance: { capturedAt: '2026-01-01T00:00:00.000Z', createdBy: 'user' },
+  }));
+  const progress = questionProgress(ctxFor('shoulder', answers));
+  assert.ok(
+    progress.outstanding.includes('shoulder.elevation'),
+    'explicit uncertainty stopped being outstanding',
+  );
+});
+
 test('the cauda equina gate is mandatory for lower back, not optional', () => {
   const gates = INTERVIEW.lower_back.filter((q) => q.safetyRuleId === 'msk.cauda_equina');
   assert.ok(gates.length >= 1);

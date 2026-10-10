@@ -207,6 +207,31 @@ test('every answer a section renders also has an edit control', () => {
   );
 });
 
+test('review shows tenderness uncertainty as asked, not as never asked', () => {
+  // The pre-save review already resolves the unsure option to its label. Asked
+  // but undetermined must read as the patient's own uncertainty, while a question
+  // never put to them stays "Not asked" in the disclosure.
+  const record = emptyRecord('shoulder');
+  const rows = answerSections(record, {
+    'shoulder.tenderness': buildAnswer({
+      questionId: 'shoulder.tenderness',
+      raw: 'unknown',
+      triState: 'unknown',
+      provenance: { capturedAt: '2026-01-01T00:00:00.000Z', createdBy: 'user' },
+    }),
+  }).flatMap((section) => section.rows);
+  const row = rows.find((candidate) => candidate.label.includes('press on the sore spot'));
+  assert.ok(row, 'the tenderness answer is missing from review');
+  assert.equal(row.value, 'I am not sure');
+  assert.equal(row.asked, true);
+
+  const unasked = answerSections(emptyRecord('shoulder'), {}).flatMap((section) => section.rows);
+  const unaskedRow = unasked.find((candidate) => candidate.label.includes('press on the sore spot'));
+  assert.ok(unaskedRow, 'the unasked tenderness question is missing from review');
+  assert.equal(unaskedRow.value, 'Not asked');
+  assert.equal(unaskedRow.asked, false);
+});
+
 test('answersInSection keeps question order and reports only what was asked', () => {
   const record = emptyRecord('knee');
   const answered: AnswerMap = {};

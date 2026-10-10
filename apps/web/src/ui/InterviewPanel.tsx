@@ -162,6 +162,26 @@ function QuestionForm({
         ]
       : question.options;
   const canContinue = isText ? Boolean(text.trim()) : selected.length > 0;
+  const exclusiveValues = new Set(
+    (options ?? []).filter((option) => option.exclusive).map((option) => option.value),
+  );
+  const updateSelection = (value: string, checked: boolean) => {
+    if (!isMulti) {
+      setSelected([value]);
+      return;
+    }
+    if (!checked) {
+      setSelected(selected.filter((current) => current !== value));
+      return;
+    }
+    // An exclusive uncertainty response replaces the whole selection, and any
+    // definite selection removes it. The domain also treats them as incompatible.
+    setSelected(
+      exclusiveValues.has(value)
+        ? [value]
+        : [...selected.filter((current) => !exclusiveValues.has(current)), value],
+    );
+  };
 
   return (
     <form
@@ -205,15 +225,7 @@ function QuestionForm({
                   name={question.id}
                   value={option.value}
                   checked={selected.includes(option.value)}
-                  onChange={(event) =>
-                    setSelected(
-                      isMulti
-                        ? event.target.checked
-                          ? [...selected, option.value]
-                          : selected.filter((value) => value !== option.value)
-                        : [option.value],
-                    )
-                  }
+                  onChange={(event) => updateSelection(option.value, event.target.checked)}
                 />
                 <span>
                   <span className="option__label">{option.label}</span>
@@ -236,6 +248,18 @@ function QuestionForm({
               value={text}
               onChange={(event) => setText(event.target.value)}
             />
+            {question.uncertainty && (
+              <button
+                type="button"
+                className="btn btn--quiet"
+                onClick={() => {
+                  const uncertainty = question.uncertainty;
+                  if (uncertainty) onAnswer(uncertainty.value, "unknown");
+                }}
+              >
+                {question.uncertainty.label}
+              </button>
+            )}
           </>
         )}
         {!options && !isText && (

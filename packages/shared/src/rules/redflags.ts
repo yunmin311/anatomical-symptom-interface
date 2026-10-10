@@ -157,18 +157,38 @@ export const MSK_RULES: RedFlagRule[] = [
     id: 'msk.neck_trauma_neuro',
     scope: ['neck', 'shoulder'],
     severity: 'emergency',
-    title: 'Neck injury with neurological symptoms',
+    title: 'Injury with weakness or numbness',
     userMessage:
-      'A neck injury together with weakness, numbness, or difficulty walking needs immediate assessment.',
+      'An injury together with weakness, numbness, or difficulty moving needs immediate assessment.',
     actionSteps: [
       'Go to an emergency department now.',
-      'Keep your neck still in whatever position is comfortable.',
+      'Keep the injured area still in whatever position is comfortable.',
       'Do not drive yourself if you have any weakness or dizziness.',
     ],
     signalsUsed: ['neck_trauma_with_neuro_symptoms', 'trauma_with_loss_of_movement'],
     when: (r, s) =>
       yes(s, 'neck_trauma_with_neuro_symptoms') ||
       (yes(s, 'trauma_with_loss_of_movement') && r.quality.includes('numbness')),
+    /*
+      The same severity, the same signals, and the same trigger -- stated in terms of the
+      body part the patient actually described.
+
+      `shoulder.trauma_urgent` drives `trauma_with_loss_of_movement`, so this rule fires on
+      shoulder episodes, and it used to open with "A neck injury together with...". The
+      guidance was right and the subject was wrong: it told a shoulder patient to keep
+      their NECK still.
+
+      Neutral wording is enough rather than a per-region message map, because neither
+      region needs naming here -- and a mechanism for per-region messages would be an
+      unused field, which invites the next person to believe region-specific wording is
+      handled when it is not.
+
+      Nothing clinical changed. Same scope, same 'emergency', same two signals, same
+      predicate -- so if this rule should have fired for a shoulder patient before, it
+      still fires, and still escalates to `blocked` under the release profile. Both are
+      asserted in shoulder-interview-semantics.test.ts, because "I only changed a string"
+      is not a claim that should be taken on trust for an emergency rule.
+    */
     review: {
       status: 'unreviewed',
       basis: 'Trauma with neurological deficit pathway. Verify against current national guidance before release.',

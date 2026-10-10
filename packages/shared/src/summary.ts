@@ -26,6 +26,7 @@
 import { REGIONS, getStructure } from './anatomy.ts';
 import type { BodyRegion } from './anatomy.ts';
 import { QUALITY_LABELS, projectUserSelection } from './symptom.ts';
+import { INTERVIEW, isGenuinelyUncertain, optionLabel } from './interview/engine.ts';
 import type { Episode, Quality, SymptomRecord, Trigger } from './symptom.ts';
 import type { SafetyFlag, WithheldFlag } from './rules/redflags.ts';
 import type { AnswerMap } from './answers.ts';
@@ -242,13 +243,43 @@ export function buildPreVisitSummary(episode: Episode, opts: SummaryOptions = {}
   if (coverage['triggerDetail'] && record.triggerDetail) {
     history.push({ label: 'Trigger detail', value: record.triggerDetail });
   }
+  const radiationAnswer = opts.answers?.['shoulder.radiation'];
+  const radiationQuestion = INTERVIEW.shoulder.find((question) => question.id === 'shoulder.radiation');
+  const radiationUnresolved =
+    radiationQuestion && radiationAnswer && isGenuinelyUncertain(radiationQuestion, radiationAnswer);
   history.push({
     label: 'Radiation',
-    value: render(coverage, 'radiation', joinOr(record.radiation.map(titleCase), NOT_ASKED_LABEL)),
+    value:
+      record.radiation.length > 0
+        ? record.radiation
+            .map((value) =>
+              record.location.region === 'shoulder'
+                ? (optionLabel('shoulder.radiation', value) ?? titleCase(value))
+                : titleCase(value),
+            )
+            .join(', ')
+        : radiationUnresolved
+          ? UNKNOWN_LABEL
+          : coverage['radiation']
+            ? 'none'
+            : NOT_ASKED_LABEL,
   });
+  const tendernessAnswer = opts.answers?.['shoulder.tenderness'];
+  const tendernessQuestion = INTERVIEW.shoulder.find((question) => question.id === 'shoulder.tenderness');
+  // Asked-but-undetermined is not the same as never asked. The mapping writes no
+  // value row for `unknown`, so coverage alone cannot tell the two apart — but the
+  // answer map can. Shoulder-only: no other region asks this question.
+  const tendernessUnresolved =
+    record.location.region === 'shoulder' &&
+    tendernessQuestion !== undefined &&
+    tendernessAnswer !== undefined &&
+    isGenuinelyUncertain(tendernessQuestion, tendernessAnswer) &&
+    coverage['tendernessOnPalpation'] === false;
   history.push({
     label: 'Tenderness on palpation',
-    value: render(coverage, 'tendernessOnPalpation', titleCase(record.tendernessOnPalpation)),
+    value: tendernessUnresolved
+      ? UNKNOWN_LABEL
+      : render(coverage, 'tendernessOnPalpation', titleCase(record.tendernessOnPalpation)),
   });
   history.push({
     label: 'Onset',
@@ -298,7 +329,12 @@ export function buildPreVisitSummary(episode: Episode, opts: SummaryOptions = {}
     value: render(coverage, 'context.systemicSymptoms', joinOr(systemic, 'none reported'), { negativeLooking: true }),
   });
   if (coverage['context.recentInjury'] && record.context.recentInjury) {
-    history.push({ label: 'Recent injury or mechanism', value: record.context.recentInjury });
+    const mechanism =
+      record.location.region === 'shoulder'
+        ? (optionLabel('shoulder.injury_context', record.context.recentInjury) ??
+          record.context.recentInjury)
+        : record.context.recentInjury;
+    history.push({ label: 'Recent injury or mechanism', value: mechanism });
   }
   if (coverage['context.recentActivity'] && record.context.recentActivity) {
     history.push({ label: 'Recent activity', value: record.context.recentActivity });

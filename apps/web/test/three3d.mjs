@@ -137,14 +137,16 @@ try {
     await page.screenshot({ path: `${out}/locate-3d-1440.png`, fullPage: false });
   });
 
-  await check('switching to the 2D map keeps the page usable', async () => {
-    await page.getByRole('radio', { name: '2D map' }).check();
+  // "Body map", not "2D map": the Viewer group gained the derived anatomy map, which
+  // made "2D map" ambiguous, so the schematic was renamed. See hit-zones.mjs.
+  await check('switching to the body map keeps the page usable', async () => {
+    await page.getByRole('radio', { name: 'Body map' }).check();
     await page.locator('[data-testid="bodymap-2d"]').waitFor();
     const hidden = await page.locator('[data-testid="bodymap-2d"]').evaluate((el) =>
       el.classList.contains('is-hidden'),
     );
-    if (hidden) bad('2D map stayed hidden after switching');
-    else ok('2D map is visible again');
+    if (hidden) bad('the body map stayed hidden after switching');
+    else ok('the body map is visible again');
   });
 
   await check('no page errors during 3D mount and teardown', async () => {

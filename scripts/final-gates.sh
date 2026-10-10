@@ -291,6 +291,10 @@ run realgeom    node apps/web/test/real-geometry-browser.mjs
   run realall     node apps/web/test/real-geometry-all-browser.mjs
   run laterality node apps/web/test/laterality-browser.mjs
   run userflow   node apps/web/test/user-flow-browser.mjs
+# Locate continuity: one record across Body map / Anatomy maps / 3D, the
+# interview round trip, and the dead-3D fallback. Separate from the happy-path
+# flow because a surface that drops the selection passes every other gate.
+  run locateflow node apps/web/test/locate-continuity-browser.mjs
 # The paths where the product must REFUSE, ASK or DEGRADE. Separate from the happy-path
 # flow because each of these is a place where the cheapest implementation is to lie: a
 # midline scene that is really a left shoulder, an unavailable structure quietly replaced

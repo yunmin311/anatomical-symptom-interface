@@ -103,6 +103,26 @@
   --space-6: 24px;
   --space-8: 32px;
   --space-12: 48px;
+
+  /*
+    Composite type roles.
+
+    The product used to restate h1-h4 in px while the atlas used `.t-*` classes,
+    which is exactly how two halves of one journey ended up looking like two
+    products. These let a component ask for a role rather than a size, so the
+    scale is the only place a size is written.
+  */
+  --type-display: var(--weight-display) var(--text-display) / var(--text-display-leading) var(--font);
+  --type-title: var(--weight-display) var(--text-title) / var(--text-title-leading) var(--font);
+  --type-section: var(--weight-heading) var(--text-section) / var(--text-section-leading) var(--font);
+  --type-group: var(--weight-heading) var(--text-group) / var(--text-group-leading) var(--font);
+  --type-label: var(--weight-label) var(--text-label) / var(--text-label-leading) var(--font);
+  --type-body: var(--weight-body) var(--text-body) / var(--text-body-leading) var(--font);
+  --type-small: var(--weight-body) var(--text-small) / var(--text-small-leading) var(--font);
+  --type-meta: var(--weight-label) var(--text-meta) / var(--text-meta-leading) var(--font);
+
+  /* WCAG 2.5.5 target size. Anything tappable uses this. */
+  --touch-target: 44px;
   --radius: 4px;
 
   /*

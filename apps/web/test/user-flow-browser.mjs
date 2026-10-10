@@ -158,9 +158,48 @@ try {
 
         const form = page.locator('.interview-panel form');
         if (await form.isVisible().catch(() => false)) {
+          const prompt = await form.locator('.question__prompt').innerText().catch(() => '');
           const text = form.locator('textarea');
-          if (await text.count()) await text.first().fill('it hurts when I lift my arm');
-          else {
+          if (await text.count()) {
+            // The explicit uncertainty action is the supported path for free text. Typing
+            // an uncertainty phrase would leave the answer dependent on phrase matching.
+            // It also submits immediately, so this iteration must not click Continue.
+            const unsureAction = form.getByRole('button', { name: 'I am not sure', exact: true });
+            if (await unsureAction.count()) {
+              await unsureAction.click();
+              answered += 1;
+              continue;
+            }
+            await text.first().fill('it hurts when I lift my arm');
+          } else if (prompt.includes('Is it weakness')) {
+            // Exclusive uncertainty is behaviour, not only an option label: choosing it
+            // must clear definite weakness reports and the pain-only denial, and either
+            // of those must clear it.
+            const weak = form.getByLabel('Weak reaching overhead', { exact: true });
+            const painOnly = form.getByLabel('Just pain, strength feels normal', { exact: true });
+            const unsure = form.getByLabel('I am not sure', { exact: true });
+            await weak.check();
+            await unsure.check();
+            assert(
+              !(await weak.isChecked()) && (await unsure.isChecked()),
+              'weakness uncertainty did not clear a definite weakness selection',
+            );
+            await painOnly.check();
+            assert(
+              (await painOnly.isChecked()) && !(await unsure.isChecked()),
+              'the pain-only denial did not clear weakness uncertainty',
+            );
+            await weak.check();
+            assert(
+              (await weak.isChecked()) && !(await painOnly.isChecked()),
+              'a weakness report did not clear the pain-only denial',
+            );
+            await unsure.check();
+            assert(
+              !(await weak.isChecked()) && (await unsure.isChecked()),
+              'weakness uncertainty did not clear the latest selection',
+            );
+          } else {
             // Prefer the explicit "I am not sure". Answering every question affirmatively
             // would produce a record that claims the user reported something they did not,
             // and "not asked" vs "no" is one of this product's hardest rules.
