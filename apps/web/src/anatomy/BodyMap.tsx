@@ -11,6 +11,7 @@ import type { DerivedViewName } from '@asi/shared';
 import { anatomy, useSession } from '../state/session.ts';
 import { intentFromPick, reducePickToDraft } from './pick-intent.ts';
 import type { MapPoint, PickResult } from './types.ts';
+import type { WorkspaceStatus } from './workspace.ts';
 import { Derived2dShoulderMap } from './Derived2dShoulderMap.tsx';
 import {
   VIEW_H,
@@ -158,6 +159,7 @@ export function BodyMap() {
    * for 3D is exactly how both surfaces end up hidden at once.
    */
   const [threeDReady, setThreeDReady] = useState(false);
+  const [threeDStatus, setThreeDStatus] = useState<WorkspaceStatus | null>(null);
   const [announced, setAnnounced] = useState('');
   /**
    * Whether the showcase region's derived anatomy map is available at all.
@@ -180,6 +182,19 @@ export function BodyMap() {
   const derivedView: DerivedViewName = DERIVED_VIEW[view] ?? 'front';
 
   const showThreeD = surface === '3d' && threeDReady;
+  /**
+   * A 3D failure the user can actually read. The workspace reports the reason
+   * inside the 3D host, which unmounts with the surface switch — so the only
+   * surviving witness is this note. Derived from the last status, so retrying
+   * 3D clears it by replacing the status rather than by forgetting.
+   */
+  const threeDFellBack =
+    !showThreeD &&
+    threeDStatus !== null &&
+    threeDStatus.mode === '2d' &&
+    threeDStatus.ready &&
+    threeDStatus.fallbackReason !== null &&
+    threeDStatus.fallbackReason !== 'user-choice';
   /** The derived anatomy map, when it is the requested surface and has views. */
   const showDerived = surface === 'anatomy2d' && hasDerivedViews;
   /** The hand-authored body silhouette: the area picker, and every fallback. */
@@ -414,6 +429,7 @@ export function BodyMap() {
               onPick={handlePick}
               onStatus={(next) => {
                 setThreeDReady(next.mode === '3d');
+                setThreeDStatus(next);
                 // Only a real failure moves the toolbar. The workspace emits a
                 // "not ready yet" status while mounting, and treating that as a
                 // failure would cancel the mount that was still in flight.
@@ -422,7 +438,16 @@ export function BodyMap() {
                   next.ready &&
                   next.fallbackReason !== null &&
                   next.fallbackReason !== 'user-choice';
-                if (gaveUp) setSurface((current) => (current === '3d' ? '2d' : current));
+                if (gaveUp) {
+                  setSurface((current) => (current === '3d' ? '2d' : current));
+                  // The fallback message lives inside the 3D host, which unmounts
+                  // with the surface switch — so without this announcement the
+                  // failure would be silent: the map just changes under the user.
+                  setAnnounced(
+                    next.message ??
+                      'The 3D view could not start, so the body map is being used instead.',
+                  );
+                }
               }}
             />
             {/*
@@ -571,6 +596,11 @@ export function BodyMap() {
                 </>
               )}
             </p>
+            {threeDFellBack && threeDStatus?.message && (
+              <p className="small viewer-foot__fallback" data-testid="surface-fallback-note">
+                {threeDStatus.message} The area buttons below still work.
+              </p>
+            )}
           </div>
         </div>
         {/*

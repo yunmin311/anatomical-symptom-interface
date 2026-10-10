@@ -714,6 +714,15 @@ details > p {
   font-size: 12px;
   max-width: 440px;
 }
+/* A 3D failure the user can read without opening anything. It renders only on
+   fallback, next to the truth line it qualifies, and it names the next action
+   so the failure reads as a detour rather than a dead end. */
+.viewer-foot__fallback {
+  margin: 8px 0 0;
+  padding: 8px 10px;
+  background: #f1eadd;
+  border-left: 3px solid var(--candidate);
+}
 /* ------------------------------------------------------------------ *
  * The derived anatomy map.
  *
@@ -1688,6 +1697,19 @@ details > p {
   .facts > div {
     gap: 16px;
     grid-template-columns: 1fr 1.5fr;
+  }
+  /* Tablet toolbar: the two choice groups share one narrow column with the
+     no-wrap surface label, so each group squeezes to ~129px and its radios stack
+     one per line — seven rows of chrome before the anatomy at 768, with the
+     render shrinking to what is left. Letting the toolbar wrap gives each group
+     the full row: Body view takes at most two compact rows, Viewer one, and the
+     label drops to its own line instead of stealing the row the groups need. */
+  .viewer-toolbar {
+    flex-wrap: wrap;
+  }
+  .viewer-toolbar__views {
+    flex: 1 1 100%;
+    gap: 8px 20px;
   }
 }
 @media (max-width: 700px) {
