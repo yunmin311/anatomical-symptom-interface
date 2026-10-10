@@ -192,6 +192,13 @@ const SHOULDER_WEAKNESS_NONE = 'pain_only';
 /** Explicit uncertainty cannot coexist with a weakness report or its denial. */
 const SHOULDER_WEAKNESS_UNKNOWN = 'unknown';
 
+/**
+ * Options that are exclusive within the weakness multi-select. Kept next to the
+ * option definitions they must match: the UI reads `exclusive` from the options,
+ * while `applyTo` below cannot see its own question and so reads this list.
+ */
+const SHOULDER_WEAKNESS_EXCLUSIVE: readonly string[] = [SHOULDER_WEAKNESS_NONE, SHOULDER_WEAKNESS_UNKNOWN];
+
 /** Every activity string this question can own, so a correction can withdraw exactly its own. */
 const SHOULDER_WEAKNESS_ALL: readonly string[] = [
   ...Object.values(SHOULDER_WEAKNESS_ACTIVITIES),
@@ -331,12 +338,26 @@ const SHOULDER_QUESTIONS: InterviewQuestion[] = [
       { value: 'weak_above_head', label: 'Weak reaching overhead', impliesStructureIds: ['asi:shoulder.supraspinatus-tendon'] },
       { value: 'weak_external_rotation', label: 'Weak turning out to the side', impliesStructureIds: ['asi:shoulder.infraspinatus', 'asi:shoulder.teres-minor'] },
       { value: 'weak_internal_rotation', label: 'Weak turning in behind my back', impliesStructureIds: ['asi:shoulder.subscapularis'] },
-      { value: 'pain_only', label: 'Just pain, strength feels normal' },
+      { value: 'pain_only', label: 'Just pain, strength feels normal', exclusive: true },
       { value: 'unknown', label: 'I am not sure', exclusive: true },
     ],
     highlightStructureIds: ['asi:shoulder.supraspinatus-tendon', 'asi:shoulder.infraspinatus', 'asi:shoulder.subscapularis'],
     applyTo: (record, a) => {
       const picked = Array.isArray(a.raw) ? (a.raw as string[]) : [String(a.raw)];
+      const distinct = [...new Set(picked)];
+      // A contradictory multi-select records NOTHING, not even a denial.
+      //
+      // `pain_only` mixed with a weakness option is two opposite statements in one
+      // answer: "strength feels normal" and "weak reaching overhead". The old code
+      // let `pain_only` win and withdrew every weakness activity, so a malformed
+      // answer silently read as "no weakness". An exclusive option arriving with any
+      // other distinct value is therefore indeterminate: the answer stays in the
+      // answer map and stays outstanding, but no domain fact is made from it.
+      if (
+        distinct.some((value) => SHOULDER_WEAKNESS_EXCLUSIVE.includes(value)) &&
+        distinct.some((value) => !SHOULDER_WEAKNESS_EXCLUSIVE.includes(value))
+      )
+        return [];
       // An explicit unknown response records no activity, even if it arrives with
       // another value. Uncertainty is not a weaker form of one of the options.
       if (picked.includes(SHOULDER_WEAKNESS_UNKNOWN)) return [];
@@ -1129,6 +1150,22 @@ export function isGenuinelyUncertain(question: InterviewQuestion, answer: Questi
   }
   const values = Array.isArray(answer.raw) ? answer.raw : [answer.raw];
   const definiteOptions = new Set((question.options ?? []).map((option) => option.value));
+  // An exclusive option arriving with another distinct value is a contradictory
+  // answer, not a weaker definite one. It stays outstanding rather than settling
+  // into whatever the denial half of the contradiction would have recorded.
+  if (question.type === 'multi') {
+    const exclusive = new Set<unknown>(
+      (question.options ?? []).filter((option) => option.exclusive).map((option) => option.value),
+    );
+    if (exclusive.size > 0) {
+      const distinct = [...new Set(values)];
+      if (
+        distinct.some((value) => exclusive.has(value)) &&
+        distinct.some((value) => !exclusive.has(value))
+      )
+        return true;
+    }
+  }
   return values.some((value) => {
     if (NON_BOOLEAN_UNKNOWN_VALUES.has(value)) return true;
     if (typeof value === 'string' && definiteOptions.has(value)) return false;

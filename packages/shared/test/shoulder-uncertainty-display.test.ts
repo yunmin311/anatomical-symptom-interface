@@ -140,6 +140,52 @@ describe('shoulder.weakness uncertainty is exclusive and writes nothing', () => 
     assert.equal(option?.exclusive, true);
   });
 
+  test('pain_only is exclusive against every weakness option and unknown', () => {
+    // `pain_only` used to combine freely with weakness options, so a mixed answer
+    // silently read as a denial. Both exclusive markers must be declared for the
+    // UI to keep them apart.
+    const options = INTERVIEW[SHOULDER].find((q) => q.id === WEAKNESS)?.options ?? [];
+    const painOnly = options.find((option) => option.value === 'pain_only');
+    assert.equal(painOnly?.exclusive, true);
+    const weaknessOptions = options.filter((option) => option.value.startsWith('weak_'));
+    assert.equal(weaknessOptions.length, 3, 'the three weakness options must stay multi-selectable');
+    assert.ok(weaknessOptions.every((option) => option.exclusive !== true));
+  });
+
+  test('a denial mixed with a weakness report records nothing, not a denial', () => {
+    // The failure this closes: `['weak_above_head', 'pain_only']` let the denial
+    // win and withdrew every weakness activity, so a contradictory answer read as
+    // "no weakness". Contradiction is indeterminate: no fact, still outstanding.
+    for (const raw of [
+      ['weak_above_head', 'pain_only'],
+      ['pain_only', 'weak_external_rotation'],
+      ['pain_only', 'unknown'],
+    ]) {
+      const current = answer(WEAKNESS, raw, 'unknown');
+      const record = emptyRecord(SHOULDER);
+      const before = JSON.stringify(record);
+      const paths = applyAnswer(record, WEAKNESS, current);
+
+      assert.deepEqual(paths, [], `${JSON.stringify(raw)} claimed a field write`);
+      assert.equal(JSON.stringify(record), before, `${JSON.stringify(raw)} changed the record`);
+      assert.ok(outstanding(WEAKNESS, current), `${JSON.stringify(raw)} stopped being outstanding`);
+      assert.deepEqual(answerFactPaths(WEAKNESS, current), []);
+    }
+  });
+
+  test('pain_only alone still denies weakness, and duplication changes nothing', () => {
+    // Normal denial semantics are untouched: a lone denial withdraws, and saying
+    // it twice is not a contradiction.
+    const { fields } = replay([
+      { questionId: WEAKNESS, raw: ['weak_above_head'], triState: 'yes' },
+      { questionId: WEAKNESS, raw: ['pain_only'], triState: 'no' },
+    ]);
+    assert.deepEqual(fields['function.activitiesAffected'], []);
+    const duplicated = replay([{ questionId: WEAKNESS, raw: ['pain_only', 'pain_only'], triState: 'no' }]);
+    assert.deepEqual(duplicated.fields['function.activitiesAffected'], []);
+    assert.ok(!outstanding(WEAKNESS, duplicated.answers[WEAKNESS]!));
+  });
+
   test('unknown records no activity, even when combined with another value', () => {
     for (const raw of [['unknown'], ['unknown', 'weak_above_head'], ['unknown', 'pain_only']]) {
       const current = answer(WEAKNESS, raw, 'unknown');
@@ -207,6 +253,63 @@ describe('shoulder.tenderness distinguishes untested from undetermined', () => {
       { questionId: TENDERNESS, raw: 'not_tested', triState: 'yes' },
     ]);
     assert.equal(toUntested.fields.tendernessOnPalpation, 'not_tested');
+  });
+});
+
+describe('shoulder.tenderness asked-but-undetermined renders as not established', () => {
+  test('unknown is not established, never asked, with no value row', () => {
+    // Before the fix the summary row read "not asked", collapsing an asked but
+    // undetermined answer into silence. The record still holds no value row.
+    const record = emptyRecord(SHOULDER);
+    const answers = { [TENDERNESS]: answer(TENDERNESS, 'unknown', 'unknown') };
+    const coverage = { ...deriveCoverage(record), tendernessOnPalpation: false };
+    const { summary, value } = summaryValue(record, 'Tenderness on palpation', coverage, answers);
+
+    assert.equal(value, UNKNOWN_LABEL);
+    assert.equal(
+      (summary.structured as { tendernessOnPalpation: unknown }).tendernessOnPalpation,
+      null,
+      'uncertainty created a tenderness value in the structured output',
+    );
+    assert.ok(
+      summary.outstandingFields.includes('tendernessOnPalpation'),
+      'uncertainty is missing from outstanding fields',
+    );
+    assert.match(
+      renderPlainText(summary),
+      /Tenderness on palpation: not established/,
+      'the copied summary reports uncertainty as never asked',
+    );
+  });
+
+  test('never asked still reads as not asked', () => {
+    const record = emptyRecord(SHOULDER);
+    const { summary, value } = summaryValue(record, 'Tenderness on palpation');
+    assert.equal(value, NOT_ASKED_LABEL);
+    assert.equal(
+      (summary.structured as { tendernessOnPalpation: unknown }).tendernessOnPalpation,
+      null,
+    );
+    assert.ok(summary.outstandingFields.includes('tendernessOnPalpation'));
+  });
+
+  test('not_tested still reads as a real untested report', () => {
+    const record = emptyRecord(SHOULDER);
+    record.tendernessOnPalpation = 'not_tested';
+    const { summary, value } = summaryValue(record, 'Tenderness on palpation');
+    assert.equal(value, 'Not Tested');
+    assert.equal(
+      (summary.structured as { tendernessOnPalpation: unknown }).tendernessOnPalpation,
+      'not_tested',
+    );
+    assert.ok(!summary.outstandingFields.includes('tendernessOnPalpation'));
+  });
+
+  test('the tenderness special case never reaches another region', () => {
+    const record = emptyRecord('neck');
+    const answers = { [TENDERNESS]: answer(TENDERNESS, 'unknown', 'unknown') };
+    const { value } = summaryValue(record, 'Tenderness on palpation', deriveCoverage(record), answers);
+    assert.equal(value, NOT_ASKED_LABEL, 'a neck summary adopted the shoulder display rule');
   });
 });
 

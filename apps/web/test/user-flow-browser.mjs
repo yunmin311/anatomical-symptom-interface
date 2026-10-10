@@ -189,7 +189,16 @@ try {
               (await painOnly.isChecked()) && !(await unsure.isChecked()),
               'the pain-only denial did not clear weakness uncertainty',
             );
+            await weak.check();
+            assert(
+              (await weak.isChecked()) && !(await painOnly.isChecked()),
+              'a weakness report did not clear the pain-only denial',
+            );
             await unsure.check();
+            assert(
+              !(await weak.isChecked()) && (await unsure.isChecked()),
+              'weakness uncertainty did not clear the latest selection',
+            );
           } else {
             // Prefer the explicit "I am not sure". Answering every question affirmatively
             // would produce a record that claims the user reported something they did not,

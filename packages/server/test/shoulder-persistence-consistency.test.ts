@@ -632,6 +632,34 @@ describe('explicit shoulder uncertainty survives persistence and reopen', () => 
     );
   });
 
+  test('a denial mixed with weakness records nothing, on either surface', () => {
+    // The browser keeps `pain_only` apart from weakness options, but persistence
+    // must not silently read a contradictory answer as "no weakness" either.
+    const j = journey([{ questionId: 'shoulder.weakness', raw: ['weak_above_head', 'pain_only'] }]);
+    const storedAnswer = store.answersFor(j.id)['shoulder.weakness'];
+    assert.deepEqual(j.server.activities, [], 'the contradiction recorded a weakness activity');
+    assert.deepEqual(j.client.activities, [], 'the screen recorded a weakness activity');
+    assert.equal(
+      Object.hasOwn(store.fieldStoreFor(j.id), 'function.activitiesAffected'),
+      false,
+      'the contradiction created an activity value row',
+    );
+    assert.equal(
+      store.coverageFor(j.id)['function.activitiesAffected'],
+      false,
+      'the contradiction marked its field asked',
+    );
+    assert.deepEqual(
+      storedAnswer?.raw,
+      ['weak_above_head', 'pain_only'],
+      'the contradictory answer was not retained verbatim',
+    );
+    assert.ok(
+      j.reopen.progress.outstanding.includes('shoulder.weakness'),
+      'the contradiction stopped being outstanding after reopen',
+    );
+  });
+
   test('tenderness uncertainty is not the same as not having pressed the spot', () => {
     const unknownJourney = journey([{ questionId: 'shoulder.tenderness', raw: 'unknown' }]);
     const unknownRecord = unknownJourney.reopen.episode.record;
@@ -762,6 +790,50 @@ describe('persisted shoulder labels stay patient-readable without changing stora
     assert.match(text, /Recent injury or mechanism: After physical activity/);
     assert.match(text, /Radiation: It comes from my neck/);
     assert.doesNotMatch(text, /\bactivity\b.*\bneck_related\b/);
+  });
+
+  test('asked-but-undetermined tenderness reads as not established, not not asked', () => {
+    const j = journey([{ questionId: 'shoulder.tenderness', raw: 'unknown' }]);
+    const { summary, text } = summarized(j.id);
+    const tenderness = summary.history.find((row) => row.label === 'Tenderness on palpation');
+
+    assert.equal(
+      tenderness?.value,
+      'not established',
+      'asked-but-undetermined tenderness is reported as never asked',
+    );
+    assert.deepEqual(
+      (summary.structured as { tendernessOnPalpation: unknown }).tendernessOnPalpation,
+      null,
+      'uncertainty created a tenderness value in the structured output',
+    );
+    assert.ok(
+      summary.outstandingFields.includes('tendernessOnPalpation'),
+      'uncertainty is missing from outstanding fields',
+    );
+    assert.match(text, /Tenderness on palpation: not established/);
+    assert.ok(
+      j.reopen.progress.outstanding.includes('shoulder.tenderness'),
+      'uncertainty stopped being outstanding after reopen',
+    );
+  });
+
+  test('untested tenderness still reads as a real untested report', () => {
+    const j = journey([{ questionId: 'shoulder.tenderness', raw: 'not_tested' }]);
+    const { summary, text } = summarized(j.id);
+    const tenderness = summary.history.find((row) => row.label === 'Tenderness on palpation');
+
+    assert.equal(tenderness?.value, 'Not Tested');
+    assert.equal(
+      (summary.structured as { tendernessOnPalpation: unknown }).tendernessOnPalpation,
+      'not_tested',
+    );
+    assert.ok(!summary.outstandingFields.includes('tendernessOnPalpation'));
+    assert.match(text, /Tenderness on palpation: Not Tested/);
+    assert.ok(
+      !j.reopen.progress.outstanding.includes('shoulder.tenderness'),
+      'a real untested report is reported as outstanding',
+    );
   });
 
   test('an uncertain mechanism remains open rather than becoming a token', () => {

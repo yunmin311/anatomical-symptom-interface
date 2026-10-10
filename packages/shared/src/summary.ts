@@ -264,9 +264,22 @@ export function buildPreVisitSummary(episode: Episode, opts: SummaryOptions = {}
             ? 'none'
             : NOT_ASKED_LABEL,
   });
+  const tendernessAnswer = opts.answers?.['shoulder.tenderness'];
+  const tendernessQuestion = INTERVIEW.shoulder.find((question) => question.id === 'shoulder.tenderness');
+  // Asked-but-undetermined is not the same as never asked. The mapping writes no
+  // value row for `unknown`, so coverage alone cannot tell the two apart — but the
+  // answer map can. Shoulder-only: no other region asks this question.
+  const tendernessUnresolved =
+    record.location.region === 'shoulder' &&
+    tendernessQuestion !== undefined &&
+    tendernessAnswer !== undefined &&
+    isGenuinelyUncertain(tendernessQuestion, tendernessAnswer) &&
+    coverage['tendernessOnPalpation'] === false;
   history.push({
     label: 'Tenderness on palpation',
-    value: render(coverage, 'tendernessOnPalpation', titleCase(record.tendernessOnPalpation)),
+    value: tendernessUnresolved
+      ? UNKNOWN_LABEL
+      : render(coverage, 'tendernessOnPalpation', titleCase(record.tendernessOnPalpation)),
   });
   history.push({
     label: 'Onset',
