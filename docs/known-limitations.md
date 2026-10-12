@@ -59,15 +59,45 @@ engineering completes it. See `docs/safety-regulatory.md`.
 
 ---
 
-## 3. 2D anatomy is a hand-made placeholder
+## 3. The 2D anatomy is a region locator, and on the Right Shoulder a derived pilot
 
-The 2D map is schematic SVG drawn by this repository. It is marked
-`twoD.placeholder = true` on every structure and must never be presented as medical
-artwork.
+There are two different things called "the 2D map", and they are not the same claim.
 
-Production 2D anatomy must come from an external, professionally licensed source. That
-sourcing has not been done. Until it is, the 2D map is a navigation aid and the 3D
-viewer carries the real anatomy.
+**The hand-drawn schematic** is SVG drawn by this repository, marked
+`twoD.placeholder = true` on every structure. It is a *region locator*: it answers
+"roughly where on the body is this", and nothing finer. It must never be presented as
+medical artwork, and production 2D anatomy has to come from an external, professionally
+licensed source. That sourcing has not been done.
+
+**The derived Right Shoulder anatomy** replaces that silhouette on the one region that
+has it. Four views — front, back, and the two side views, which are the viewer's `left`
+and `right` camera positions and are both of the *right* shoulder — each in four layers:
+surface, bone, muscle, vascular. Each layer is an orthographic render of the BodyParts3D
+geometry with a BVH hit grid derived from it; the geometry itself is unmodified. Where a
+person taps, the grid resolves to a structure, which is what makes "point at the structure
+you indicated" possible on a 2D surface at all.
+
+It is a pilot and it is honest about the limits:
+
+- **One region, one side.** The derived build covers the **right** shoulder only, and the
+  app loads exactly that one manifest. The left shoulder, neck, lower back and knee all
+  still show the hand-drawn schematic. Deriving the rest is mechanical, and is not done.
+- **Derived is not reviewed.** The renders are machine-derived from a source dataset, and
+  a machine-derived picture of a shoulder is not a clinically reviewed tissue map. 41 of
+  the 43 presentation structures are classified `machine_derived`; the 2 `evidence_supported`
+  ones are supported by a source citation, not by a clinician.
+- **The hit grid inherits the dataset's gaps.** It can only point at what BodyParts3D
+  contains: solid anatomy, no bursae and no fascial planes. A structure that is not in the
+  archive cannot be pointed at, which is a coverage limit rather than a rendering one.
+- **Of 43 presentation structures, 10 are writable.** The rest are view-only: they
+  highlight when tapped and cannot be selected, and the app says so. A view-only structure
+  is not an error state and not a smaller version of a selectable one.
+- **A point on a render is not a finding.** Tapping says where someone indicated, nothing
+  about what is wrong. The wording is "pointed at" and "indicated", and the summary does
+  not use a stronger word.
+
+Where any of this is unavailable — a layer fails to load, the 3D viewer cannot start — the
+product says why on the surface instead of showing an empty canvas.
 
 ---
 

@@ -26,6 +26,10 @@ the model guessed, what a device measured, and what a doctor concluded.
         ▼
   2D anatomy map  ────────────────►  user points at a structure
         │                            (a visual selection, NOT a finding)
+        │                            Right Shoulder: orthographic renders derived
+        │                            from the BodyParts3D geometry, with a hit grid
+        │                            per layer. Other regions: the hand-drawn
+        │                            schematic, which is a region locator and nothing more
         ▼
   region-specific interview ─────►  yes / no / "I'm not sure" / not asked
         │                           four states, kept distinct everywhere
@@ -66,6 +70,20 @@ pnpm dev           # server :8787 + web :5173
 
 Open http://localhost:5173.
 
+### Right Shoulder Showcase
+
+On the describe screen, **Showcase cases for Right Shoulder** opens five synthetic
+cases: pain that comes on with a movement, an injury you could name, not knowing
+said out loud, the same place later, and what pointing at does and does not mean.
+
+A case is a script, not a mode. It puts words in the real description box and gets
+out of the way; grounding, the body map, the interview, the review, the save and the
+summary are then the ordinary product. Nothing is pre-seeded and no demo write path
+exists, so what a demonstrator shows is what a person gets. Run `action` first —
+`recurrence` reopens the episode it saved.
+
+All five are fictional, name no condition and no result, and carry no advice.
+
 **No API key needed.** Without one, the orchestrator runs fully offline on deterministic
 rules. Set `ANTHROPIC_API_KEY` in `packages/server/.env` to enable the model-backed
 localiser, which can only *propose* locations — never confirm them.
@@ -94,6 +112,11 @@ Read `docs/known-limitations.md`. The short version:
   profile refuses to start. This is an external dependency, not an engineering task.
 - **The 2D map is a placeholder.** Hand-made schematic geometry, marked as such everywhere.
   Real 2D medical artwork has to come from a licensed external source.
+- **The derived 2D anatomy is a Right Shoulder pilot.** The right shoulder's 2D surface is
+  orthographic renders of the BodyParts3D geometry plus a hit grid per layer — better than
+  a silhouette, and still not a clinically reviewed tissue map. The left shoulder and the
+  other three regions have no derived 2D and use the schematic. See
+  `docs/known-limitations.md` §3.
 - **Only the current answer is kept.** Correcting an answer replaces it and marks it
   `user_edited`; there is no history of what was first said.
 - **FMA bindings are unverified.** Every one is a claim read from the source's concept list,
