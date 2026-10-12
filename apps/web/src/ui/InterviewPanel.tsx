@@ -1,11 +1,13 @@
 import { useEffect, useRef, useState } from "react";
 import { nextQuestion, questionProgress, REGIONS, INTERVIEW } from "@asi/shared";
-import type { InterviewQuestion } from "@asi/shared";
+import type { BodyRegion, InterviewQuestion, Side } from "@asi/shared";
 import { anatomy, useSession } from "../state/session.ts";
 import { EmptyState, StatusTag } from "./primitives.tsx";
+import { formatDate, sidePhrase } from "./presentation.ts";
 
 export function InterviewPanel() {
-  const { record, answers, answer, editingQuestionId, cancelEditAnswer } = useSession();
+  const { record, answers, answer, editingQuestionId, cancelEditAnswer, resumedEpisode } =
+    useSession();
   const context = { record, answers };
   const next = nextQuestion(context);
   const progress = questionProgress(context);
@@ -41,24 +43,63 @@ export function InterviewPanel() {
   const openCount = progress.outstanding.length;
   const done = progress.total > 0 ? (progress.total - openCount) / progress.total : 0;
 
+  /**
+   * Which episode this is, when the user CAME BACK to one rather than starting.
+   *
+   * Rendered above the early return on purpose. A reopened episode is usually
+   * fully answered, and that path returns the "you have reached the end" state with
+   * no panel, no question and — before this existed — no indication of which record
+   * was on screen. The one moment the identity matters most was the one moment the
+   * panel had nothing to say.
+   *
+   * Every fact here is the server's: the id, the region, the side, the start date
+   * and the answer count the server sent. The reassurance that this is the SAME
+   * episode is the truth of the write path (reopen sets `episodeId`, so the next
+   * save updates it in place) and is worth saying out loud, because "add answers"
+   * is otherwise indistinguishable from "start a second record".
+   */
+  const resumeBanner = resumedEpisode ? (
+    <div
+      className="interview-resume-banner"
+      data-testid="resume-banner"
+      role="status"
+    >
+      <span>
+        <strong>Continuing an episode you saved.</strong>
+        <span className="small">
+          {REGIONS[resumedEpisode.region as BodyRegion].label} ·{" "}
+          {sidePhrase(resumedEpisode.side as Side)} · started{" "}
+          {formatDate(resumedEpisode.startedAt)} ·{" "}
+          {resumedEpisode.answerCount} answer
+          {resumedEpisode.answerCount === 1 ? "" : "s"} already recorded.
+          Answers you add now are added to this same episode, not a new one.
+        </span>
+      </span>
+    </div>
+  ) : null;
+
   if (!question)
     return (
-      <EmptyState
-        title="You have reached the end of these questions."
-        action={
-          <p className="small">
-            Review the details before saving your episode.
-          </p>
-        }
-      >
-        {progress.answered} answers added; {progress.outstanding.length}{" "}
-        questions remain unanswered or uncertain. This is a symptom record, not
-        a diagnosis.
-      </EmptyState>
+      <>
+        {resumeBanner}
+        <EmptyState
+          title="You have reached the end of these questions."
+          action={
+            <p className="small">
+              Review the details before saving your episode.
+            </p>
+          }
+        >
+          {progress.answered} answers added; {progress.outstanding.length}{" "}
+          questions remain unanswered or uncertain. This is a symptom record, not
+          a diagnosis.
+        </EmptyState>
+      </>
     );
 
   return (
     <section className="panel interview-panel" aria-label="Current question">
+      {resumeBanner}
       {editing && (
         <div className="interview-edit-banner" role="status">
           <span>

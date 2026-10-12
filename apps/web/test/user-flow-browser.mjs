@@ -323,6 +323,29 @@ try {
         .first()
         .waitFor({ timeout: 15_000 });
 
+      // WHICH episode is now on screen. A reopen lands on an interview that looks
+      // exactly like the first one, and a fully answered episode lands on a bare
+      // end-of-questions state with no panel at all -- so the person could not tell
+      // "continuing my record" from "about to start a second one", and the next save
+      // would have updated the old record. These facts have to be visible at the moment
+      // of reopen, not derivable from the fact that the questions happen to be filled in.
+      const resume = page.locator('[data-testid="resume-banner"]');
+      await resume.waitFor({ timeout: 10_000 });
+      const resumeText = (await resume.innerText()).replace(/\s+/g, ' ');
+      assert(
+        /Continuing an episode you saved/.test(resumeText),
+        `a reopened episode did not say it was continuing one: "${resumeText}"`,
+      );
+      assert(
+        /not a new one/.test(resumeText),
+        `a reopened episode did not say its answers go to the SAME record: "${resumeText}"`,
+      );
+      assert(
+        /answers? already recorded/.test(resumeText),
+        `a reopened episode did not report the answers it already holds: "${resumeText}"`,
+      );
+      ok('says which episode this is, and that it is the same one');
+
       // The whole point: the record came back, so this is the same episode rather than a
       // new one. A second record for the same complaint would make the history lie about
       // how many times something happened.
@@ -415,6 +438,22 @@ try {
         'a corrected answer is not labelled as corrected on screen',
       );
       ok(`corrected ${questionId} and it is labelled as a change`);
+    });
+
+    // Placed AFTER the correction check because it is destructive: it starts a new
+    // episode, which is the only route that clears a resumed one.
+    await check(`a new episode is not still the resumed one${at}`, async () => {
+      await page.locator('.new-episode').click();
+      await page
+        .locator('.confirm-dialog')
+        .getByRole('button', { name: 'Start new episode' })
+        .click();
+      await page.locator('#description').waitFor({ timeout: 15_000 });
+      assert(
+        (await page.locator('[data-testid="resume-banner"]').count()) === 0,
+        'a brand new episode still claimed to be continuing a saved one',
+      );
+      ok('the resume banner is gone, and nothing was deleted server-side');
     });
 
     await check(`a doctor-readable summary exists${at}`, async () => {

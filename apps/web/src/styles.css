@@ -249,7 +249,8 @@ ol {
 .not-asked p {
   margin: 8px 0 0;
 }
-.interview-edit-banner {
+.interview-edit-banner,
+.interview-resume-banner {
   display: flex;
   flex-wrap: wrap;
   gap: var(--space-2, 8px);
@@ -260,6 +261,24 @@ ol {
   border-left: 3px solid var(--accent);
   background: var(--surface-2, #f6f4f2);
   font-size: 14px;
+}
+/*
+  The resume banner is CONTEXT and the edit banner is an ACTION, so they must not
+  read as the same kind of thing: someone who reopened an episode should not read it
+  as "you are about to overwrite an answer". Same accent family, tinted fill instead
+  of flat, and the two lines stacked rather than spread around a button — the
+  difference is structural, not a second colour that the palette does not have.
+*/
+.interview-resume-banner {
+  background: var(--accent-soft, #e9e0e5);
+}
+.interview-resume-banner > span {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.interview-resume-banner .small {
+  color: var(--muted, #60635f);
 }
 .interview-edit-banner .btn--quiet {
   text-decoration: underline;
