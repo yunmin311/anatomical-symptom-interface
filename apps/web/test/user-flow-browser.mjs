@@ -75,6 +75,39 @@ try {
     await page.goto(url);
     await page.waitForSelector('#root *', { timeout: 30_000 });
 
+    await check(`a showcase case fills the real description box${at}`, async () => {
+      // The Showcase must be the ordinary product with words pre-typed, not a mode
+      // of its own. So the thing worth asserting is narrow and literal: the panel
+      // opens on this screen, a case puts its own words into the SAME textarea a
+      // person types into, and the panel gets out of the way. Everything after this
+      // check walks the ordinary flow, so a case that only worked in a demo mode
+      // would fail here and could not pass silently.
+      await page.locator('[data-testid="showcase-open"]').click();
+      await page.locator('[data-testid="showcase-panel"]').waitFor({ timeout: 10_000 });
+
+      await page.locator('[data-testid="showcase-toggle-uncertainty"]').click();
+      await page
+        .locator('[data-testid="showcase-start-uncertainty"]')
+        .waitFor({ timeout: 10_000 });
+      assert(
+        (await page.locator('[data-testid="showcase-panel"]').count()) > 0,
+        'choosing a case did not show its script',
+      );
+      await page.locator('[data-testid="showcase-start-uncertainty"]').click();
+
+      const box = page.getByLabel('What has been bothering you?');
+      const value = await box.inputValue();
+      assert(
+        /cannot pin it down/i.test(value),
+        `the case did not reach the description box; it holds "${value}"`,
+      );
+      assert(
+        (await page.locator('[data-testid="showcase-panel"]').count()) === 0,
+        'the panel stayed open over the form it was filling in',
+      );
+      ok('a case prefills the description box and steps aside');
+    });
+
     await check(`describe a symptom${at}`, async () => {
       await page
         .getByLabel('What has been bothering you?')
