@@ -274,10 +274,22 @@ instead found four things in it:
 
 **Still open on this milestone:**
 
-- [ ] **The A–T acceptance specification is not in this repository.** The showcase has
-      browser evidence at three widths and 29 automated gates, but the A–T checklist it
-      was meant to satisfy has not been found, so no A–T claim is made here. Either the
-      authority is supplied, or the checklist is reconstructed and marked as such.
+- [ ] **The A–T acceptance specification is not in this repository, and the external
+      product plan has no lettered checklist either.** The plan
+      (`Anatomical_Symptom_Interface_Product_Plan_B_Format.md` §12) states the milestone in
+      prose instead: *"get one user, in 2–3 minutes, to turn a symptom they could only
+      describe as 'it hurts deep inside my right shoulder' into a record with a clear
+      location, complete attributes, that can be saved and shown to a doctor."*
+      So the showcase has evidence and **no A–T claim**: the checklist is either supplied
+      or reconstructed and marked as reconstructed.
+- [ ] **The 2–3 minutes is unverified, and a script cannot verify it.** Measured, the
+      whole spine journey costs ~1.9s of *product* time at both 375 and 1440 — grounding,
+      locate, eight answers, review, save — which says the product itself adds no
+      measurable latency and stalls on nothing. It says nothing about whether the
+      journey *feels* like two minutes, because that is eight questions' worth of reading
+      and deciding by a person. The honest reading is "no overhead found", not "the
+      milestone is met". The plan's first open question is whether the 3D/anatomy
+      interaction is too heavy to be worth doing at all, and no timing script answers that.
 - [ ] **Derived 2D anatomy for the other three regions.** Mechanical, and deliberately
       not started: one region was built to find out what the pipeline actually costs.
 - [ ] **Clinical review**, unchanged and external: the safety rules, the six-week
