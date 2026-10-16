@@ -32,6 +32,12 @@ import {
   answerDerivedMutations,
   canonicalIdentityForWrite,
 } from '@asi/shared';
+import {
+  ANSWER_DERIVED_FIELD_PATHS,
+  INTERVIEW,
+  answerFactPaths,
+  isGenuinelyUncertain,
+} from '@asi/shared';
 import type {
   AnswerMap,
   Attributed,
@@ -128,11 +134,77 @@ export function provenanceFor(episodeId: string): Record<string, Provenance> {
   return out;
 }
 
-/** Which registry fields have a stored value. The honest basis for the summary. */
+/**
+ * Which registry fields were actually asked about. The honest basis for the summary.
+ *
+ * ## Why a field row is not sufficient evidence
+ *
+ * A field row exists when the stored value DIFFERS from what the episode already held.
+ * `shoulder.radiation` answers "no, it stays in the shoulder" by recording `[]`, which is
+ * also what a fresh record holds -- so no row is written, and coverage said the question
+ * was never put. The patient had explicitly denied referred pain and the pre-visit summary
+ * printed "Radiation: not asked".
+ *
+ * That is the wrong way round for this product: "asked, and the answer was no" and "never
+ * asked" are different facts, and the summary is supposed to keep them apart.
+ *
+  * ## The second source, which is not a fabricated write
+  *
+  * A field is also covered when an ANSWER to the question that derives it exists and
+  * resolves that question. This reads the answer map -- which is already stored, already the patient's,
+  * and already the authority on what they said -- rather than inventing a mutation or a
+  * provenance row to make coverage come out right.
+  *
+  * An uncertain answer is excluded deliberately. "I am not sure" is a real answer and it must still
+  * count as outstanding; letting it mark a field covered would turn an unanswered question
+  * into a reported negative, which is the exact inversion this product forbids.
+ *
+ * Note this is a coverage statement only. It does NOT write the field, and the summary's
+ * value still comes from the record -- so a covered-but-empty field is rendered as an
+ * explicit negative rather than as a value.
+ */
 export function coverageFor(episodeId: string): Record<string, boolean> {
-  const paths = new Set(fieldRows(episodeId).map((r) => r.field_path));
+  const rowValues = new Map(
+    fieldRows(episodeId).map((row) => [row.field_path, JSON.parse(row.value_json) as unknown] as const),
+  );
+  const answers = answersFor(episodeId);
+  const addressedPaths = new Set<string>();
+  const unresolvedPaths = new Set<string>();
+  for (const answer of Object.values(answers)) {
+    for (const region of Object.keys(INTERVIEW) as BodyRegion[]) {
+      const question = INTERVIEW[region]?.find((q) => q.id === answer.questionId);
+      if (!question) continue;
+      /*
+        Positive coverage follows fields the answer's own mapping actually moves. An
+        uncertain answer contributes no field, so genuinely indeterminate questions can
+        neither establish a fact nor, by themselves, hide one that is otherwise
+        established.
+      */
+      for (const path of answerFactPaths(question.id, answer)) addressedPaths.add(path);
+      /*
+        An uncertain correction can leave a stale placeholder row behind. Only the fields
+        that correction actually moved are eligible to be reopened, which is why the stored
+        answer's own paths are consulted rather than the question's declared field. The
+        client already reports exactly those paths; trusting them here can only remove
+        coverage, never invent it.
+      */
+      if (isGenuinelyUncertain(question, answer)) {
+        for (const path of answer.wroteFields) {
+          if ((ANSWER_DERIVED_FIELD_PATHS as readonly string[]).includes(path)) unresolvedPaths.add(path);
+        }
+      }
+    }
+  }
   const out: Record<string, boolean> = {};
-  for (const p of writablePaths()) out[p] = paths.has(p);
+  for (const p of writablePaths()) {
+    /*
+      An unresolved correction opens only a placeholder. A non-empty value stays covered:
+      it is sustained either by another current answer or by an independently confirmed
+      fact, and an uncertain answer must not erase that distinction.
+    */
+    const unresolved = unresolvedPaths.has(p) && !addressedPaths.has(p) && isPlaceholderValue(rowValues.get(p));
+    out[p] = (rowValues.has(p) || addressedPaths.has(p)) && !unresolved;
+  }
   return out;
 }
 
@@ -244,6 +316,26 @@ function deepEqual(a: unknown, b: unknown): boolean {
   if (a === b) return true;
   if (a === undefined || b === undefined) return false;
   return JSON.stringify(a) === JSON.stringify(b);
+}
+
+/*
+  An absent field is not a field waiting for its default.
+
+  The recompute always returns a defined placeholder (`null`, `[]`, `['none']`) for an
+  unanswered field, because SQLite cannot bind `undefined`. Writing that placeholder as a
+  row would create provenance for something the patient never said, then coverage would
+  read the row back as proof. Trauma and vascular denials exposed this: neither writes a
+  fact, but the recompute materialised `recentInjury: null`, so "we asked about trauma"
+  became "we established a mechanism". Only an actual stored value can receive a row.
+*/
+function isPlaceholderValue(value: unknown): boolean {
+  if (value === undefined || value === null || value === '' || value === 'unknown' || value === 'no') {
+    return true;
+  }
+  return (
+    Array.isArray(value) &&
+    (value.length === 0 || (value.length === 1 && value[0] === 'none'))
+  );
 }
 
 /**
@@ -393,6 +485,9 @@ export function applyMutations(episodeId: string, input: ApplyInput, profile: Re
         // blanket rewrite: a value that is already correct is not rewritten, so its
         // provenance stays exactly as the user left it -- including its original timestamp
         // and editor.
+        if (readPath(record, derived.fieldPath) === undefined && isPlaceholderValue(derived.value)) {
+          continue;
+        }
         if (deepEqual(readPath(record, derived.fieldPath), derived.value)) continue;
         fieldMutations.push({
           fieldPath: derived.fieldPath,

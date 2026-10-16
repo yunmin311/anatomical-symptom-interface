@@ -13,10 +13,12 @@
  *   - Mutations sent to the server are exactly the fields that were written.
  */
 import {
+  ANSWER_DERIVED_FIELD_PATHS,
   applyAnswer,
   buildAnswer,
   emptyRecord,
   evaluateSafety,
+  fieldsFromAnswers,
   getStructure,
   nextQuestion,
   projectUserSelection,
@@ -130,6 +132,36 @@ export interface AnswerResult {
   answer: ReturnType<typeof buildAnswer>;
 }
 
+/** Read a dotted path out of a record. */
+function readPath(record: SymptomRecord, fieldPath: string): unknown {
+  return fieldPath
+    .split('.')
+    .reduce<unknown>(
+      (node, key) => (node as Record<string, unknown> | undefined)?.[key],
+      record as unknown as Record<string, unknown>,
+    );
+}
+
+/** A copy of the record with one dotted path replaced. Never mutates the input. */
+function withPath(record: SymptomRecord, fieldPath: string, value: unknown): SymptomRecord {
+  const [head, child, extra] = fieldPath.split('.');
+  // Safe: the only caller passes closed answer-derived paths, and all of them have one
+  // segment or two. Anything else means the registry invariant changed, so failing here
+  // is safer than writing to a guessed container.
+  if (head === undefined || extra !== undefined || (fieldPath.includes('.') && child === undefined)) {
+    throw new Error(`[state] cannot set malformed answer-derived path "${fieldPath}"`);
+  }
+  if (child === undefined) return { ...record, [head]: value } as SymptomRecord;
+  const container = (record as unknown as Record<string, unknown>)[head];
+  if (typeof container !== 'object' || container === null) {
+    throw new Error(`[state] cannot set "${fieldPath}" on a missing container`);
+  }
+  return {
+    ...record,
+    [head]: { ...container, [child]: value },
+  } as SymptomRecord;
+}
+
 export function recordAnswer(
   record: SymptomRecord,
   answers: AnswerMap,
@@ -152,14 +184,63 @@ export function recordAnswer(
       sourceType: opts.edited ? 'user_edited' : 'user_statement',
     },
   });
+  const baseline = new Map(
+    ANSWER_DERIVED_FIELD_PATHS.map((path) => [path, JSON.stringify(readPath(record, path))] as const),
+  );
   // applyAnswer is the only thing that mutates the record, and it is shared with
   // the server so the two can never diverge.
-  const wroteFields = applyAnswer(record, questionId, answer);
-  const withFields = { ...answer, wroteFields };
+  const claimedFields = applyAnswer(record, questionId, answer);
+  const nextAnswers = putAnswer(answers, answer);
+
+  /*
+    RECONCILE FROM THE WHOLE ANSWER SET, WITHOUT INVENTING ABSENT VALUES.
+    ======================================================================
+
+    `applyAnswer` mutates the record one answer at a time, so it can only withdraw what the
+    SAME question wrote. The server does not work that way at all:
+    `answerDerivedMutations` replays the entire answer set into an empty record, so it
+    withdraws anything the current answers no longer support.
+
+    The two agree only when every withdrawal is expressible within one question, and three
+    shoulder answers were not. Measured through the real store, before this:
+
+      injury_context   injury -> unknown          screen "injury",  store no mechanism
+      radiation        hand_tingle -> unsure      screen kept it,   store cleared it
+      radiation        hand_tingle -> lateral_arm screen kept numbness, store cleared it
+
+    A patient corrected an answer, watched the screen refuse to change, reopened the episode
+    and found the correction had been saved all along. The screen was wrong, and nothing in
+    the app compared the two.
+
+    So the browser now asks the SAME function the server asks, and writes only the
+    difference. A path is reported only when its final value differs from the value before
+    this answer. An absent field is not backfilled with a schema default merely because the
+    recompute has one: that is exactly the fabricated provenance the store refuses to
+    create for safety-only answers.
+
+    `location.*` is untouched by construction: `ANSWER_DERIVED_FIELD_PATHS` excludes it,
+    so a recompute can never erase where the patient pointed.
+  */
+  const derived = fieldsFromAnswers(record.location.region, nextAnswers);
+  const paths: string[] = [];
+  for (const path of ANSWER_DERIVED_FIELD_PATHS) {
+    const before = baseline.get(path);
+    const current = JSON.stringify(readPath(record, path));
+    const next = JSON.stringify(derived[path]);
+    if (next === before) continue;
+    // Preserve genuine absence. When a field was absent, remains absent after this answer's
+    // own mapping, and differs from the recompute only because the recompute has a default,
+    // there is nothing to withdraw and nothing to report.
+    if (before === undefined && current === undefined && !claimedFields.includes(path)) continue;
+    record = withPath(record, path, derived[path]);
+    paths.push(path);
+  }
+
+  const withFields = { ...answer, wroteFields: paths };
   return {
     record,
     answers: putAnswer(answers, withFields),
-    wroteFields,
+    wroteFields: paths,
     answer: withFields,
   };
 }

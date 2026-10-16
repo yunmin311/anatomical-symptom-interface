@@ -66,9 +66,23 @@ for (const width of [1440, 375]) {
     if (await page.getByRole('button', { name: 'Show me the body map' }).isVisible())
       await page.getByRole('button', { name: 'Show me the body map' }).click();
     await page.locator('.location-workbench').waitFor();
-    // The 2D map is the surface under test here.
-    const twoD = page.getByRole('radio', { name: '2D map' });
-    if (await twoD.count()) await twoD.check();
+    /*
+      The schematic body map is the surface under test here.
+
+      Labelled "Body map", not "2D map". The Viewer choice group gained the derived
+      anatomy map ("Anatomy maps"), which made "2D map" ambiguous, so the schematic
+      was renamed. These three browser gates kept the old string and silently
+      stopped finding the radio -- `if (await twoD.count())` made a missing radio
+      look like a skipped step, so zones that could not be clicked were reported as
+      "no clickable box" rather than as "the selector is stale".
+
+      Not a test-only concern: CI runs typecheck/test/smoke/build and never these
+      gates, so nothing but this local run could have caught it.
+    */
+    const twoD = page.getByRole('radio', { name: 'Body map' });
+    const bodyMapRadio = await twoD.count();
+    if (bodyMapRadio) await twoD.check();
+    if (!bodyMapRadio) failures.push(`[${width}] ${c.say}: the Body map surface radio was not found`);
 
     for (const [view, zones] of Object.entries(c.views)) {
       await page.getByRole('radio', { name: view, exact: true }).check();

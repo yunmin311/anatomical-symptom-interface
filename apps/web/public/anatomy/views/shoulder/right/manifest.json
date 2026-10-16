@@ -1,0 +1,141 @@
+{
+  "schemaVersion": 1,
+  "region": "shoulder",
+  "side": "right",
+  "views": {
+    "front": {
+      "surface": {
+        "image": "/anatomy/views/shoulder/right/shoulder-front-surface.png",
+        "grid": "/anatomy/views/shoulder/right/shoulder-front-surface.grid.json",
+        "selectable": false,
+        "distinctStructures": 0
+      },
+      "bone": {
+        "image": "/anatomy/views/shoulder/right/shoulder-front-bone.png",
+        "grid": "/anatomy/views/shoulder/right/shoulder-front-bone.grid.json",
+        "selectable": true,
+        "distinctStructures": 3
+      },
+      "muscle": {
+        "image": "/anatomy/views/shoulder/right/shoulder-front-muscle.png",
+        "grid": "/anatomy/views/shoulder/right/shoulder-front-muscle.grid.json",
+        "selectable": true,
+        "distinctStructures": 25
+      },
+      "vascular": {
+        "image": "/anatomy/views/shoulder/right/shoulder-front-vascular.png",
+        "grid": "/anatomy/views/shoulder/right/shoulder-front-vascular.grid.json",
+        "selectable": true,
+        "distinctStructures": 12
+      }
+    },
+    "back": {
+      "surface": {
+        "image": "/anatomy/views/shoulder/right/shoulder-back-surface.png",
+        "grid": "/anatomy/views/shoulder/right/shoulder-back-surface.grid.json",
+        "selectable": false,
+        "distinctStructures": 0
+      },
+      "bone": {
+        "image": "/anatomy/views/shoulder/right/shoulder-back-bone.png",
+        "grid": "/anatomy/views/shoulder/right/shoulder-back-bone.grid.json",
+        "selectable": true,
+        "distinctStructures": 3
+      },
+      "muscle": {
+        "image": "/anatomy/views/shoulder/right/shoulder-back-muscle.png",
+        "grid": "/anatomy/views/shoulder/right/shoulder-back-muscle.grid.json",
+        "selectable": true,
+        "distinctStructures": 21
+      },
+      "vascular": {
+        "image": "/anatomy/views/shoulder/right/shoulder-back-vascular.png",
+        "grid": "/anatomy/views/shoulder/right/shoulder-back-vascular.grid.json",
+        "selectable": true,
+        "distinctStructures": 12
+      }
+    },
+    "left": {
+      "surface": {
+        "image": "/anatomy/views/shoulder/right/shoulder-left-surface.png",
+        "grid": "/anatomy/views/shoulder/right/shoulder-left-surface.grid.json",
+        "selectable": false,
+        "distinctStructures": 0
+      },
+      "bone": {
+        "image": "/anatomy/views/shoulder/right/shoulder-left-bone.png",
+        "grid": "/anatomy/views/shoulder/right/shoulder-left-bone.grid.json",
+        "selectable": true,
+        "distinctStructures": 3
+      },
+      "muscle": {
+        "image": "/anatomy/views/shoulder/right/shoulder-left-muscle.png",
+        "grid": "/anatomy/views/shoulder/right/shoulder-left-muscle.grid.json",
+        "selectable": true,
+        "distinctStructures": 25
+      },
+      "vascular": {
+        "image": "/anatomy/views/shoulder/right/shoulder-left-vascular.png",
+        "grid": "/anatomy/views/shoulder/right/shoulder-left-vascular.grid.json",
+        "selectable": true,
+        "distinctStructures": 12
+      }
+    },
+    "right": {
+      "surface": {
+        "image": "/anatomy/views/shoulder/right/shoulder-right-surface.png",
+        "grid": "/anatomy/views/shoulder/right/shoulder-right-surface.grid.json",
+        "selectable": false,
+        "distinctStructures": 0
+      },
+      "bone": {
+        "image": "/anatomy/views/shoulder/right/shoulder-right-bone.png",
+        "grid": "/anatomy/views/shoulder/right/shoulder-right-bone.grid.json",
+        "selectable": true,
+        "distinctStructures": 3
+      },
+      "muscle": {
+        "image": "/anatomy/views/shoulder/right/shoulder-right-muscle.png",
+        "grid": "/anatomy/views/shoulder/right/shoulder-right-muscle.grid.json",
+        "selectable": true,
+        "distinctStructures": 22
+      },
+      "vascular": {
+        "image": "/anatomy/views/shoulder/right/shoulder-right-vascular.png",
+        "grid": "/anatomy/views/shoulder/right/shoulder-right-vascular.grid.json",
+        "selectable": true,
+        "distinctStructures": 11
+      }
+    }
+  },
+  "sourceAtlasManifest": "/anatomy/atlas/shoulder/right/atlas-manifest.json",
+  "generator": {
+    "name": "publish-anatomy-views",
+    "version": "1.0.0"
+  },
+  "grid": {
+    "w": 160,
+    "h": 200
+  },
+  "provenance": {
+    "method": "orthographic render of the same BodyParts3D meshes the 3D viewer uses",
+    "dataset": "BodyParts3D",
+    "release": "4.0 (mesh archive 2013/05, 99% polygon reduction)",
+    "archive": "isa_BP3D_4.0_obj_99.zip",
+    "archiveSha256": "40665852c49f218326590e204db91064a1ecfc3c6f8cbd7bbbcaac62c7cd409e",
+    "doi": "10.18908/lsdba.nbdc00837-000",
+    "licence": "CC-BY-4.0",
+    "licenceUrl": "https://dbarchive.biosciencedb.jp/en/bodyparts3d/lic.html",
+    "attribution": "BodyParts3D, (c) The Database Center for Life Science licensed under CC Attribution 4.0 International",
+    "retrievedAt": "2026-10-01",
+    "officialLicenseLastUpdated": "2025-02-27",
+    "ourLicenseEvidenceCheckedAt": "2026-10-05",
+    "modified": true,
+    "modification": "source geometry unmodified; orthographic renders and a BVH hit grid derived from it, published for the product 2D surface",
+    "codeLicence": "MIT (this repository's code)",
+    "assetLicence": "CC BY 4.0 (the geometry and the images derived from it)",
+    "handDrawn": false,
+    "aiGenerated": false,
+    "replaces": "the hand-authored SVG silhouette in apps/web/src/anatomy/svg-geometry.ts, which remains only as a development fallback"
+  }
+}

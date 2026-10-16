@@ -78,9 +78,11 @@ for (const key of ['shoulder', 'neck', 'lowerBack', 'knee']) {
   console.log(JSON.stringify(await page.evaluate(READ), null, 2));
 
   if (key === 'shoulder') {
-    await page.getByRole('radio', { name: '2D map' }).check();
+    // "Body map", not "2D map": the Viewer group gained the derived anatomy map, which
+    // made "2D map" ambiguous, so the schematic was renamed. See hit-zones.mjs.
+    await page.getByRole('radio', { name: 'Body map' }).check();
     await page.waitForTimeout(500);
-    console.log(`\n=== ${key} · 2D map ===`);
+    console.log(`\n=== ${key} · body map ===`);
     console.log(JSON.stringify(await page.evaluate(READ), null, 2));
   }
   await ctx.close();

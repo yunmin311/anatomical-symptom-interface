@@ -133,6 +133,25 @@ const NO_TOKENS = new Set(['false', 'no', 'n', '0']);
 const UNKNOWN_TOKENS = new Set(['unknown', 'unsure', 'dontknow', "don't know", 'not sure', 'unclear', '']);
 
 /**
+ * Whether free text explicitly reports uncertainty.
+ *
+ * `normaliseYesNo` returns `unknown` for every unrecognised string, including a perfectly
+ * definite movement description. That fallback is for yes/no safety questions only. Free
+ * text needs the narrower vocabulary test: blank and explicit uncertainty phrases count,
+ * while any other non-empty string is treated as an answer.
+ */
+const FREE_TEXT_UNKNOWN_VALUES: ReadonlySet<string> = new Set([
+  ...UNKNOWN_TOKENS,
+  "i don't know",
+  'do not know',
+  'i am not sure',
+]);
+
+export function isUncertainFreeText(raw: unknown): boolean {
+  return typeof raw === 'string' && FREE_TEXT_UNKNOWN_VALUES.has(raw.trim().toLowerCase());
+}
+
+/**
  * Normalise a raw yes/no answer. Returns 'unknown' rather than guessing when
  * the input is not recognisable — never defaults to 'no'.
  */

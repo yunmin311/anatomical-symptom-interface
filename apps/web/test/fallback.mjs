@@ -35,17 +35,32 @@ async function open(context) {
   return page;
 }
 
-/** Switch surface only if it is not already selected; the radios re-render. */
+/**
+ * Switch surface only if it is not already selected; the radios re-render.
+ *
+ * Returns whether the surface is selected, so a caller can tell "already there" from
+ * "not on this screen". A bare `return` on a missing radio reads identically to a
+ * successful no-op, which is how a stale label went unnoticed.
+ */
 async function ensureSurface(page, name) {
   const radio = page.getByRole('radio', { name, exact: true });
-  if ((await radio.count()) === 0) return;
-  if (await radio.isChecked().catch(() => false)) return;
+  if ((await radio.count()) === 0) return false;
+  if (await radio.isChecked().catch(() => false)) return true;
   await radio.check({ timeout: 10000 });
+  return true;
 }
 
-/** The Locate flow must still be completable on the 2D map alone. */
+/**
+ * The Locate flow must still be completable on the schematic body map alone.
+ *
+ * "Body map", not "2D map": the Viewer group gained the derived anatomy map, which
+ * made "2D map" ambiguous, so the schematic was renamed. See hit-zones.mjs. These
+ * `ensureSurface` calls are silent no-ops when the radio is missing, so a stale name
+ * left this test proving nothing while still reporting green.
+ */
 async function canCompleteLocate(page, label) {
-  await ensureSurface(page, '2D map');
+  const switched = await ensureSurface(page, 'Body map');
+  if (!switched) return bad(`${label}: the Body map surface radio was not found`);
   const option = page.locator('.subregion-option', { hasText: 'Front of shoulder' });
   if (!(await option.count())) return bad(`${label}: no area buttons to fall back to`);
   await option.first().click();
@@ -54,9 +69,9 @@ async function canCompleteLocate(page, label) {
   await continueBtn.click();
   try {
     await page.locator('.interview-panel form').waitFor({ timeout: 8000 });
-    ok(`${label}: Locate completed on the 2D map`);
+    ok(`${label}: Locate completed on the body map`);
   } catch {
-    bad(`${label}: could not reach the interview from the 2D map`);
+    bad(`${label}: could not reach the interview from the body map`);
   }
 }
 
@@ -95,8 +110,8 @@ async function canCompleteLocate(page, label) {
   if (banner && /body map/i.test(banner)) ok(`fallback explained: "${banner.trim()}"`);
   else bad(`no fallback explanation shown (got ${banner})`);
   const mapVisible = await page.locator('[data-testid="bodymap-2d"]').isVisible();
-  if (mapVisible) ok('the 2D map is visible after a 3D failure');
-  else bad('2D map is not visible after a 3D failure: blank screen');
+  if (mapVisible) ok('the body map is visible after a 3D failure');
+  else bad('the body map is not visible after a 3D failure: blank screen');
   await canCompleteLocate(page, 'no-webgl');
   await context.close();
 }
@@ -115,21 +130,22 @@ async function canCompleteLocate(page, label) {
   if (banner && /body map/i.test(banner)) ok(`context loss explained: "${banner.trim()}"`);
   else bad(`context loss not explained (got ${banner})`);
   const mapVisible = await page.locator('[data-testid="bodymap-2d"]').isVisible();
-  if (mapVisible) ok('the 2D map takes over after a context loss');
-  else bad('2D map did not take over after a context loss');
+  if (mapVisible) ok('the body map takes over after a context loss');
+  else bad('the body map did not take over after a context loss');
   await canCompleteLocate(page, 'context-lost');
   await context.close();
 }
 
-// ---- 4. an explicit user choice of 2D is honoured -------------------------
+// ---- 4. an explicit user choice of the body map is honoured ----------------
 {
   const context = await browser.newContext({ viewport: { width: 1440, height: 1000 } });
   const page = await open(context);
-  await ensureSurface(page, '2D map');
+  const switched = await ensureSurface(page, 'Body map');
+  if (!switched) bad('the Body map surface radio was not found, so this proved nothing');
   await page.waitForTimeout(600);
   const canvases = await page.locator('[data-testid="viewer-3d-canvas"] canvas').count();
-  if (canvases === 0) ok('choosing the 2D map does not spin up a GPU context');
-  else bad(`${canvases} canvases created despite choosing 2D`);
+  if (canvases === 0) ok('choosing the body map does not spin up a GPU context');
+  else bad(`${canvases} canvases created despite choosing the body map`);
   await context.close();
 }
 

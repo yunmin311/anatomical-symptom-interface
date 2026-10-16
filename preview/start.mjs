@@ -6,8 +6,8 @@
  * than sleeping a guessed interval -- a fixed sleep is either too slow or flaky, and it
  * fails as a confusing downstream error instead of "the API was not up yet".
  */
-import { spawn } from 'node:child_process';
-import { mkdirSync, rmSync } from 'node:fs';
+import { spawn, execFileSync } from 'node:child_process';
+import { mkdirSync, rmSync, readFileSync, existsSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -27,7 +27,61 @@ if (process.env.ASI_PREVIEW_KEEP_DATA !== '1') {
 }
 mkdirSync(dirname(DB_PATH), { recursive: true });
 
-const COMMIT = process.env.ASI_BUILD_COMMIT ?? 'unknown';
+/**
+ * The commit the web bundle was BUILT from — not the commit on disk right now.
+ *
+ * These differ whenever a commit lands without a rebuild, which is the normal case
+ * after any `git commit`. `preview.sh` used to pass the on-disk HEAD here, so the
+ * health endpoint reported the newest commit while serving the previous bundle:
+ * the exact "an old build pretending to be the new one" this is meant to prevent.
+ *
+ * So the number comes from the stamp `scripts/write-build-info.mjs` writes into
+ * `dist` at build time, and it is compared against the real tree HEAD. With no
+ * stamp the answer says the build cannot prove its own provenance, rather than
+ * asserting something unverified.
+ */
+function gitHead() {
+  try {
+    return execFileSync('git', ['-C', REPO, 'rev-parse', 'HEAD'], {
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'pipe'],
+    }).trim();
+  } catch {
+    return null;
+  }
+}
+
+function stampedBuildInfo() {
+  const stampPath = join(REPO, 'apps', 'web', 'dist', 'build-info.json');
+  if (!existsSync(stampPath)) return null;
+  try {
+    const parsed = JSON.parse(readFileSync(stampPath, 'utf8'));
+    // Only trust a stamp this repo's own build step wrote.
+    return parsed?.stampedBy === 'scripts/write-build-info.mjs' ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
+const HEAD = gitHead();
+const buildInfo = stampedBuildInfo();
+// The STAMP wins over ASI_BUILD_COMMIT, deliberately.
+//
+// An earlier version of this put the environment variable first, which defeated the
+// whole change: `preview.sh` sets ASI_BUILD_COMMIT from `git rev-parse HEAD` at
+// start, so the stamp was read and then ignored, and the health endpoint went on
+// reporting the checkout instead of the bundle. Only the stamp describes the
+// bytes being served; the HEAD describes the directory they were served from.
+//
+// A test caught it by forcing the stamp to a different commit and watching the
+// endpoint report the tree anyway — which is the test this needed all along.
+// Truthiness, not `??`: `preview.sh` passes ASI_BUILD_COMMIT through as an empty
+// string when the caller set nothing, and `""` is not nullish, so `??` would take
+// the empty string as the answer and report a blank commit instead of falling back.
+const COMMIT =
+  buildInfo?.commit || process.env.ASI_BUILD_COMMIT || HEAD || 'unknown';
+const BUNDLE_IS_STALE = Boolean(HEAD && buildInfo?.commit && buildInfo.commit !== HEAD);
+
 const children = [];
 
 const shutdown = (code) => {
@@ -135,6 +189,20 @@ await waitFor(
 
 console.log('');
 console.log(`[preview] READY  http://127.0.0.1:${PREVIEW_PORT}`);
+console.log(`[preview] serving bundle built from : ${COMMIT.slice(0, 12)}`);
+// Said plainly, at the moment it matters. A preview whose bundle predates the
+// checkout is not a smaller problem than no preview; it is a browser showing the
+// wrong version while claiming to be current.
+if (!buildInfo) {
+  console.log('[preview] WARNING: dist has no build stamp, so the served bundle cannot be');
+  console.log('[preview]          tied to any commit. Rebuild:  pnpm --filter @asi/web build');
+} else if (BUNDLE_IS_STALE) {
+  console.log(`[preview] WARNING: this bundle is STALE.`);
+  console.log(`[preview]            bundle built from ${buildInfo.commit.slice(0, 12)}`);
+  console.log(`[preview]            tree is now        ${HEAD.slice(0, 12)}`);
+  console.log(`[preview]          Rebuild before trusting anything you see:`);
+  console.log(`[preview]            pnpm --filter @asi/web build`);
+}
 console.log('[preview] Synthetic data only. NOT clinically reviewed. NOT for real patients.');
 console.log('[preview] Ctrl-C to stop.');
 

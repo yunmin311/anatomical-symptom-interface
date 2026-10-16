@@ -235,6 +235,71 @@ Carried forward from Phase 1A and still genuinely open:
 
 ---
 
+## Right Shoulder Showcase V1 · **built, integration in progress**
+
+One region, taken end to end and made demonstrable by somebody who has never seen it:
+describe → locate → interview → review and correct → save → health map → reopen →
+summary, at 375 / 768 / 1440.
+
+**The Showcase entry.** Five synthetic cases on the describe screen. A case is a script,
+not a mode: it fills the real description box and closes, and everything after that is
+the ordinary product. Nothing is pre-seeded, and there is no demo write path, so a
+demonstration cannot drift from what a person actually gets.
+
+| Case | What it is there to show |
+| --- | --- |
+| Pain that comes on with a movement | The plain path end to end |
+| Something you could name | A mechanism, safety questions on their own terms, a correction that withdraws |
+| Not knowing, said out loud | "I am not sure" as an answer, never as a negative or a guess |
+| The same place, later | Two episodes at one place, then reopening the first |
+| What pointing at does, and does not, mean | Writable vs view-only structures, and a view that fails to load |
+
+Case scripts are validated against the live interview registry
+(`apps/web/test/showcase-cases.test.ts`): a renamed question or a removed option fails a
+test rather than quietly telling a demonstrator to click something that no longer exists.
+
+**What the work actually changed.** The showcase was meant to document the product and
+instead found four things in it:
+
+- A reopened episode landed on an interview indistinguishable from a first visit, and a
+  fully answered one landed on a bare end-of-questions state with nothing on screen at
+  all. The write path was always right; nothing said so. Now the panel names the episode,
+  its region, side, start date and recorded answer count, and states that answers go to
+  the same record.
+- The 768px toolbar forced every anatomy control onto its own line, seven deep.
+- The 3D viewer could fail with no visible reason.
+- Explicit "I am not sure" answers on four shoulder questions produced medical vocabulary
+  in the summary, and a contradiction between "just pain" and a weakness was recorded as
+  a denial.
+
+**Still open on this milestone:**
+
+- [ ] **The A–T acceptance specification is not in this repository, and the external
+      product plan has no lettered checklist either.** The plan
+      (`Anatomical_Symptom_Interface_Product_Plan_B_Format.md` §12) states the milestone in
+      prose instead: *"get one user, in 2–3 minutes, to turn a symptom they could only
+      describe as 'it hurts deep inside my right shoulder' into a record with a clear
+      location, complete attributes, that can be saved and shown to a doctor."*
+      So the showcase has evidence and **no A–T claim**: the checklist is either supplied
+      or reconstructed and marked as reconstructed.
+- [ ] **The 2–3 minutes is unverified, and a script cannot verify it.** Measured, the
+      whole spine journey costs ~1.9s of *product* time at both 375 and 1440 — grounding,
+      locate, eight answers, review, save — which says the product itself adds no
+      measurable latency and stalls on nothing. It says nothing about whether the
+      journey *feels* like two minutes, because that is eight questions' worth of reading
+      and deciding by a person. The honest reading is "no overhead found", not "the
+      milestone is met". The plan's first open question is whether the 3D/anatomy
+      interaction is too heavy to be worth doing at all, and no timing script answers that.
+- [ ] **Derived 2D anatomy for the other three regions.** Mechanical, and deliberately
+      not started: one region was built to find out what the pipeline actually costs.
+- [ ] **Clinical review**, unchanged and external: the safety rules, the six-week
+      threshold, the duration vocabulary, the tingling/numbness mapping, the
+      `FJ1506` / `FJ1478` tendon identities, and the other three regions.
+- [ ] **FMA verification** and **`layTerm` for every structure**, both still unglamorous
+      and both still blocking.
+
+---
+
 ## Where this is going
 
 The web app is **not** the product. It is one client, and the only one that

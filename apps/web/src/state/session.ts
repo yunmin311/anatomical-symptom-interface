@@ -121,6 +121,27 @@ interface SessionState {
   refusal: string | null;
 
   episodeId: string | null;
+  /**
+   * The saved episode this session is CONTINUING, or null when it is starting one.
+   *
+   * `episodeId` cannot carry this. It is set by `save()` as well as by
+   * `reopenEpisode()`, so "there is an id" means "a record exists", not "this person
+   * came back to one". Reopen dropped the user into an interview that looked exactly
+   * like their first one, and a fully answered episode landed on the bare
+   * "you have reached the end of these questions" state with no indication of WHICH
+   * episode it was — which is precisely the moment someone most needs to know
+   * whether they are about to add to their existing record or start a second one.
+   *
+   * Facts only, all of them the server's. Nothing here is inferred from the status,
+   * the region or the answer count.
+   */
+  resumedEpisode: {
+    id: string;
+    region: BodyRegion;
+    side: Side;
+    startedAt: string;
+    answerCount: number;
+  } | null;
   summary: PreVisitSummary | null;
   history: Episode[];
   /**
@@ -210,6 +231,7 @@ export const useSession = create<SessionState>((set, get) => {
     refusal: null,
 
     episodeId: null,
+    resumedEpisode: null,
     summary: null,
     history: [],
     spatial: [],
@@ -239,7 +261,17 @@ export const useSession = create<SessionState>((set, get) => {
     describe: async () => {
       const { utterance } = get();
       if (!utterance.trim()) return;
-      set({ busy: true, error: null, refusal: null, clarification: null });
+      // Describing a complaint is how a session STARTS an episode, so a resumed one
+      // stops being resumed here. Leaving it set would let the next interview claim
+      // to be continuing an episode the user just described afresh, and the next save
+      // would update that old record instead of creating the new one.
+      set({
+        busy: true,
+        error: null,
+        refusal: null,
+        clarification: null,
+        resumedEpisode: null,
+      });
       try {
         const result = await api<LocalisationOutcome>('/localise', {
           method: 'POST',
@@ -516,6 +548,15 @@ export const useSession = create<SessionState>((set, get) => {
 
         set({
           episodeId: reopened.episode.id,
+          // Facts the panel states about which episode it is showing. Taken from the
+          // server's episode row, not recomputed from the region or the question list.
+          resumedEpisode: {
+            id: reopened.episode.id,
+            region: reopened.episode.region,
+            side: reopened.episode.side,
+            startedAt: reopened.episode.startedAt,
+            answerCount: Object.keys(reopened.answers).length,
+          },
           record,
           answers: reopened.answers,
           safety: reopened.safety ?? evaluateSession(record, reopened.answers),
@@ -555,6 +596,7 @@ export const useSession = create<SessionState>((set, get) => {
         refusal: null,
         clarification: null,
         episodeId: null,
+        resumedEpisode: null,
         summary: null,
         spatial: [],
         error: null,

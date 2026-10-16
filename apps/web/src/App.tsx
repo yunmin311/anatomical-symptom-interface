@@ -7,6 +7,7 @@ import { SafetyBanner } from "./ui/SafetyBanner.tsx";
 import { SummaryPanel } from "./ui/SummaryPanel.tsx";
 import { HistoryPanel } from "./ui/HistoryPanel.tsx";
 import { PageHeading, EmptyState } from "./ui/primitives.tsx";
+import { ShowcasePanel } from "./showcase/ShowcasePanel.tsx";
 import { useSession } from "./state/session.ts";
 import type { Stage } from "./state/session.ts";
 import { depthPhrase, sidePhrase } from "./ui/presentation.ts";
@@ -48,6 +49,13 @@ export function App() {
     summary,
   } = useSession();
   const [returnStage, setReturnStage] = useState<Stage>("describe");
+  /*
+   * The Showcase panel is local UI on the describe screen, not a stage. It became a
+   * stage first, and that put "showcase" into the app's route vocabulary, its title
+   * map, its task-context line and the browser gates' navigation — all of it for
+   * something that is a panel beside a form.
+   */
+  const [showcase, setShowcase] = useState(false);
   const dialog = useRef<HTMLDialogElement>(null);
   const previousStage = useRef(stage);
   useEffect(() => {
@@ -177,6 +185,20 @@ export function App() {
                 For symptom location and organisation. Not diagnosis or
                 treatment.
               </p>
+              {/*
+                The Showcase entry. It belongs beside the form because a case IS a
+                description to type — picking one fills this box and everything after
+                it is the ordinary product.
+              */}
+              <button
+                className="link"
+                aria-expanded={showcase}
+                aria-controls="showcase-panel"
+                data-testid="showcase-open"
+                onClick={() => setShowcase((open) => !open)}
+              >
+                Showcase cases for Right Shoulder
+              </button>
             </section>
             <aside className="entry-body" aria-label="Supported body areas">
               <BodyIndex />
@@ -187,6 +209,9 @@ export function App() {
               </p>
             </aside>
           </div>
+        )}
+        {stage === "describe" && showcase && (
+          <ShowcasePanel onClose={() => setShowcase(false)} />
         )}
         {stage === "unsupported" && (
           <div className="unsupported-layout">
