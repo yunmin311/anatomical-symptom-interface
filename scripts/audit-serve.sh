@@ -62,10 +62,17 @@ spawn_detached() {
   echo $!
 }
 
+# Same ownership rule as preview/preview.sh and final-gates.sh, from one place.
+# shellcheck source=scripts/port-ownership.sh
+. "$REPO/scripts/port-ownership.sh"
+
+# Was `kill -9` on every pid holding the port. An audit run colliding with a
+# server it did not start used to end with that server dead and no record of it.
 free_port() {
-  local port=$1 pids
-  for p in $(pids_on "$port"); do kill -9 "$p" 2>/dev/null; done
-  for _ in 1 2 3 4 5 6 7 8 9 10; do
+  local port=$1
+  asi_require_port_free "$port" "$REPO" || return 1
+  asi_release_port "$port" "$REPO" || return 1
+  for _ in 1 2 3 4 5; do
     [ -z "$(pids_on "$port")" ] && return 0
     sleep 1
   done

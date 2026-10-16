@@ -31,6 +31,12 @@ done
 REPO=$(cd -P "$(dirname "$SOURCE")/.." && pwd)
 cd "$REPO"
 
+# Port ownership. Sourced rather than copied: this file, preview/preview.sh and
+# scripts/audit-serve.sh each had their own `kill -9 <whatever owns the port>`, so
+# the defect existed in three places and each fix would have been one of them.
+# shellcheck source=scripts/port-ownership.sh
+. "$REPO/scripts/port-ownership.sh"
+
 # --- ports. Distinct per process so two runs cannot cross-talk. ----------------
 API_PORT=${ASI_GATE_API_PORT:-8799}
 WEB_PORT=${ASI_GATE_WEB_PORT:-5199}
@@ -104,10 +110,14 @@ cleanup() {
   local code=$?
   kill_group "$web_pgid"
   kill_group "$api_pgid"
-  # Belt and braces: anything still holding either port goes, whatever its parent.
+  # Belt and braces: anything still holding either port goes -- but only if it is
+  # ours. The original line killed whatever held the port, which on a shared
+  # machine means a gate run could kill an unrelated service it had just collided
+  # with. A leftover process of ours is a real cleanup problem and is still fatal
+  # to the run; someone else's is reported and left alone.
   for p in "$WEB_PORT" "$API_PORT"; do
-    pids=$(ss -lptnH "sport = :$p" 2>/dev/null | grep -oP 'pid=\K[0-9]+' | sort -u)
-    [ -n "$pids" ] && kill -9 $pids 2>/dev/null
+    asi_release_port "$p" "$REPO" || \
+      echo "  !! :$p is still held by a process this run did not start; left running" >&2
   done
   wait 2>/dev/null
   # The scratch DATABASE is always deleted: it is health-shaped data and it is in
@@ -141,11 +151,15 @@ wait_for() {
 
 start_servers() {
   # A stale server from an earlier run would answer /api/health and make this run
-  # believe it passed against somebody else's process. Killing by PORT, because a
-  # cmdline pattern does not reliably match a detached `npx tsx` child.
+  # believe it passed against somebody else's process. Releasing the ports is still
+  # right -- but a stale server of OURS is released, and one of somebody else's is
+  # reported and refused rather than killed. The original comment said "killing by
+  # PORT, because a cmdline pattern does not reliably match a detached npx tsx
+  # child"; the ownership test is cwd OR cmdline OR a recorded pid, which covers
+  # that case and also covers the case where the port is not ours to take.
   for p in "$API_PORT" "$WEB_PORT"; do
-    pids=$(ss -lptnH "sport = :$p" 2>/dev/null | grep -oP 'pid=\K[0-9]+' | sort -u)
-    [ -n "$pids" ] && kill -9 $pids 2>/dev/null
+    asi_require_port_free "$p" "$REPO" || return 1
+    asi_release_port "$p" "$REPO" || return 1
   done
   sleep 1
 
