@@ -131,13 +131,43 @@ await check('the served bundle is the one in this checkout, not an older build',
     console.log(`   (skipped the comparison: git unavailable — ${headErr.message})`);
     return;
   }
+
+  /*
+   * The STAMP is read here as well as in the preview, and its absence is a failure.
+   *
+   * With no stamp the preview falls back to reporting the checkout's HEAD so the
+   * health endpoint is never blank — which means a completely unstamped build would
+   * sail through a comparison of health.commit against HEAD, because both would be
+   * the same number while saying nothing about the bytes. Reading the stamp closes
+   * that: no stamp means the build cannot account for itself, and that is exactly
+   * the claim this check exists to test.
+   */
+  const stampPath = resolve(REPO, 'apps', 'web', 'dist', 'build-info.json');
+  assert(existsSync(stampPath), `no build stamp at ${stampPath} — this build cannot say which commit it is. Rebuild: pnpm --filter @asi/web build`);
+  let stamp = null;
+  try {
+    stamp = JSON.parse(readFileSync(stampPath, 'utf8'));
+  } catch (e) {
+    assert(false, `build stamp is unreadable: ${e.message}`);
+  }
+  assert(
+    stamp?.stampedBy === 'scripts/write-build-info.mjs',
+    'the build stamp was not written by this repo\'s build step, so it cannot be trusted',
+  );
+  assert(typeof stamp.commit === 'string' && stamp.commit.length > 0, 'the build stamp names no commit');
+
   assert(
     health.build.commit !== 'unknown',
     'the preview reports no commit at all; it cannot be identified',
   );
   assert(
-    health.build.commit === head,
-    `the preview is serving commit ${health.build.commit.slice(0, 12)} but this ` +
+    health.build.commit === stamp.commit,
+    `the preview reports commit ${health.build.commit.slice(0, 12)} but dist was stamped ` +
+      `${String(stamp.commit).slice(0, 12)} — they are different builds. Rebuild: pnpm --filter @asi/web build`,
+  );
+  assert(
+    stamp.commit === head,
+    `the served bundle was built from ${String(stamp.commit).slice(0, 12)} but this ` +
       `checkout is ${head.slice(0, 12)}. Rebuild: pnpm --filter @asi/web build`,
   );
 });
