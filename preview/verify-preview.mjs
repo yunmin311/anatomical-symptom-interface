@@ -20,6 +20,7 @@
  *
  * Usage:  node preview/verify-preview.mjs [origin]
  */
+import { execFileSync } from 'node:child_process';
 import { existsSync, readFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -101,6 +102,44 @@ await check('it does NOT claim release readiness', async () => {
 await check('it names the commit it was built from', async () => {
   assert(typeof health.build?.commit === 'string', 'no build.commit');
   assert(health.build.commit.length > 0, 'build.commit is empty');
+});
+
+/*
+ * The check the previous one was pretending to be.
+ *
+ * `health.build.commit` used to come from `git rev-parse HEAD` at START time, so a
+ * commit followed by a preview start — with no rebuild — reported the new commit
+ * while serving the old bundle, and this script passed. A version report that cannot
+ * be wrong is the whole point of asking which version is running.
+ *
+ * So the served commit is compared against the tree the preview is serving, and a
+ * bundle that predates the checkout is a failure rather than a footnote.
+ */
+await check('the served bundle is the one in this checkout, not an older build', async () => {
+  let head = null;
+  let headErr = null;
+  try {
+    head = execFileSync('git', ['-C', REPO, 'rev-parse', 'HEAD'], {
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'pipe'],
+    }).trim();
+  } catch (e) {
+    headErr = e;
+  }
+  if (headErr) {
+    // Not a failure of the preview: this check needs git, and git is optional here.
+    console.log(`   (skipped the comparison: git unavailable — ${headErr.message})`);
+    return;
+  }
+  assert(
+    health.build.commit !== 'unknown',
+    'the preview reports no commit at all; it cannot be identified',
+  );
+  assert(
+    health.build.commit === head,
+    `the preview is serving commit ${health.build.commit.slice(0, 12)} but this ` +
+      `checkout is ${head.slice(0, 12)}. Rebuild: pnpm --filter @asi/web build`,
+  );
 });
 
 /* ------------------------------------------------------------ 2. WRITE PATH */

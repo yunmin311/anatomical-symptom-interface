@@ -68,7 +68,13 @@ start() {
   # Its own process group, so stopping kills the whole tree. Killing only the recorded PID
   # orphans the node children, which keep the ports bound and make the next run talk to a
   # dead server -- the same failure mode the gate runner already had to handle.
-  setsid env ASI_BUILD_COMMIT="${ASI_BUILD_COMMIT:-$(git rev-parse HEAD 2>/dev/null || echo unknown)}" \
+  #
+  # ASI_BUILD_COMMIT is passed through ONLY when the caller set it. It used to be
+  # defaulted to `git rev-parse HEAD` here, which handed start.mjs the checkout's
+  # commit and made the preview report that instead of the commit its bundle was
+  # actually built from. The version the user is looking at has to come from the
+  # build stamp, so an unset variable stays unset.
+  setsid env ASI_BUILD_COMMIT="${ASI_BUILD_COMMIT:-}" \
     node preview/start.mjs > "$LOG" 2>&1 < /dev/null &
   echo $! > "$PIDFILE"
 
